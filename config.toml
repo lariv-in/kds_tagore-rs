@@ -1,0 +1,16 @@
+database_url = "postgres://postgres:0708@localhost:5432/kds_tagore"
+bind = "0.0.0.0:42070"
+
+[users]
+adminEmail = "admin@example.com"
+adminPassword = "adminadmin"
+signingKey = "hC1MsGXL5epJUi8gtDbHxCd+pyjEZt/CsJPWzQCM3NCU9m7hm+lpJTNe7MjrueqXHEFu7RxAXMUDSHOINRZIxH0po2GXuKxgCUrbBBPHuyoMeF34soMUbVlirKmdAhIOXSriWjPenDMwongHxs9xLU3DivnuZkN6Bkn0L+47/k47B9YG7RirCLB5QLMPlmFUsdaFqLsC5YluxrKXqbMu4RmbXeXWH+dShddkEAXUrdgPw8nDS9XDWKtX0mozc43heTspeaT/Q11ffhAw8UvcChT9vvshWxwH+BU4rnDT4vNrNb31BF3Fn3XlxyqEdFgQLWd/8dp8nPwSZwSlyMmjbw=="
+jwtIssuer = "hC1MsGXL5epJUi8gtDbHxCd+pyjEZt/CsJPWzQCM3NCU9m7hm+lpJTNe7MjrueqXHEFu7RxAXMUDSHOINRZIxH0po2GXuKxgCUrbBBPHuyoMeF34soMUbVlirKmdAhIOXSriWjPenDMwongHxs9xLU3DivnuZkN6Bkn0L+47/k47B9YG7RirCLB5QLMPlmFUsdaFqLsC5YluxrKXqbMu4RmbXeXWH+dShddkEAXUrdgPw8nDS9XDWKtX0mozc43heTspeaT/Q11ffhAw8UvcChT9vvshWxwH+BU4rnDT4vNrNb31BF3Fn3XlxyqEdFgQLWd/8dp8nPwSZwSlyMmjbw=="
+
+[filesystem]
+storageBackend = "local"
+localDir = "filesystem"
+
+[website]
+newPageRootDir = "website/pages"
+assetsDir = "website/assets"

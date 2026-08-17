@@ -1,0 +1,32 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-11
+
+      - name: rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: build release binary
+        run: cargo build --release
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/kds_tagore-rs
+          generate_release_notes: true
