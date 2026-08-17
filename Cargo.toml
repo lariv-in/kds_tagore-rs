@@ -8,13 +8,16 @@ name = "kds_tagore-rs"
 path = "src/main.rs"
 
 [dependencies]
-lariv-rs = { version = "0.1.0", path = "../../lariv-rs", default-features = false, features = [
-    "plugin-users",
-    "plugin-dashboard",
-    "plugin-filesystem",
-    "plugin-website",
-    "plugin-crm",
-	"plugin-finance",
+lariv-rs = { version = "0.1.0",
+	# path = "../../lariv-rs",
+	git = "https://github.com/lariv-in/lariv-rs", rev = "08fb83132a4045c01c30ff4850360defb9eb5359",
+	default-features = false, features = [
+		"plugin-users",
+		"plugin-dashboard",
+		"plugin-filesystem",
+		"plugin-website",
+		"plugin-crm",
+		"plugin-finance",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1", features = ["backtrace"] }
@@ -22,14 +25,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc = "0.2"
 chrono = "0.4"
 sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
-
-[dev-dependencies]
-uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["full"] }
-lariv-rs = { version = "0.1.0", path = "../../lariv-rs", default-features = false, features = [
-    "plugin-users",
-    "plugin-dashboard",
-    "plugin-filesystem",
-    "plugin-website",
-    "plugin-crm",
-] }

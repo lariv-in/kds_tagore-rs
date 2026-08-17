@@ -2378,7 +2378,6 @@ dependencies = [
  "sea-orm",
  "tokio",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
@@ -2443,6 +2442,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs?rev=08fb83132a4045c01c30ff4850360defb9eb5359#08fb83132a4045c01c30ff4850360defb9eb5359"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2501,6 +2501,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs-macros"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs?rev=08fb83132a4045c01c30ff4850360defb9eb5359#08fb83132a4045c01c30ff4850360defb9eb5359"
 dependencies = [
  "proc-macro2",
  "quote",
