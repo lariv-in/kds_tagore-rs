@@ -67,7 +67,9 @@ async fn run() -> anyhow::Result<()> {
     app.run_migrations().await?;
     app.run_seeds().await?;
     let website = app.get_capability_output::<website::WebsiteTag, _>();
+    tracing::info!("kds website: seeding homepage and media");
     website_seed::ensure_homepage(website).await?;
+    tracing::info!("kds website: seed complete");
     app.run().await?;
     Ok(())
 }

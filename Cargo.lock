@@ -2377,6 +2377,7 @@ dependencies = [
  "libc",
  "sea-orm",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
