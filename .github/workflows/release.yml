@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -38,6 +40,7 @@ jobs:
 
       - name: rust cache
         uses: swatinem/rust-cache@v2
+        shared-key: "Release-Cache"
 
       - name: build release binary
         run: cargo build --release
