@@ -26,6 +26,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           shared-key: "Release-Cache"
+          add-rust-environment-hash-key: false
 
       - name: build release binary
         run: cargo build --release
