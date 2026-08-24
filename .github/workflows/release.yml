@@ -12,23 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      is_tagged: ${{ steps.check.outputs.is_tagged }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: check
-        run: |
-          if [ -n "$(git tag --points-at HEAD 'v*')" ]; then
-            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
-          fi
-
   build-and-release:
-    needs: gate
-    if: needs.gate.outputs.is_tagged == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
