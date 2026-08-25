@@ -2440,7 +2440,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "lariv-rs",
- "libc",
  "sea-orm",
  "tokio",
  "tracing",
@@ -2509,7 +2508,6 @@ dependencies = [
 [[package]]
 name = "lariv-rs"
 version = "0.1.0"
-source = "git+https://github.com/lariv-in/lariv-rs?rev=c710cbc611194790e0649dadf3b4cfe40e51dd7a#c710cbc611194790e0649dadf3b4cfe40e51dd7a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2530,6 +2528,7 @@ dependencies = [
  "http",
  "jsonwebtoken",
  "lariv-rs-macros",
+ "libc",
  "maud",
  "mime_guess",
  "minijinja",
@@ -2568,7 +2567,6 @@ dependencies = [
 [[package]]
 name = "lariv-rs-macros"
 version = "0.1.0"
-source = "git+https://github.com/lariv-in/lariv-rs?rev=c710cbc611194790e0649dadf3b4cfe40e51dd7a#c710cbc611194790e0649dadf3b4cfe40e51dd7a"
 dependencies = [
  "proc-macro2",
  "quote",
