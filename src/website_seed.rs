@@ -57,8 +57,8 @@ async fn ensure_homepage_state(
 ) -> anyhow::Result<()> {
     let media_urls = ensure_static_assets(db, store).await?;
     let html = homepage_html_with_media_urls(&media_urls);
-    let page = ensure_page_vnode(db, store, html.as_bytes()).await?;
-    ensure_db_route(db, ROUTE_PATH, page.id, THEME).await?;
+    let (page, page_rewritten) = ensure_page_vnode(db, store, html.as_bytes()).await?;
+    ensure_db_route(db, ROUTE_PATH, page.id, THEME, page_rewritten).await?;
     tracing::info!(page_id = page.id, "kds website: homepage route ready");
     Ok(())
 }
@@ -75,13 +75,19 @@ async fn ensure_page_vnode(
     db: &DatabaseConnection,
     store: &DynFilestore,
     html: &[u8],
-) -> anyhow::Result<lariv_rs::plugins::filesystem::entities::VNode> {
+) -> anyhow::Result<(lariv_rs::plugins::filesystem::entities::VNode, bool)> {
     let segments = ["website".into(), "pages".into()];
     let parent_id = node::ensure_directory_path(db, store, None, &segments)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let parent = match parent_id {
-        Some(id) => node::get_by_id(db, id).await.ok().flatten(),
+        Some(id) => match node::get_by_id(db, id).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error = %e, "get node by id for website page parent");
+                None
+            }
+        },
         None => None,
     };
 
@@ -100,7 +106,13 @@ async fn ensure_static_assets(
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let parent = match parent_id {
-        Some(id) => node::get_by_id(db, id).await.ok().flatten(),
+        Some(id) => match node::get_by_id(db, id).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error = %e, "get node by id for website static parent");
+                None
+            }
+        },
         None => None,
     };
 
@@ -114,7 +126,8 @@ async fn ensure_static_assets(
             asset.name,
             asset.bytes,
         )
-        .await?;
+        .await?
+        .0;
         let media_url = public_asset_url(vnode.id);
         tracing::info!(
             name = asset.name,
@@ -123,7 +136,7 @@ async fn ensure_static_assets(
             bytes = asset.bytes.len(),
             "kds website: static asset ready"
         );
-        ensure_db_route(db, &format!("/static/{}", asset.name), vnode.id, "").await?;
+        ensure_db_route(db, &format!("/static/{}", asset.name), vnode.id, "", false).await?;
         urls.push((asset.name.to_string(), media_url));
     }
     Ok(urls)
@@ -136,10 +149,10 @@ async fn ensure_file_vnode(
     parent: Option<&lariv_rs::plugins::filesystem::entities::VNode>,
     name: &str,
     bytes: &[u8],
-) -> anyhow::Result<lariv_rs::plugins::filesystem::entities::VNode> {
+) -> anyhow::Result<(lariv_rs::plugins::filesystem::entities::VNode, bool)> {
     if let Some(existing) = node::find_child(db, parent_id, name, false).await? {
         if vnode_bytes_match(store, &existing, bytes).await? {
-            return Ok(existing);
+            return Ok((existing, false));
         }
         tracing::warn!(
             name,
@@ -147,13 +160,14 @@ async fn ensure_file_vnode(
             stored_path = existing.file_path.as_deref().unwrap_or(""),
             "kds website: rewriting vnode blob"
         );
-        return render::replace_vnode_content(db, store, existing, bytes)
+        let updated = render::replace_vnode_content(db, store, existing, bytes)
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"));
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        return Ok((updated, true));
     }
 
     tracing::info!(name, "kds website: creating vnode");
-    node::create(
+    let created = node::create(
         db,
         store,
         name.into(),
@@ -165,7 +179,8 @@ async fn ensure_file_vnode(
         parent,
     )
     .await
-    .map_err(|e| anyhow::anyhow!("{e}"))
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok((created, true))
 }
 
 async fn vnode_bytes_match(
@@ -197,6 +212,7 @@ async fn ensure_db_route(
     path: &str,
     page_id: i64,
     theme: &str,
+    reset_grapes_project: bool,
 ) -> anyhow::Result<()> {
     if let Some(existing) = DbRouteEntity::find()
         .filter(DbRouteColumn::Path.eq(path))
@@ -207,6 +223,10 @@ async fn ensure_db_route(
         am.page_id = Set(page_id);
         am.is_active = Set(true);
         am.theme = Set(theme.into());
+        if reset_grapes_project {
+            // Drop stale GrapesJS project JSON so the builder reloads from seeded HTML.
+            am.grapes_project = Set(None);
+        }
         am.updated_at = Set(Some(Utc::now()));
         am.update(db).await?;
         tracing::info!(path, page_id, "kds website: updated db route");
