@@ -1,11 +1,15 @@
-//! Idempotent seed for the KDS Tagore public homepage and static media.
+//! Idempotent seed for the KDS Tagore public homepage, static media, and Custom theme.
 
 use chrono::Utc;
 use lariv_rs::plugins::filesystem::node::{self, NodeFile};
 use lariv_rs::plugins::filesystem::storage::DynFilestore;
 use lariv_rs::plugins::website::{
     builder_assets::public_asset_url,
-    entities::db_route::{self, Column as DbRouteColumn, Entity as DbRouteEntity},
+    entities::{
+        WebsitePreferences,
+        db_route::{self, Column as DbRouteColumn, Entity as DbRouteEntity},
+    },
+    preferences::{self, CUSTOM_THEME_ID},
     render,
     state::WebsiteState,
 };
@@ -15,9 +19,13 @@ use sea_orm::{
 use tokio::io::AsyncReadExt;
 
 const HOMEPAGE_HTML: &str = include_str!("../assets/homepage.html");
+const THEME_CSS: &[u8] = include_bytes!("../assets/theme/kds.css");
+const THEME_JS: &[u8] = include_bytes!("../assets/theme/kds.js");
 const ROUTE_PATH: &str = "/";
 const PAGE_NAME: &str = "index.html";
-const THEME: &str = "p_website.kds";
+const THEME_CSS_NAME: &str = "kds.css";
+const THEME_JS_NAME: &str = "kds.js";
+const THEME: &str = CUSTOM_THEME_ID;
 
 struct StaticAsset {
     name: &'static str,
@@ -45,6 +53,14 @@ const STATIC_ASSETS: &[StaticAsset] = &[
         name: "finishing.jpg",
         bytes: include_bytes!("../assets/static/finishing.jpg"),
     },
+    StaticAsset {
+        name: "laser_cutting_machine.png",
+        bytes: include_bytes!("../assets/static/laser_cutting_machine.png"),
+    },
+    StaticAsset {
+        name: "bending_machine.png",
+        bytes: include_bytes!("../assets/static/bending_machine.png"),
+    },
 ];
 
 pub async fn ensure_homepage(state: &WebsiteState) -> anyhow::Result<()> {
@@ -55,11 +71,59 @@ async fn ensure_homepage_state(
     db: &DatabaseConnection,
     store: &DynFilestore,
 ) -> anyhow::Result<()> {
+    ensure_custom_theme(db, store).await?;
     let media_urls = ensure_static_assets(db, store).await?;
     let html = homepage_html_with_media_urls(&media_urls);
     let (page, page_rewritten) = ensure_page_vnode(db, store, html.as_bytes()).await?;
     ensure_db_route(db, ROUTE_PATH, page.id, THEME, page_rewritten).await?;
     tracing::info!(page_id = page.id, "kds website: homepage route ready");
+    Ok(())
+}
+
+/// Seeds theme CSS/JS under `website/themes/` and points Custom theme preferences at them.
+async fn ensure_custom_theme(
+    db: &DatabaseConnection,
+    store: &DynFilestore,
+) -> anyhow::Result<()> {
+    let segments = ["website".into(), "themes".into()];
+    let parent_id = node::ensure_directory_path(db, store, None, &segments)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let parent = match parent_id {
+        Some(id) => match node::get_by_id(db, id).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error = %e, "get node by id for website themes parent");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let css = ensure_file_vnode(db, store, parent_id, parent.as_ref(), THEME_CSS_NAME, THEME_CSS)
+        .await?
+        .0;
+    let js = ensure_file_vnode(db, store, parent_id, parent.as_ref(), THEME_JS_NAME, THEME_JS)
+        .await?
+        .0;
+
+    preferences::save_preferences(
+        db,
+        WebsitePreferences {
+            id: 1,
+            created_at: None,
+            updated_at: None,
+            custom_theme_css_vnode_id: Some(css.id),
+            custom_theme_js_vnode_id: Some(js.id),
+        },
+    )
+    .await?;
+
+    tracing::info!(
+        css_vnode_id = css.id,
+        js_vnode_id = js.id,
+        "kds website: custom theme preferences ready"
+    );
     Ok(())
 }
 

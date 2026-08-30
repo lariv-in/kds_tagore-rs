@@ -1,485 +1,890 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KDS and Tagore Pvt. Ltd. — Manufacturing Services</title>
-</head>
+<style>
+	* {
+		box-sizing: border-box;
+	}
+
+	body {
+		margin: 0;
+	}
+
+	/* Machine photos — optional; omit .machine-media when no image yet */
+	#machines .machine-list {
+		isolation: isolate;
+	}
+
+	#machines .machine-card--photo {
+		position: relative;
+		z-index: 0;
+		transition: z-index 0s linear 0.35s;
+	}
+
+	#machines .machine-card--photo .machine-header {
+		display: grid;
+		grid-template-columns: minmax(9.5rem, 13.5rem) minmax(0, 1fr) auto;
+		grid-template-areas: "media copy toggle";
+		gap: 1rem 1.25rem;
+		align-items: center;
+		transition: gap 0.3s ease;
+	}
+
+	#machines .machine-media {
+		grid-area: media;
+		margin: 0;
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 7.5rem;
+		padding: 0.65rem 0.75rem;
+		border-radius: 0.35rem;
+		background:
+			linear-gradient(160deg, color-mix(in srgb, currentColor 6%, transparent), transparent 55%),
+			color-mix(in srgb, currentColor 4%, transparent);
+		border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+		overflow: hidden;
+		outline: none;
+		transition:
+			min-height 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+			padding 0.35s ease,
+			background 0.3s ease,
+			border-color 0.3s ease;
+	}
+
+	#machines .machine-photo {
+		display: block;
+		width: 100%;
+		height: auto;
+		max-height: 9.5rem;
+		object-fit: contain;
+		object-position: center;
+		transition: max-height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	#machines .machine-card--photo .machine-copy {
+		grid-area: copy;
+		min-width: 0;
+	}
+
+	#machines .machine-card--photo .expand-toggle {
+		grid-area: toggle;
+	}
+
+	/* Card hover: photo goes full-width above the title */
+	@media (hover: hover) and (pointer: fine) {
+		#machines .machine-card--photo:hover,
+		#machines .machine-card--photo:focus-within {
+			z-index: 5;
+			transition-delay: 0s;
+		}
+
+		#machines .machine-card--photo:hover .machine-header,
+		#machines .machine-card--photo:focus-within .machine-header {
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas:
+				"media media"
+				"copy toggle";
+			align-items: start;
+			gap: 1.15rem 1rem;
+		}
+
+		#machines .machine-card--photo:hover .machine-media,
+		#machines .machine-card--photo:focus-within .machine-media {
+			min-height: 14rem;
+			padding: 1rem 1.1rem;
+			background: #fff;
+			border-color: color-mix(in srgb, currentColor 12%, transparent);
+		}
+
+		#machines .machine-card--photo:hover .machine-photo,
+		#machines .machine-card--photo:focus-within .machine-photo {
+			max-height: 18rem;
+		}
+	}
+
+	@media (max-width: 720px) {
+		#machines .machine-card--photo .machine-header {
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas:
+				"media media"
+				"copy toggle";
+			align-items: start;
+		}
+
+		#machines .machine-media {
+			min-height: 8.5rem;
+		}
+
+		#machines .machine-photo {
+			max-height: 11rem;
+		}
+
+		@media (hover: hover) and (pointer: fine) {
+			#machines .machine-card--photo:hover .machine-media,
+			#machines .machine-card--photo:focus-within .machine-media {
+				min-height: 12rem;
+			}
+
+			#machines .machine-card--photo:hover .machine-photo,
+			#machines .machine-card--photo:focus-within .machine-photo {
+				max-height: 14rem;
+			}
+		}
+	}
+</style>
+
 <body>
-<nav class="gjs-navbar site-header" data-gjs-type="p_website.navbar" data-nav-links='[{"title":"CNC","path":"#cnc"},{"title":"Fabrication","path":"#fabrication"},{"title":"Finishing","path":"#finishing"},{"title":"Machines","path":"#machines"},{"title":"Contact","path":"#contact"}]' data-logo-src="/static/logo.svg" data-logo-alt="KDS and Tagore Pvt. Ltd." data-variant="kds">
-  <div class="container nav-container">
-    <a class="gjs-navbar-brand brand" href="/">
-      <img data-gjs-type="p_website.navbar-logo" class="gjs-navbar-logo brand-logo" src="/static/logo.svg" alt="KDS and Tagore Pvt. Ltd.">
-    </a>
-    <button type="button" class="gjs-navbar-menu-btn mobile-nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
-      <span class="hamburger-bar"></span>
-      <span class="hamburger-bar"></span>
-      <span class="hamburger-bar"></span>
-    </button>
-    <ul class="gjs-navbar-links gjs-navbar-desktop nav-menu">
-      <li><a class="nav-link" href="#cnc">CNC</a></li>
-      <li><a class="nav-link" href="#fabrication">Fabrication</a></li>
-      <li><a class="nav-link" href="#finishing">Finishing</a></li>
-      <li><a class="nav-link" href="#machines">Machines</a></li>
-      <li><a class="nav-link" href="#contact">Contact</a></li>
-    </ul>
-  </div>
-</nav>
-
-<section class="gjs-hero hero" data-gjs-type="p_website.hero" data-show-media="true" data-show-button="false">
-  <div class="gjs-hero-media hero-media" aria-hidden="true" data-gjs-type="p_website.hero-media">
-    <img src="/static/hero.jpg" alt="">
-  </div>
-  <div class="gjs-hero-inner hero-inner" data-gjs-type="p_website.hero-inner">
-    <div class="container">
-      <h1 class="gjs-hero-title hero-title">Manufacturing Services</h1>
-      <p class="gjs-hero-lead lead hero-lead">Your Trusted Partner for Advanced Laser Cutting, Bending, and Custom Fabrication Solutions.</p>
-    </div>
-  </div>
-</section>
-
-<section class="gjs-section section" data-gjs-type="p_website.section" data-section-bg="base">
-  <div class="gjs-section-inner container min-h-12">
-    <div class="gjs-section-header section-header" data-gjs-type="p_website.section-header" data-align="center" data-header-style="default">
-      <h2 class="gjs-section-header-title">High-Accuracy Fabrication Workshop</h2>
-      <p class="gjs-section-header-lead lead">A controlled production floor built for repeatable precision — from first cut to final assembly inspection.</p>
-    </div>
-    <div class="gjs-row feature-grid" data-gjs-type="p_website.row-3">
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Tight-Tolerance Capability</h3>
-          <p class="gjs-feature-card-desc">CNC cutting, milling, and press-brake forming held to demanding dimensional targets for fit-critical parts and assemblies.</p>
-        </article>
-      </div>
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Process-Controlled Workflow</h3>
-          <p class="gjs-feature-card-desc">Documented stages for cutting, forming, welding, and finishing keep every job traceable and consistent across production runs.</p>
-        </article>
-      </div>
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Inspection-Ready Output</h3>
-          <p class="gjs-feature-card-desc">In-process checks and final verification ensure components leave the floor ready for assembly, coating, or customer QA.</p>
-        </article>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="cnc" class="gjs-expand-section expand-section" data-gjs-type="p_website.expand-section" data-bg-src="/static/laser.jpg">
-  <div class="expand-section-bg" aria-hidden="true">
-    <img class="gjs-expand-section-bg" src="/static/laser.jpg" alt="">
-  </div>
-  <div class="container">
-    <div class="expand-panel">
-      <div class="expand-header">
-        <div class="expand-header-text">
-          <h2 class="accent gjs-expand-section-title">CNC Precision Machining</h2>
-        </div>
-        <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand CNC Precision Machining">
-          <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-        </button>
-      </div>
-      <div class="expand-body">
-        <ul class="service-list gjs-service-list">
-          <li class="gjs-service-item">
-            <h3>Precision Laser Cutting</h3>
-            <p>High-speed, clean-edge cutting for sheet metal and plate profiles.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>CNC Milling &amp; Turning</h3>
-            <p>Precision machining for complex components, custom parts, and tooling.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>CNC Press Brake Bending</h3>
-            <p>Accurate, multi-angle sheet metal forming and component shaping.</p>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="fabrication" class="gjs-expand-section expand-section" data-gjs-type="p_website.expand-section" data-bg-src="/static/welding.jpg">
-  <div class="expand-section-bg" aria-hidden="true">
-    <img class="gjs-expand-section-bg" src="/static/welding.jpg" alt="">
-  </div>
-  <div class="container">
-    <div class="expand-panel">
-      <div class="expand-header">
-        <div class="expand-header-text">
-          <h2 class="accent gjs-expand-section-title">Fabrication &amp; Assembly</h2>
-        </div>
-        <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand Fabrication and Assembly">
-          <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-        </button>
-      </div>
-      <div class="expand-body">
-        <ul class="service-list gjs-service-list">
-          <li class="gjs-service-item">
-            <h3>Custom Metal Fabrication</h3>
-            <p>Turnkey assembly of brackets, enclosures, frames, and custom fixtures.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>Multi-Process Welding</h3>
-            <p>MIG and TIG welding for steel, stainless steel, and aluminum structures.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>Drilling, Tapping &amp; Countersinking</h3>
-            <p>Precision hole-making and threading for mechanical assemblies.</p>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="finishing" class="gjs-expand-section expand-section" data-gjs-type="p_website.expand-section" data-bg-src="/static/finishing.jpg">
-  <div class="expand-section-bg" aria-hidden="true">
-    <img class="gjs-expand-section-bg" src="/static/finishing.jpg" alt="">
-  </div>
-  <div class="container">
-    <div class="expand-panel">
-      <div class="expand-header">
-        <div class="expand-header-text">
-          <h2 class="accent gjs-expand-section-title">Surface Prep &amp; Finishing</h2>
-        </div>
-        <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand Surface Prep and Finishing">
-          <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-        </button>
-      </div>
-      <div class="expand-body">
-        <ul class="service-list gjs-service-list">
-          <li class="gjs-service-item">
-            <h3>Industrial Sandblasting</h3>
-            <p>High-efficiency media blasting for rust removal, scale stripping, and texturing.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>Industrial Spray Painting</h3>
-            <p>Liquid spray coatings for aesthetic finishes and long-term corrosion protection.</p>
-          </li>
-          <li class="gjs-service-item">
-            <h3>Edge Conditioning &amp; Deburring</h3>
-            <p>Removing sharp edges from processed parts for a retail-ready finish.</p>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="machines" class="gjs-section section" data-gjs-type="p_website.section" data-section-bg="base">
-  <div class="gjs-section-inner container min-h-12">
-    <div class="gjs-section-header section-header" data-gjs-type="p_website.section-header" data-align="center" data-header-style="default">
-      <h2 class="gjs-section-header-title">Available Machines</h2>
-      <p class="gjs-section-header-lead lead">Shop-floor equipment for laser cutting, press-brake forming, CNC milling, and precision welding — with published capacities you can quote against.</p>
-    </div>
-    <div class="machine-list">
-      <article class="machine-card">
-        <div class="expand-header machine-header">
-          <div class="machine-copy">
-            <p class="machine-kicker">Press brake</p>
-            <h3 class="gjs-feature-card-title">NC Hydraulic Press Brake</h3>
-            <p class="machine-intro">300 Ton × 6000 mm hydraulic bending with a programmable motorized back gauge and NC SCHNIDER control.</p>
-            <ul class="machine-highlights">
-              <li>MT-PBR-3060</li>
-              <li>300 Tons</li>
-              <li>6 m table</li>
-            </ul>
-          </div>
-          <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand NC Hydraulic Press Brake specifications">
-            <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-          </button>
-        </div>
-        <div class="expand-body machine-body">
-          <table class="spec-table">
-            <caption>NC Hydraulic Press Brake specifications</caption>
-            <tbody>
-              <tr><th scope="row">Model and Type</th><td>MT-PBR-3060, Hydraulic</td></tr>
-              <tr><th scope="row">Capacity</th><td>300 Tons</td></tr>
-              <tr><th scope="row">Bending Capacity</th><td>6 mm (MS) × 6000 mm</td></tr>
-              <tr><th scope="row">Table Length (A)</th><td>6000 mm</td></tr>
-              <tr><th scope="row">Table Width (B)</th><td>250 mm</td></tr>
-              <tr><th scope="row">Clear Pass (C)</th><td>5000 mm</td></tr>
-              <tr><th scope="row">Depth of Throat (D)</th><td>300 mm</td></tr>
-              <tr><th scope="row">Open Height (E)</th><td>425 mm</td></tr>
-              <tr><th scope="row">Ram Stroke</th><td>300 mm</td></tr>
-              <tr><th scope="row">Speed</th><td>36-5-36 mm/sec</td></tr>
-              <tr><th scope="row">Motor Rating</th><td>30 HP</td></tr>
-              <tr><th scope="row">Motor Make</th><td>ABB / CG / BBL</td></tr>
-              <tr><th scope="row">Overall Dimension</th><td>6200 × 2100 × 2700 mm</td></tr>
-              <tr><th scope="row">Back Gauge</th><td>Automatic motorized (programmable) on ball screw</td></tr>
-              <tr><th scope="row">Controller</th><td>NC SCHNIDER</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-      <article class="machine-card">
-        <div class="expand-header machine-header">
-          <div class="machine-copy">
-            <p class="machine-kicker">Fiber laser</p>
-            <h3 class="gjs-feature-card-title">Fiber Laser Metal Cutting Machine</h3>
-            <p class="machine-intro">SIL F 6525 E-CAT large-format fiber laser cell with closed-loop digital control and an autofocus cutting head.</p>
-            <ul class="machine-highlights">
-              <li>SIL F 6525 – E-CAT</li>
-              <li>6500 × 2500 mm</li>
-              <li>120 m/min rapid</li>
-            </ul>
-          </div>
-          <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand Fiber Laser Metal Cutting Machine specifications">
-            <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-          </button>
-        </div>
-        <div class="expand-body machine-body">
-          <table class="spec-table">
-            <caption>Fiber laser cutting machine specifications</caption>
-            <tbody>
-              <tr><th scope="row">Model</th><td>SIL F 6525 – E-CAT</td></tr>
-              <tr><th scope="row">Laser Source</th><td>SIL OEM laser source</td></tr>
-              <tr><th scope="row">X Axis Stroke</th><td>2550 mm</td></tr>
-              <tr><th scope="row">Y Axis Stroke</th><td>6550 mm</td></tr>
-              <tr><th scope="row">Z Axis Stroke</th><td>120 mm</td></tr>
-              <tr><th scope="row">Working Area</th><td>6500 mm × 2500 mm</td></tr>
-              <tr><th scope="row">X, Y Positioning Accuracy</th><td>±0.03 mm/m</td></tr>
-              <tr><th scope="row">Base</th><td>Aluminium extrusion (for high acceleration &amp; rapid)</td></tr>
-              <tr><th scope="row">Maximum Acceleration</th><td>1.5G</td></tr>
-              <tr><th scope="row">Rapid Speed</th><td>120 m/min (max.)</td></tr>
-              <tr><th scope="row">Controller</th><td>ECAT (closed loop with digital communication)</td></tr>
-              <tr><th scope="row">Servo Motors &amp; Drives</th><td>Panasonic (Japan) 3 kW</td></tr>
-              <tr><th scope="row">LM Guide</th><td>SIL OEM</td></tr>
-              <tr><th scope="row">Cutting Head</th><td>SIL Pro OEM autofocus motorised cutting head (8 kW)</td></tr>
-              <tr><th scope="row">Water Chiller</th><td>Dual channel</td></tr>
-              <tr><th scope="row">Fume Extraction</th><td>Including blower for fume suction</td></tr>
-              <tr><th scope="row">EPR</th><td>SIL OEM</td></tr>
-              <tr><th scope="row">Panel AC</th><td>1.5 Ton, with dedicated space for laser source (up to 3 kW)</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-      <article class="machine-card">
-        <div class="expand-header machine-header">
-          <div class="machine-copy">
-            <p class="machine-kicker">Vertical machining</p>
-            <h3 class="gjs-feature-card-title">VMC 850</h3>
-            <p class="machine-intro">BT40 vertical machining center for milling, drilling, and tapping, with a 20-tool ATC and 0–8000 rpm spindle.</p>
-            <ul class="machine-highlights">
-              <li>1000 × 530 mm table</li>
-              <li>BT40 · 20 tools</li>
-              <li>0–8000 rpm</li>
-            </ul>
-          </div>
-          <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand VMC 850 specifications">
-            <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-          </button>
-        </div>
-        <div class="expand-body machine-body">
-          <table class="spec-table">
-            <caption>VMC 850 specifications</caption>
-            <tbody>
-              <tr><th scope="row">Table Size</th><td>1000 × 530 mm</td></tr>
-              <tr><th scope="row">T-Slot Dimension</th><td>4 × 18 × 100 mm</td></tr>
-              <tr><th scope="row">Distance Floor to Table</th><td>965 mm</td></tr>
-              <tr><th scope="row">Max Load</th><td>500 kg</td></tr>
-              <tr><th scope="row">X Travel</th><td>820 mm</td></tr>
-              <tr><th scope="row">Y Travel</th><td>510 mm</td></tr>
-              <tr><th scope="row">Z Travel</th><td>510 mm</td></tr>
-              <tr><th scope="row">Face to Table Top</th><td>150–660 mm</td></tr>
-              <tr><th scope="row">Rapid Traverse</th><td>24 m/min</td></tr>
-              <tr><th scope="row">Cutting Feed</th><td>10 m/min</td></tr>
-              <tr><th scope="row">Spindle Speed</th><td>0–8000 rpm</td></tr>
-              <tr><th scope="row">Spindle Power</th><td>15.8 / 10.5 kW (S6-40% / S1)</td></tr>
-              <tr><th scope="row">Front Bearing Bore</th><td>70 mm</td></tr>
-              <tr><th scope="row">Spindle Nose</th><td>BT40</td></tr>
-              <tr><th scope="row">Number of Tools</th><td>20 ATS</td></tr>
-              <tr><th scope="row">Max Tool Dia (All / Adj. Empty)</th><td>80 / 125 mm</td></tr>
-              <tr><th scope="row">Max Tool Weight</th><td>7 kg</td></tr>
-              <tr><th scope="row">Max Tool Length</th><td>250 mm</td></tr>
-              <tr><th scope="row">Positioning Uncertainty</th><td>0.010 mm</td></tr>
-              <tr><th scope="row">Repeatability</th><td>0.005 mm</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-      <article class="machine-card">
-        <div class="expand-header machine-header">
-          <div class="machine-copy">
-            <p class="machine-kicker">TIG welding</p>
-            <h3 class="gjs-feature-card-title">EWM Picotig 200 AC/DC Puls</h3>
-            <p class="machine-intro">Compact AC/DC pulsed TIG inverter for aluminium and steel, with HF ignition, waveform control, and MMA capability up to 150 A.</p>
-            <ul class="machine-highlights">
-              <li>3–200 A TIG</li>
-              <li>AC / DC pulse</li>
-              <li>1 × 230 V</li>
-            </ul>
-          </div>
-          <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand EWM Picotig 200 AC/DC Puls specifications">
-            <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-          </button>
-        </div>
-        <div class="expand-body machine-body">
-          <table class="spec-table">
-            <caption>EWM Picotig 200 AC/DC Puls specifications</caption>
-            <tbody>
-              <tr><th scope="row">TIG Current Range</th><td>3–200 A (stepless inverter)</td></tr>
-              <tr><th scope="row">MMA Current Range</th><td>5–150 A</td></tr>
-              <tr><th scope="row">Open Circuit Voltage (U₀)</th><td>43 V</td></tr>
-              <tr><th scope="row">Duty Cycle @ 40 °C (IEC 60974-1)</th><td>200 A @ 35% · 150 A @ 60% · 140 A @ 100%</td></tr>
-              <tr><th scope="row">AC Frequency</th><td>50–200 Hz (adjustable arc cone)</td></tr>
-              <tr><th scope="row">AC Balance</th><td>10–90% (cleaning vs. penetration)</td></tr>
-              <tr><th scope="row">AC Waveforms</th><td>Sine, trapezoidal (soft square), rectangular (squarewave)</td></tr>
-              <tr><th scope="row">TIG Pulse Frequency</th><td>0.2 Hz – 2 kHz</td></tr>
-              <tr><th scope="row">Pulse Duty / Balance</th><td>1–99%</td></tr>
-              <tr><th scope="row">Base Current</th><td>1–100% of peak current</td></tr>
-              <tr><th scope="row">Ignition Modes</th><td>Electronic solid-state HF and TIG Lift-Arc</td></tr>
-              <tr><th scope="row">Trigger Logic</th><td>2T, 4T, spot welding, interval</td></tr>
-              <tr><th scope="row">Gas Pre-flow / Post-flow</th><td>0.1–5.0 s / 0.5–30.0 s</td></tr>
-              <tr><th scope="row">Up-slope / Down-slope</th><td>0–20 s / 0–20 s (crater-fill)</td></tr>
-              <tr><th scope="row">Mains Voltage</th><td>1 × 230 V (−40% to +15%)</td></tr>
-              <tr><th scope="row">Mains Frequency</th><td>50 / 60 Hz</td></tr>
-              <tr><th scope="row">Recommended Fuse</th><td>16 A slow-blow</td></tr>
-              <tr><th scope="row">Recommended Generator</th><td>8.1 kVA</td></tr>
-              <tr><th scope="row">Dimensions (L × W × H)</th><td>539 × 210 × 415 mm</td></tr>
-              <tr><th scope="row">Weight</th><td>16.5 kg (power source only)</td></tr>
-              <tr><th scope="row">Ingress Protection</th><td>IP23</td></tr>
-              <tr><th scope="row">Cooling</th><td>Gas-cooled standard; modular water-cooled via Cool 40 U31</td></tr>
-              <tr><th scope="row">Overvoltage Safety</th><td>Auto-protected against accidental 400 V 3-phase connection</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-      <article class="machine-card">
-        <div class="expand-header machine-header">
-          <div class="machine-copy">
-            <p class="machine-kicker">MIG welding</p>
-            <h3 class="gjs-feature-card-title">ESAB Industrial MIG</h3>
-            <p class="machine-intro">Heavy-duty constant-voltage MIG/MAG and MMA power source with external 4-roll wire feed for production welding up to 500 A.</p>
-            <ul class="machine-highlights">
-              <li>50–500 A</li>
-              <li>3-phase 400 V</li>
-              <li>4-roll feeder</li>
-            </ul>
-          </div>
-          <button type="button" class="expand-toggle" aria-expanded="false" aria-label="Expand ESAB Industrial MIG specifications">
-            <svg class="expand-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-          </button>
-        </div>
-        <div class="expand-body machine-body">
-          <table class="spec-table">
-            <caption>ESAB Industrial MIG specifications</caption>
-            <tbody>
-              <tr><th scope="row">Current Range</th><td>50–500 A (MIG/MAG &amp; MMA)</td></tr>
-              <tr><th scope="row">Voltage Range</th><td>15.5–39 V</td></tr>
-              <tr><th scope="row">Open Circuit Voltage (U₀)</th><td>~70 V</td></tr>
-              <tr><th scope="row">Duty Cycle @ 40 °C</th><td>500 A @ 60% · 387–390 A @ 100%</td></tr>
-              <tr><th scope="row">Process Types</th><td>CV short-circuit, globular, spray arc</td></tr>
-              <tr><th scope="row">Pulsed MIG</th><td>No (standard constant voltage only)</td></tr>
-              <tr><th scope="row">Inductance Control</th><td>Stepless electronic inductance</td></tr>
-              <tr><th scope="row">Wire Feeder</th><td>External 4-roll geared feeder</td></tr>
-              <tr><th scope="row">Solid Wire (MS / SS)</th><td>0.8–1.6 mm</td></tr>
-              <tr><th scope="row">Flux-Cored Wire</th><td>1.0–1.6 mm</td></tr>
-              <tr><th scope="row">Wire Feed Speed</th><td>1.5–20.0 m/min</td></tr>
-              <tr><th scope="row">Mains Input</th><td>3-phase 400 / 415 V (±15%), 50 / 60 Hz</td></tr>
-              <tr><th scope="row">Power Factor / Efficiency</th><td>0.93 / 85–87%</td></tr>
-              <tr><th scope="row">Ingress Protection</th><td>IP21 / IP23S</td></tr>
-              <tr><th scope="row">Weight</th><td>~56–62 kg (chassis + power electronics)</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<section id="mission" class="gjs-section section" data-gjs-type="p_website.section" data-section-bg="base">
-  <div class="gjs-section-inner container min-h-12">
-    <div class="gjs-section-header section-header section-header--tight" data-gjs-type="p_website.section-header" data-align="center" data-header-style="tight">
-      <h2 class="gjs-section-header-title">Mission &amp; Values</h2>
-      <p class="gjs-section-header-lead lead hidden"></p>
-    </div>
-    <p class="lead gjs-section-intro section-intro">To be the precision fabrication partner our customers trust — delivering accurate, consistent, and production-ready components that keep critical programs on schedule.</p>
-    <div class="gjs-row feature-grid" data-gjs-type="p_website.row-3">
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Precision First</h3>
-          <p class="gjs-feature-card-desc">Every cut, bend, and weld is held to clear dimensional targets so parts fit right the first time.</p>
-        </article>
-      </div>
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Reliable Delivery</h3>
-          <p class="gjs-feature-card-desc">Process control and transparent communication keep lead times predictable from quote to dispatch.</p>
-        </article>
-      </div>
-      <div class="gjs-cell">
-        <article class="gjs-feature-card feature" data-gjs-type="p_website.feature-card">
-          <h3 class="gjs-feature-card-title">Partnership Mindset</h3>
-          <p class="gjs-feature-card-desc">We work alongside engineering and purchasing teams to solve fabrication challenges, not just fill orders.</p>
-        </article>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="contact" class="gjs-cta section" data-gjs-type="p_website.cta" data-show-button="false">
-  <div class="container">
-    <div class="gjs-cta-box cta-box">
-      <h2 class="gjs-cta-title">Ready to discuss your next project?</h2>
-      <p class="gjs-cta-text lead">Send us your CAD drawings or rough sketches for a quick, competitive quote.</p>
-      <dl class="gjs-cta-details cta-details">
-        <div class="gjs-contact-detail cta-row" data-gjs-type="p_website.contact-detail">
-          <dt class="gjs-contact-detail-label">Email</dt>
-          <dd class="gjs-contact-detail-value"><a href="mailto:sales@kdstagore.com">sales@kdstagore.com</a></dd>
-        </div>
-        <div class="gjs-contact-detail cta-row" data-gjs-type="p_website.contact-detail">
-          <dt class="gjs-contact-detail-label">Phones</dt>
-          <dd class="gjs-contact-detail-value"><a href="tel:+918210098176">+91 82100 98176</a></dd>
-        </div>
-        <div class="gjs-contact-detail cta-row" data-gjs-type="p_website.contact-detail">
-          <dt class="gjs-contact-detail-label">Factory Address</dt>
-          <dd class="gjs-contact-detail-value">Alandi Fata, Medankarwadi, Chakan, 410501</dd>
-        </div>
-      </dl>
-    </div>
-  </div>
-</section>
-
-<footer class="site-footer">
-  <div class="container footer-grid">
-    <div>
-      <a href="/" class="brand footer-brand" aria-label="KDS and Tagore Pvt. Ltd.">
-        <img class="brand-logo" src="/static/logo.svg" alt="KDS and Tagore Pvt. Ltd.">
-      </a>
-      <p class="footer-tagline">Advanced laser cutting, bending, and custom fabrication for precision manufacturing.</p>
-    </div>
-    <div>
-      <h4>Contact</h4>
-      <ul class="footer-links">
-        <li>
-          <span class="footer-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"></path><path d="m4 7 8 6 8-6"></path></svg>
-          </span>
-          <a href="mailto:support@kdstagore.com">support@kdstagore.com</a>
-        </li>
-        <li>
-          <span class="footer-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5 9 7l-1.8 1.8a12.5 12.5 0 0 0 8 8L17 15l2.5 2.5-1.2 1.2a3.5 3.5 0 0 1-3.6.8C9.4 17.7 6.3 14.6 4.5 9.3a3.5 3.5 0 0 1 .8-3.6z"></path></svg>
-          </span>
-          <span class="footer-phones"><a href="tel:+918210098176">+91 82100 98176</a></span>
-        </li>
-        <li>
-          <span class="footer-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
-          </span>
-          <span>Futura, Magarpatta Road, Kirtane Baugh Hadapsar, Pune, 411028</span>
-        </li>
-      </ul>
-    </div>
-  </div>
-  <div class="container footer-bottom">
-    <p>&copy; 2026 KDS and Tagore Pvt. Ltd. All rights reserved.</p>
-  </div>
-</footer>
-
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>KDS and Tagore Pvt. Ltd. — Manufacturing Services</title>
+	<nav data-gjs-type="p_website.navbar" data-logo-alt="KDS and Tagore Pvt. Ltd." data-logo-src="/media/5/"
+		data-nav-links='[{"title":"CNC","path":"#cnc"},{"title":"Fabrication","path":"#fabrication"},{"title":"Finishing","path":"#finishing"},{"title":"Machines","path":"#machines"},{"title":"Contact","path":"#contact"}]'
+		data-variant="kds" class="gjs-navbar site-header">
+		<div class="container nav-container"><a href="/" class="gjs-navbar-brand brand"><img
+					alt="KDS and Tagore Pvt. Ltd." data-gjs-type="p_website.navbar-logo"
+					class="gjs-navbar-logo brand-logo" src="/media/5/"></a><button type="button"
+				aria-label="Toggle navigation" aria-expanded="false" class="gjs-navbar-menu-btn mobile-nav-toggle"><span
+					class="hamburger-bar"></span><span class="hamburger-bar"></span><span
+					class="hamburger-bar"></span></button>
+			<ul class="gjs-navbar-links gjs-navbar-desktop nav-menu">
+				<li><a href="#cnc" class="nav-link">CNC</a></li>
+				<li><a href="#fabrication" class="nav-link">Fabrication</a></li>
+				<li><a href="#finishing" class="nav-link">Finishing</a></li>
+				<li><a href="#machines" class="nav-link">Machines</a></li>
+				<li><a href="#contact" class="nav-link">Contact</a></li>
+			</ul>
+		</div>
+	</nav>
+	<section data-gjs-type="p_website.hero" data-show-button="false" data-show-media="true" class="gjs-hero hero">
+		<div aria-hidden="true" data-gjs-type="p_website.hero-media" class="gjs-hero-media hero-media"><img
+				src="/media/6/" alt="" /></div>
+		<div data-gjs-type="p_website.hero-inner" class="gjs-hero-inner hero-inner">
+			<div class="container">
+				<h1 class="gjs-hero-title hero-title">Manufacturing Services</h1>
+				<p class="gjs-hero-lead lead hero-lead">Your Trusted Partner for Advanced Laser Cutting, Bending, and
+					Custom Fabrication Solutions.</p>
+			</div>
+		</div>
+	</section>
+	<section data-gjs-type="p_website.section" data-section-bg="base" class="gjs-section section">
+		<div class="gjs-section-inner container min-h-12">
+			<div data-align="center" data-gjs-type="p_website.section-header" data-header-style="default"
+				class="gjs-section-header section-header text-center">
+				<h2 class="gjs-section-header-title">High-Accuracy Fabrication Workshop</h2>
+				<p class="gjs-section-header-lead lead">A controlled production floor built for repeatable precision —
+					from first cut to final assembly inspection.</p>
+			</div>
+			<div data-gjs-type="p_website.row-3" class="gjs-row feature-grid">
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Tight-Tolerance Capability</h3>
+						<p class="gjs-feature-card-desc">CNC cutting, milling, and press-brake forming held to demanding
+							dimensional targets for fit-critical parts and assemblies.</p>
+					</article>
+				</div>
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Process-Controlled Workflow</h3>
+						<p class="gjs-feature-card-desc">Documented stages for cutting, forming, welding, and finishing
+							keep every job traceable and consistent across production runs.</p>
+					</article>
+				</div>
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Inspection-Ready Output</h3>
+						<p class="gjs-feature-card-desc">In-process checks and final verification ensure components
+							leave the floor ready for assembly, coating, or customer QA.</p>
+					</article>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section data-bg-src="/media/7/" data-gjs-type="p_website.expand-section" id="cnc"
+		class="gjs-expand-section expand-section">
+		<div aria-hidden="true" class="expand-section-bg"><img src="/media/7/" alt="" class="gjs-expand-section-bg" />
+		</div>
+		<div class="container">
+			<div class="expand-panel">
+				<div class="expand-header">
+					<div class="expand-header-text">
+						<h2 class="accent gjs-expand-section-title">CNC Precision Machining</h2>
+					</div><button type="button" aria-expanded="false" aria-label="Expand CNC Precision Machining"
+						class="expand-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+							stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+							<path d="M12 5v14M5 12h14"></path>
+						</svg></button>
+				</div>
+				<div class="expand-body">
+					<ul class="service-list gjs-service-list">
+						<li class="gjs-service-item">
+							<h3>Precision Laser Cutting</h3>
+							<p>High-speed, clean-edge cutting for sheet metal and plate profiles.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>CNC Milling &amp; Turning</h3>
+							<p>Precision machining for complex components, custom parts, and tooling.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>CNC Press Brake Bending</h3>
+							<p>Accurate, multi-angle sheet metal forming and component shaping.</p>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section data-bg-src="/media/8/" data-gjs-type="p_website.expand-section" id="fabrication"
+		class="gjs-expand-section expand-section">
+		<div aria-hidden="true" class="expand-section-bg"><img src="/media/8/" alt="" class="gjs-expand-section-bg" />
+		</div>
+		<div class="container">
+			<div class="expand-panel">
+				<div class="expand-header">
+					<div class="expand-header-text">
+						<h2 class="accent gjs-expand-section-title">Fabrication &amp; Assembly</h2>
+					</div><button type="button" aria-expanded="false" aria-label="Expand Fabrication and Assembly"
+						class="expand-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+							stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+							<path d="M12 5v14M5 12h14"></path>
+						</svg></button>
+				</div>
+				<div class="expand-body">
+					<ul class="service-list gjs-service-list">
+						<li class="gjs-service-item">
+							<h3>Custom Metal Fabrication</h3>
+							<p>Turnkey assembly of brackets, enclosures, frames, and custom fixtures.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>Multi-Process Welding</h3>
+							<p>MIG and TIG welding for steel, stainless steel, and aluminum structures.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>Drilling, Tapping &amp; Countersinking</h3>
+							<p>Precision hole-making and threading for mechanical assemblies.</p>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section data-bg-src="/media/9/" data-gjs-type="p_website.expand-section" id="finishing"
+		class="gjs-expand-section expand-section">
+		<div aria-hidden="true" class="expand-section-bg"><img src="/media/9/" alt="" class="gjs-expand-section-bg" />
+		</div>
+		<div class="container">
+			<div class="expand-panel">
+				<div class="expand-header">
+					<div class="expand-header-text">
+						<h2 class="accent gjs-expand-section-title">Surface Prep &amp; Finishing</h2>
+					</div><button type="button" aria-expanded="false" aria-label="Expand Surface Prep and Finishing"
+						class="expand-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+							stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+							<path d="M12 5v14M5 12h14"></path>
+						</svg></button>
+				</div>
+				<div class="expand-body">
+					<ul class="service-list gjs-service-list">
+						<li class="gjs-service-item">
+							<h3>Industrial Sandblasting</h3>
+							<p>High-efficiency media blasting for rust removal, scale stripping, and texturing.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>Industrial Spray Painting</h3>
+							<p>Liquid spray coatings for aesthetic finishes and long-term corrosion protection.</p>
+						</li>
+						<li class="gjs-service-item">
+							<h3>Edge Conditioning &amp; Deburring</h3>
+							<p>Removing sharp edges from processed parts for a retail-ready finish.</p>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section data-gjs-type="p_website.section" data-section-bg="base" id="machines" class="gjs-section section">
+		<div class="gjs-section-inner container min-h-12">
+			<div data-align="center" data-gjs-type="p_website.section-header" data-header-style="default"
+				class="gjs-section-header section-header text-center">
+				<h2 class="gjs-section-header-title">Available Machines</h2>
+				<p class="gjs-section-header-lead lead">Shop-floor equipment for laser cutting, press-brake forming, CNC
+					milling, and precision welding — with published capacities you can quote against.</p>
+			</div>
+			<div class="machine-list">
+				<article class="machine-card machine-card--photo">
+					<div class="expand-header machine-header">
+						<figure class="machine-media" tabindex="0" aria-label="Preview SIL fiber laser metal cutting machine"><img class="machine-photo" src="/static/laser_cutting_machine.png"
+								alt="SIL fiber laser metal cutting machine" width="3084" height="1376" loading="lazy"
+								decoding="async" /></figure>
+						<div class="machine-copy">
+							<p class="machine-kicker">Laser Cutting</p>
+							<h3 class="gjs-feature-card-title">Fiber Laser Metal Cutting Machine</h3>
+							<p class="machine-intro">SIL F 6525 E-CAT large-format fiber laser cell with closed-loop
+								digital control and an autofocus cutting head.</p>
+							<ul class="machine-highlights">
+								<li>SIL F 6525 – E-CAT</li>
+								<li>6500 × 2500 mm</li>
+								<li>120 m/min rapid</li>
+							</ul>
+						</div><button type="button" aria-expanded="false"
+							aria-label="Expand Fiber Laser Metal Cutting Machine specifications"
+							class="expand-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+								stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+								<path d="M12 5v14M5 12h14"></path>
+							</svg></button>
+					</div>
+					<div class="expand-body machine-body">
+						<table class="spec-table">
+							<caption>Fiber laser cutting machine specifications</caption>
+							<tbody>
+								<tr>
+									<th scope="row">Model</th>
+									<td>SIL F 6525 – E-CAT</td>
+								</tr>
+								<tr>
+									<th scope="row">Laser Source</th>
+									<td>SIL OEM laser source</td>
+								</tr>
+								<tr>
+									<th scope="row">X Axis Stroke</th>
+									<td>2550 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Y Axis Stroke</th>
+									<td>6550 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Z Axis Stroke</th>
+									<td>120 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Working Area</th>
+									<td>6500 mm × 2500 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">X, Y Positioning Accuracy</th>
+									<td>±0.03 mm/m</td>
+								</tr>
+								<tr>
+									<th scope="row">Base</th>
+									<td>Aluminium extrusion (for high acceleration &amp; rapid)</td>
+								</tr>
+								<tr>
+									<th scope="row">Maximum Acceleration</th>
+									<td>1.5G</td>
+								</tr>
+								<tr>
+									<th scope="row">Rapid Speed</th>
+									<td>120 m/min (max.)</td>
+								</tr>
+								<tr>
+									<th scope="row">Controller</th>
+									<td>ECAT (closed loop with digital communication)</td>
+								</tr>
+								<tr>
+									<th scope="row">Servo Motors &amp; Drives</th>
+									<td>Panasonic (Japan) 3 kW</td>
+								</tr>
+								<tr>
+									<th scope="row">LM Guide</th>
+									<td>SIL OEM</td>
+								</tr>
+								<tr>
+									<th scope="row">Cutting Head</th>
+									<td>SIL Pro OEM autofocus motorised cutting head (8 kW)</td>
+								</tr>
+								<tr>
+									<th scope="row">Water Chiller</th>
+									<td>Dual channel</td>
+								</tr>
+								<tr>
+									<th scope="row">Fume Extraction</th>
+									<td>Including blower for fume suction</td>
+								</tr>
+								<tr>
+									<th scope="row">EPR</th>
+									<td>SIL OEM</td>
+								</tr>
+								<tr>
+									<th scope="row">Panel AC</th>
+									<td>1.5 Ton, with dedicated space for laser source (up to 3 kW)</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+				<article class="machine-card machine-card--photo">
+					<div class="expand-header machine-header">
+						<figure class="machine-media" tabindex="0" aria-label="Preview NC hydraulic press brake bending machine"><img class="machine-photo" src="/static/bending_machine.png"
+								alt="NC hydraulic press brake bending machine" width="2226" height="1888" loading="lazy"
+								decoding="async" /></figure>
+						<div class="machine-copy">
+							<p class="machine-kicker">Bending</p>
+							<h3 class="gjs-feature-card-title">NC Hydraulic Press Brake</h3>
+							<p class="machine-intro">300 Ton × 6000 mm hydraulic bending with a programmable motorized
+								back gauge and NC SCHNIDER control.</p>
+							<ul class="machine-highlights">
+								<li>MT-PBR-3060</li>
+								<li>300 Tons</li>
+								<li>6 m table</li>
+							</ul>
+						</div><button type="button" aria-expanded="false"
+							aria-label="Expand NC Hydraulic Press Brake specifications" class="expand-toggle"><svg
+								viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+								stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+								<path d="M12 5v14M5 12h14"></path>
+							</svg></button>
+					</div>
+					<div class="expand-body machine-body">
+						<table class="spec-table">
+							<caption>NC Hydraulic Press Brake specifications</caption>
+							<tbody>
+								<tr>
+									<th scope="row">Model and Type</th>
+									<td>MT-PBR-3060, Hydraulic</td>
+								</tr>
+								<tr>
+									<th scope="row">Capacity</th>
+									<td>300 Tons</td>
+								</tr>
+								<tr>
+									<th scope="row">Bending Capacity</th>
+									<td>6 mm (MS) × 6000 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Table Length (A)</th>
+									<td>6000 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Table Width (B)</th>
+									<td>250 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Clear Pass (C)</th>
+									<td>5000 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Depth of Throat (D)</th>
+									<td>300 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Open Height (E)</th>
+									<td>425 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Ram Stroke</th>
+									<td>300 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Speed</th>
+									<td>36-5-36 mm/sec</td>
+								</tr>
+								<tr>
+									<th scope="row">Motor Rating</th>
+									<td>30 HP</td>
+								</tr>
+								<tr>
+									<th scope="row">Motor Make</th>
+									<td>ABB / CG / BBL</td>
+								</tr>
+								<tr>
+									<th scope="row">Overall Dimension</th>
+									<td>6200 × 2100 × 2700 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Back Gauge</th>
+									<td>Automatic motorized (programmable) on ball screw</td>
+								</tr>
+								<tr>
+									<th scope="row">Controller</th>
+									<td>NC SCHNIDER</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+				<article class="machine-card">
+					<div class="expand-header machine-header">
+						<div class="machine-copy">
+							<p class="machine-kicker">Vertical machining</p>
+							<h3 class="gjs-feature-card-title">VMC 850</h3>
+							<p class="machine-intro">BT40 vertical machining center for milling, drilling, and tapping,
+								with a 20-tool ATC and 0–8000 rpm spindle.</p>
+							<ul class="machine-highlights">
+								<li>1000 × 530 mm table</li>
+								<li>BT40 · 20 tools</li>
+								<li>0–8000 rpm</li>
+							</ul>
+						</div><button type="button" aria-expanded="false" aria-label="Expand VMC 850 specifications"
+							class="expand-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+								stroke-width="2.4" stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+								<path d="M12 5v14M5 12h14"></path>
+							</svg></button>
+					</div>
+					<div class="expand-body machine-body">
+						<table class="spec-table">
+							<caption>VMC 850 specifications</caption>
+							<tbody>
+								<tr>
+									<th scope="row">Table Size</th>
+									<td>1000 × 530 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">T-Slot Dimension</th>
+									<td>4 × 18 × 100 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Distance Floor to Table</th>
+									<td>965 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Max Load</th>
+									<td>500 kg</td>
+								</tr>
+								<tr>
+									<th scope="row">X Travel</th>
+									<td>820 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Y Travel</th>
+									<td>510 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Z Travel</th>
+									<td>510 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Face to Table Top</th>
+									<td>150–660 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Rapid Traverse</th>
+									<td>24 m/min</td>
+								</tr>
+								<tr>
+									<th scope="row">Cutting Feed</th>
+									<td>10 m/min</td>
+								</tr>
+								<tr>
+									<th scope="row">Spindle Speed</th>
+									<td>0–8000 rpm</td>
+								</tr>
+								<tr>
+									<th scope="row">Spindle Power</th>
+									<td>15.8 / 10.5 kW (S6-40% / S1)</td>
+								</tr>
+								<tr>
+									<th scope="row">Front Bearing Bore</th>
+									<td>70 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Spindle Nose</th>
+									<td>BT40</td>
+								</tr>
+								<tr>
+									<th scope="row">Number of Tools</th>
+									<td>20 ATS</td>
+								</tr>
+								<tr>
+									<th scope="row">Max Tool Dia (All / Adj. Empty)</th>
+									<td>80 / 125 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Max Tool Weight</th>
+									<td>7 kg</td>
+								</tr>
+								<tr>
+									<th scope="row">Max Tool Length</th>
+									<td>250 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Positioning Uncertainty</th>
+									<td>0.010 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Repeatability</th>
+									<td>0.005 mm</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+				<article class="machine-card">
+					<div class="expand-header machine-header">
+						<div class="machine-copy">
+							<p class="machine-kicker">Welding Station</p>
+							<h3 class="gjs-feature-card-title">TIG &amp; MIG Welding</h3>
+							<p class="machine-intro">Production welding cell with EWM Picotig 200 AC/DC Puls for
+								precision TIG and ESAB Industrial MIG for high-deposition MIG/MAG and MMA work.</p>
+							<ul class="machine-highlights">
+								<li>TIG 3–200 A</li>
+								<li>MIG 50–500 A</li>
+								<li>Steel · SS · Aluminium</li>
+							</ul>
+						</div><button type="button" aria-expanded="false"
+							aria-label="Expand Welding Station specifications" class="expand-toggle"><svg
+								viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+								stroke-linecap="round" aria-hidden="true" class="expand-toggle-icon">
+								<path d="M12 5v14M5 12h14"></path>
+							</svg></button>
+					</div>
+					<div class="expand-body machine-body">
+						<table class="spec-table">
+							<caption>EWM Picotig 200 AC/DC Puls (TIG) specifications</caption>
+							<tbody>
+								<tr>
+									<th scope="row">TIG Current Range</th>
+									<td>3–200 A (stepless inverter)</td>
+								</tr>
+								<tr>
+									<th scope="row">MMA Current Range</th>
+									<td>5–150 A</td>
+								</tr>
+								<tr>
+									<th scope="row">Open Circuit Voltage (U₀)</th>
+									<td>43 V</td>
+								</tr>
+								<tr>
+									<th scope="row">Duty Cycle @ 40 °C (IEC 60974-1)</th>
+									<td>200 A @ 35% · 150 A @ 60% · 140 A @ 100%</td>
+								</tr>
+								<tr>
+									<th scope="row">AC Frequency</th>
+									<td>50–200 Hz (adjustable arc cone)</td>
+								</tr>
+								<tr>
+									<th scope="row">AC Balance</th>
+									<td>10–90% (cleaning vs. penetration)</td>
+								</tr>
+								<tr>
+									<th scope="row">AC Waveforms</th>
+									<td>Sine, trapezoidal (soft square), rectangular (squarewave)</td>
+								</tr>
+								<tr>
+									<th scope="row">TIG Pulse Frequency</th>
+									<td>0.2 Hz – 2 kHz</td>
+								</tr>
+								<tr>
+									<th scope="row">Pulse Duty / Balance</th>
+									<td>1–99%</td>
+								</tr>
+								<tr>
+									<th scope="row">Base Current</th>
+									<td>1–100% of peak current</td>
+								</tr>
+								<tr>
+									<th scope="row">Ignition Modes</th>
+									<td>Electronic solid-state HF and TIG Lift-Arc</td>
+								</tr>
+								<tr>
+									<th scope="row">Trigger Logic</th>
+									<td>2T, 4T, spot welding, interval</td>
+								</tr>
+								<tr>
+									<th scope="row">Gas Pre-flow / Post-flow</th>
+									<td>0.1–5.0 s / 0.5–30.0 s</td>
+								</tr>
+								<tr>
+									<th scope="row">Up-slope / Down-slope</th>
+									<td>0–20 s / 0–20 s (crater-fill)</td>
+								</tr>
+								<tr>
+									<th scope="row">Mains Voltage</th>
+									<td>1 × 230 V (−40% to +15%)</td>
+								</tr>
+								<tr>
+									<th scope="row">Mains Frequency</th>
+									<td>50 / 60 Hz</td>
+								</tr>
+								<tr>
+									<th scope="row">Recommended Fuse</th>
+									<td>16 A slow-blow</td>
+								</tr>
+								<tr>
+									<th scope="row">Recommended Generator</th>
+									<td>8.1 kVA</td>
+								</tr>
+								<tr>
+									<th scope="row">Dimensions (L × W × H)</th>
+									<td>539 × 210 × 415 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Weight</th>
+									<td>16.5 kg (power source only)</td>
+								</tr>
+								<tr>
+									<th scope="row">Ingress Protection</th>
+									<td>IP23</td>
+								</tr>
+								<tr>
+									<th scope="row">Cooling</th>
+									<td>Gas-cooled standard; modular water-cooled via Cool 40 U31</td>
+								</tr>
+								<tr>
+									<th scope="row">Overvoltage Safety</th>
+									<td>Auto-protected against accidental 400 V 3-phase connection</td>
+								</tr>
+							</tbody>
+						</table>
+						<table class="spec-table">
+							<caption>ESAB Industrial MIG specifications</caption>
+							<tbody>
+								<tr>
+									<th scope="row">Current Range</th>
+									<td>50–500 A (MIG/MAG &amp; MMA)</td>
+								</tr>
+								<tr>
+									<th scope="row">Voltage Range</th>
+									<td>15.5–39 V</td>
+								</tr>
+								<tr>
+									<th scope="row">Open Circuit Voltage (U₀)</th>
+									<td>~70 V</td>
+								</tr>
+								<tr>
+									<th scope="row">Duty Cycle @ 40 °C</th>
+									<td>500 A @ 60% · 387–390 A @ 100%</td>
+								</tr>
+								<tr>
+									<th scope="row">Process Types</th>
+									<td>CV short-circuit, globular, spray arc</td>
+								</tr>
+								<tr>
+									<th scope="row">Pulsed MIG</th>
+									<td>No (standard constant voltage only)</td>
+								</tr>
+								<tr>
+									<th scope="row">Inductance Control</th>
+									<td>Stepless electronic inductance</td>
+								</tr>
+								<tr>
+									<th scope="row">Wire Feeder</th>
+									<td>External 4-roll geared feeder</td>
+								</tr>
+								<tr>
+									<th scope="row">Solid Wire (MS / SS)</th>
+									<td>0.8–1.6 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Flux-Cored Wire</th>
+									<td>1.0–1.6 mm</td>
+								</tr>
+								<tr>
+									<th scope="row">Wire Feed Speed</th>
+									<td>1.5–20.0 m/min</td>
+								</tr>
+								<tr>
+									<th scope="row">Mains Input</th>
+									<td>3-phase 400 / 415 V (±15%), 50 / 60 Hz</td>
+								</tr>
+								<tr>
+									<th scope="row">Power Factor / Efficiency</th>
+									<td>0.93 / 85–87%</td>
+								</tr>
+								<tr>
+									<th scope="row">Ingress Protection</th>
+									<td>IP21 / IP23S</td>
+								</tr>
+								<tr>
+									<th scope="row">Weight</th>
+									<td>~56–62 kg (chassis + power electronics)</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+			</div>
+		</div>
+	</section>
+	<section data-gjs-type="p_website.section" data-section-bg="base" id="mission" class="gjs-section section">
+		<div class="gjs-section-inner container min-h-12">
+			<div data-align="center" data-gjs-type="p_website.section-header" data-header-style="tight"
+				class="gjs-section-header section-header text-center section-header--tight">
+				<h2 class="gjs-section-header-title">Mission &amp; Values</h2>
+				<p class="gjs-section-header-lead lead hidden"></p>
+			</div>
+			<p class="lead gjs-section-intro section-intro">To be the precision fabrication partner our customers trust
+				— delivering accurate, consistent, and production-ready components that keep critical programs on
+				schedule.</p>
+			<div data-gjs-type="p_website.row-3" class="gjs-row feature-grid">
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Precision First</h3>
+						<p class="gjs-feature-card-desc">Every cut, bend, and weld is held to clear dimensional targets
+							so parts fit right the first time.</p>
+					</article>
+				</div>
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Reliable Delivery</h3>
+						<p class="gjs-feature-card-desc">Process control and transparent communication keep lead times
+							predictable from quote to dispatch.</p>
+					</article>
+				</div>
+				<div class="gjs-cell">
+					<article data-gjs-type="p_website.feature-card" class="gjs-feature-card feature">
+						<h3 class="gjs-feature-card-title">Partnership Mindset</h3>
+						<p class="gjs-feature-card-desc">We work alongside engineering and purchasing teams to solve
+							fabrication challenges, not just fill orders.</p>
+					</article>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section data-gjs-type="p_website.cta" data-show-button="false" id="contact" class="gjs-cta section">
+		<div class="container">
+			<div class="gjs-cta-box cta-box">
+				<h2 class="gjs-cta-title">Ready to discuss your next project?</h2>
+				<p class="gjs-cta-text lead">Send us your CAD drawings or rough sketches for a quick, competitive quote.
+				</p>
+				<dl class="gjs-cta-details cta-details">
+					<div data-gjs-type="p_website.contact-detail" class="gjs-contact-detail cta-row">
+						<dt class="gjs-contact-detail-label">Email</dt>
+						<dd class="gjs-contact-detail-value"><a
+								href="mailto:sales@kdstagore.com">sales@kdstagore.com</a></dd>
+					</div>
+					<div data-gjs-type="p_website.contact-detail" class="gjs-contact-detail cta-row">
+						<dt class="gjs-contact-detail-label">Phones</dt>
+						<dd class="gjs-contact-detail-value"><a href="tel:+918210098176">+91 82100 98176</a></dd>
+					</div>
+					<div data-gjs-type="p_website.contact-detail" class="gjs-contact-detail cta-row">
+						<dt class="gjs-contact-detail-label">Factory Address</dt>
+						<dd class="gjs-contact-detail-value">Alandi Fata, Medankarwadi, Chakan, 410501</dd>
+					</div>
+				</dl>
+			</div>
+		</div>
+	</section>
+	<footer class="site-footer">
+		<div class="container footer-grid">
+			<div><a href="/" aria-label="KDS and Tagore Pvt. Ltd." class="brand footer-brand"><img src="/media/5/"
+						alt="KDS and Tagore Pvt. Ltd." class="brand-logo" /></a>
+				<p class="footer-tagline">Advanced laser cutting, bending, and custom fabrication for precision
+					manufacturing.</p>
+			</div>
+			<div>
+				<h4>Contact</h4>
+				<ul class="footer-links">
+					<li><span aria-hidden="true" class="footer-icon"><svg viewBox="0 0 24 24" fill="none"
+								stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M4 6h16v12H4z"></path>
+								<path d="m4 7 8 6 8-6"></path>
+							</svg></span><a href="mailto:support@kdstagore.com">support@kdstagore.com</a></li>
+					<li><span aria-hidden="true" class="footer-icon"><svg viewBox="0 0 24 24" fill="none"
+								stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path
+									d="M6.5 4.5 9 7l-1.8 1.8a12.5 12.5 0 0 0 8 8L17 15l2.5 2.5-1.2 1.2a3.5 3.5 0 0 1-3.6.8C9.4 17.7 6.3 14.6 4.5 9.3a3.5 3.5 0 0 1 .8-3.6z">
+								</path>
+							</svg></span><span class="footer-phones"><a href="tel:+918210098176">+91 82100
+								98176</a></span></li>
+					<li><span aria-hidden="true" class="footer-icon"><svg viewBox="0 0 24 24" fill="none"
+								stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11z"></path>
+								<circle cx="12" cy="10" r="2.5"></circle>
+							</svg></span><span>Futura, Magarpatta Road, Kirtane Baugh Hadapsar, Pune, 411028</span></li>
+				</ul>
+			</div>
+		</div>
+		<div class="container footer-bottom">
+			<p>© 2026 KDS and Tagore Pvt. Ltd. All rights reserved.</p>
+		</div>
+	</footer>
 </body>
-</html>
