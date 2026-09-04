@@ -2438,12 +2438,21 @@ name = "kds_tagore-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "axum",
  "chrono",
+ "frunk",
+ "frunk_core",
  "lariv-rs",
+ "maud",
  "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

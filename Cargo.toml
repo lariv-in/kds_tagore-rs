@@ -21,10 +21,31 @@ lariv-rs = { version = "0.1.0",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1", features = ["backtrace"] }
+async-trait = "0.1"
+frunk = { version = "0.5.0", features = ["serde", "std"] }
+frunk_core = "0.5.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
-chrono = "0.4"
-sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+axum = { version = "0.8", features = ["form", "macros"] }
+maud = { version = "0.27", features = ["axum"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sea-orm = { version = "1.1", features = [
+	"runtime-tokio-rustls",
+	"sqlx-postgres",
+	"sqlx-sqlite",
+	"macros",
+	"with-chrono",
+] }
+sea-orm-migration = { version = "1.1", features = [
+	"sqlx-postgres",
+	"sqlx-sqlite",
+	"runtime-tokio-rustls",
+] }
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 lto = "thin"

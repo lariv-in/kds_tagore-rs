@@ -1,9 +1,15 @@
 //! Idempotent seed for the KDS Tagore public homepage, static media, and Custom theme.
+//!
+//! Registered as a [`lariv_rs::hooks::RunSeed`] hook so it runs only for `seed`, not `serve`.
 
 use chrono::Utc;
+use lariv_rs::app::MountedApp;
+use lariv_rs::hooks::RunSeed;
+use lariv_rs::plugin_install::define_plugin_install;
 use lariv_rs::plugins::filesystem::node::{self, NodeFile};
 use lariv_rs::plugins::filesystem::storage::DynFilestore;
 use lariv_rs::plugins::website::{
+    WebsiteTag,
     builder_assets::public_asset_url,
     entities::{
         WebsitePreferences,
@@ -13,10 +19,37 @@ use lariv_rs::plugins::website::{
     render,
     state::WebsiteState,
 };
+use lariv_rs::traits::get::GetByTag;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use tokio::io::AsyncReadExt;
+
+/// Hook identity for the deployment-local website seed (distinct from [`WebsiteTag`] state).
+pub struct KdsWebsiteSeedTag;
+
+define_plugin_install! {
+    plugin: KdsWebsiteSeedTag;
+    /// Queue homepage/media seed for the `seed` CLI command.
+    steps: [seeds(SeedsHook)]
+}
+
+/// Runs [`ensure_homepage`] when seed hooks execute.
+#[derive(Clone, Copy, Default)]
+pub struct SeedsHook;
+
+#[async_trait::async_trait]
+impl<M, WebsiteIdx> RunSeed<M, WebsiteIdx> for SeedsHook
+where
+    M: GetByTag<WebsiteTag, WebsiteIdx, Value = WebsiteState> + Sync,
+{
+    async fn run_seed(app: &MountedApp<M>) -> anyhow::Result<()> {
+        tracing::info!("kds website: seeding homepage and media");
+        ensure_homepage(app.get_capability_output::<WebsiteTag, WebsiteIdx>()).await?;
+        tracing::info!("kds website: seed complete");
+        Ok(())
+    }
+}
 
 const HOMEPAGE_HTML: &str = include_str!("../assets/homepage.html");
 const THEME_CSS: &[u8] = include_bytes!("../assets/theme/kds.css");
@@ -81,10 +114,7 @@ async fn ensure_homepage_state(
 }
 
 /// Seeds theme CSS/JS under `website/themes/` and points Custom theme preferences at them.
-async fn ensure_custom_theme(
-    db: &DatabaseConnection,
-    store: &DynFilestore,
-) -> anyhow::Result<()> {
+async fn ensure_custom_theme(db: &DatabaseConnection, store: &DynFilestore) -> anyhow::Result<()> {
     let segments = ["website".into(), "themes".into()];
     let parent_id = node::ensure_directory_path(db, store, None, &segments)
         .await
@@ -100,12 +130,26 @@ async fn ensure_custom_theme(
         None => None,
     };
 
-    let css = ensure_file_vnode(db, store, parent_id, parent.as_ref(), THEME_CSS_NAME, THEME_CSS)
-        .await?
-        .0;
-    let js = ensure_file_vnode(db, store, parent_id, parent.as_ref(), THEME_JS_NAME, THEME_JS)
-        .await?
-        .0;
+    let css = ensure_file_vnode(
+        db,
+        store,
+        parent_id,
+        parent.as_ref(),
+        THEME_CSS_NAME,
+        THEME_CSS,
+    )
+    .await?
+    .0;
+    let js = ensure_file_vnode(
+        db,
+        store,
+        parent_id,
+        parent.as_ref(),
+        THEME_JS_NAME,
+        THEME_JS,
+    )
+    .await?
+    .0;
 
     preferences::save_preferences(
         db,
