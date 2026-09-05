@@ -474,6 +474,8 @@ impl JobHubPage {
         };
         let show_select = self.can_edit;
         let sel = hub_selection_root_js();
+        let id_sort = column_sort_url(&self.path_and_query, "Id", &self.sort);
+        let id_label = format!("Id{}", sort_indicator(&self.sort, "Id"));
         let name_sort = column_sort_url(&self.path_and_query, "Name", &self.sort);
         let name_label = format!("Name{}", sort_indicator(&self.sort, "Name"));
         let duration_sort = column_sort_url(&self.path_and_query, "Duration", &self.sort);
@@ -495,6 +497,12 @@ impl JobHubPage {
                 push_url: true,
             });
         }
+        headers.push(TableColumnHeader {
+            key: "Id",
+            label: &id_label,
+            sort_url: Some(&id_sort),
+            push_url: true,
+        });
         headers.push(TableColumnHeader {
             key: "Name",
             label: &name_label,
@@ -542,6 +550,7 @@ impl JobHubPage {
                 push_url: true,
             });
         }
+        let id_labels: Vec<String> = self.jobs.items.iter().map(|j| j.id.to_string()).collect();
         let progress_labels: Vec<String> = self
             .jobs
             .items
@@ -569,6 +578,10 @@ impl JobHubPage {
                         id = j.id,
                     )));
                 }
+                cells.push(field_text(FieldText {
+                    value: &id_labels[i],
+                    classes: "",
+                }));
                 cells.push(field_text(FieldText {
                     value: &j.name,
                     classes: "",
@@ -700,6 +713,26 @@ impl RenderTemplate for JobHubPage {
     }
 }
 
+fn field_progress(progress: i16) -> Markup {
+    let pct = progress.clamp(0, 100);
+    let tip = format!("{pct}%");
+    let color = if pct >= 100 {
+        "progress-success"
+    } else {
+        "progress-primary"
+    };
+    html! {
+        div class="tooltip tooltip-top tooltip-center w-full max-w-md" data-tip=(tip) {
+            progress
+                class=(format!("progress {color} w-full h-4"))
+                value=(pct)
+                max="100"
+                aria-label=(tip)
+            {}
+        }
+    }
+}
+
 fn job_fields(
     duration: &str,
     progress: i16,
@@ -718,17 +751,13 @@ fn job_fields(
         .collect();
     let machine_items = related_items(machines, &machine_hrefs);
     let file_items = related_items(files, &file_hrefs);
-    let progress_label = format!("{progress}%");
     let order_label = order.to_string();
     html! {
         (label("Duration", field_duration(FieldDuration {
             value: duration,
             classes: "",
         })))
-        (label("Progress", field_text(FieldText {
-            value: &progress_label,
-            classes: "",
-        })))
+        (label("Progress", field_progress(progress)))
         (label("Order", field_text(FieldText {
             value: &order_label,
             classes: "",
@@ -1097,24 +1126,42 @@ pub struct MachineListPage {
 
 impl MachineListPage {
     pub fn render_table(&self) -> Markup {
+        let id_sort = column_sort_url(&self.path_and_query, "Id", &self.sort);
+        let id_label = format!("Id{}", sort_indicator(&self.sort, "Id"));
         let name_sort = column_sort_url(&self.path_and_query, "Name", &self.sort);
         let name_label = format!("Name{}", sort_indicator(&self.sort, "Name"));
-        let headers = [TableColumnHeader {
-            key: "Name",
-            label: &name_label,
-            sort_url: Some(&name_sort),
-            push_url: true,
-        }];
+        let headers = [
+            TableColumnHeader {
+                key: "Id",
+                label: &id_label,
+                sort_url: Some(&id_sort),
+                push_url: true,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: &name_label,
+                sort_url: Some(&name_sort),
+                push_url: true,
+            },
+        ];
+        let id_labels: Vec<String> = self.machines.items.iter().map(|m| m.id.to_string()).collect();
         let rows: Vec<TableRow> = self
             .machines
             .items
             .iter()
-            .map(|m| TableRow {
+            .enumerate()
+            .map(|(i, m)| TableRow {
                 attrs: row_attr_navigate_route(MachineDetailRouteTag::new(m.id)),
-                cells: vec![field_text(FieldText {
-                    value: &m.name,
-                    classes: "",
-                })],
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.name,
+                        classes: "",
+                    }),
+                ],
             })
             .collect();
         let mut actions = html! {
@@ -1201,36 +1248,55 @@ pub struct MachineDetailPage {
     pub can_edit: bool,
     pub jobs: Vec<MachineJobRow>,
     pub free_on: String,
+    pub sort: String,
+    pub path_and_query: String,
 }
 
 impl MachineDetailPage {
     pub fn render_jobs_table(&self) -> Markup {
+        let id_sort = column_sort_url(&self.path_and_query, "Id", &self.sort);
+        let id_label = format!("Id{}", sort_indicator(&self.sort, "Id"));
+        let name_sort = column_sort_url(&self.path_and_query, "Name", &self.sort);
+        let name_label = format!("Name{}", sort_indicator(&self.sort, "Name"));
+        let duration_sort = column_sort_url(&self.path_and_query, "Duration", &self.sort);
+        let duration_label = format!("Duration{}", sort_indicator(&self.sort, "Duration"));
+        let progress_sort = column_sort_url(&self.path_and_query, "Progress", &self.sort);
+        let progress_label = format!("Progress{}", sort_indicator(&self.sort, "Progress"));
+        let order_sort = column_sort_url(&self.path_and_query, "Order", &self.sort);
+        let order_label = format!("Order{}", sort_indicator(&self.sort, "Order"));
         let headers = [
             TableColumnHeader {
+                key: "Id",
+                label: &id_label,
+                sort_url: Some(&id_sort),
+                push_url: true,
+            },
+            TableColumnHeader {
                 key: "Name",
-                label: "Name",
-                sort_url: None,
+                label: &name_label,
+                sort_url: Some(&name_sort),
                 push_url: true,
             },
             TableColumnHeader {
                 key: "Duration",
-                label: "Duration",
-                sort_url: None,
+                label: &duration_label,
+                sort_url: Some(&duration_sort),
                 push_url: true,
             },
             TableColumnHeader {
                 key: "Progress",
-                label: "Progress",
-                sort_url: None,
+                label: &progress_label,
+                sort_url: Some(&progress_sort),
                 push_url: true,
             },
             TableColumnHeader {
                 key: "Order",
-                label: "Order",
-                sort_url: None,
+                label: &order_label,
+                sort_url: Some(&order_sort),
                 push_url: true,
             },
         ];
+        let id_labels: Vec<String> = self.jobs.iter().map(|j| j.id.to_string()).collect();
         let progress_labels: Vec<String> = self
             .jobs
             .iter()
@@ -1244,6 +1310,10 @@ impl MachineDetailPage {
             .map(|(i, job)| TableRow {
                 attrs: row_attr_navigate(&job.detail_href),
                 cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
                     field_text(FieldText {
                         value: &job.name,
                         classes: "",
@@ -1269,7 +1339,7 @@ impl MachineDetailPage {
             &headers,
             &rows,
             html! {},
-            &MachineDetailRouteTag::new(self.id).url(),
+            &self.path_and_query,
         )
     }
 
@@ -1427,28 +1497,46 @@ pub struct MachineSelectPage {
 
 impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for MachineSelectPage {
     fn render_table(&self) -> Markup {
+        let id_sort = column_sort_url(&self.path_and_query, "Id", &self.sort);
+        let id_label = format!("Id{}", sort_indicator(&self.sort, "Id"));
         let name_sort = column_sort_url(&self.path_and_query, "Name", &self.sort);
         let name_label = format!("Name{}", sort_indicator(&self.sort, "Name"));
-        let headers = [TableColumnHeader {
-            key: "Name",
-            label: &name_label,
-            sort_url: Some(&name_sort),
-            push_url: false,
-        }];
+        let headers = [
+            TableColumnHeader {
+                key: "Id",
+                label: &id_label,
+                sort_url: Some(&id_sort),
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: &name_label,
+                sort_url: Some(&name_sort),
+                push_url: false,
+            },
+        ];
+        let id_labels: Vec<String> = self.machines.items.iter().map(|m| m.id.to_string()).collect();
         let rows: Vec<TableRow> = self
             .machines
             .items
             .iter()
-            .map(|m| TableRow {
+            .enumerate()
+            .map(|(i, m)| TableRow {
                 attrs: if self.multi {
                     row_attr_select_multi(&self.target_input, &m.id.to_string(), &m.name)
                 } else {
                     row_attr_select(&self.target_input, &m.id.to_string(), &m.name)
                 },
-                cells: vec![field_text(FieldText {
-                    value: &m.name,
-                    classes: "",
-                })],
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.name,
+                        classes: "",
+                    }),
+                ],
             })
             .collect();
         let mut actions = html! {

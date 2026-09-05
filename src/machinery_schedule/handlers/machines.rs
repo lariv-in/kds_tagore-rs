@@ -33,7 +33,10 @@ use crate::machinery_schedule::{
         machine_remaining_duration,
     },
     routes::{CompletedJobDetailRouteTag, JobDetailRouteTag, MachineDetailRouteTag},
-    scope::{apply_name_filter, apply_name_sort_or_id_desc, find_machine_scoped, scope_superuser},
+    scope::{
+        apply_name_filter, apply_name_sort_or_id_desc, find_machine_scoped, scope_superuser,
+        sort_jobs_by_column,
+    },
     state::MachineryScheduleState,
     templates::{
         ConfirmDeletePage, MachineCreateModalPage, MachineDetailPage, MachineEditModalPage,
@@ -49,6 +52,19 @@ pub struct MachineListQuery {
     pub sort: Option<String>,
     #[serde(default)]
     pub page: QueryPage,
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct MachineDetailQuery {
+    #[serde(default)]
+    pub sort: Option<String>,
+}
+
+fn machine_detail_sort(sort: Option<&str>) -> String {
+    sort.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Order")
+        .to_string()
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -129,8 +145,10 @@ pub async fn list(
 async fn load_machine_jobs(
     db: &sea_orm::DatabaseConnection,
     machine_id: i64,
+    sort: Option<&str>,
 ) -> Vec<MachineJobRow> {
-    let jobs = jobs_for_machine(db, machine_id).await.unwrap_or_default();
+    let mut jobs = jobs_for_machine(db, machine_id).await.unwrap_or_default();
+    sort_jobs_by_column(&mut jobs, sort);
     let mut rows = Vec::with_capacity(jobs.len());
     for job in jobs {
         let completed_id = completed_job_id_for_job(db, job.id).await;
@@ -155,13 +173,16 @@ pub async fn detail(
     Cap(chrome): Cap<SharedChromeFolder>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
+    uri: Uri,
     Path(id): Path<i64>,
+    Query(q): Query<MachineDetailQuery>,
 ) -> Response {
     let Some(m) = find_machine_scoped(&state.db, id, &ctx).await else {
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     };
-    let jobs = load_machine_jobs(&state.db, m.id).await;
+    let sort = machine_detail_sort(q.sort.as_deref());
+    let jobs = load_machine_jobs(&state.db, m.id, Some(&sort)).await;
     let remaining = machine_remaining_duration(&state.db, m.id)
         .await
         .unwrap_or_else(|_| chrono::Duration::zero());
@@ -174,6 +195,8 @@ pub async fn detail(
         can_edit: ctx.user.is_superuser,
         jobs,
         free_on,
+        sort,
+        path_and_query: path_and_query(&uri),
     };
     if htmx.targets::<MachineJobsTableKey>() {
         return page.render_jobs_table().into_response();

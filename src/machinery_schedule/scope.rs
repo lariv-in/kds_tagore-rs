@@ -101,13 +101,44 @@ where
     E: EntityTrait,
     E::Column: ColumnTrait,
 {
-    match sort.unwrap_or("").trim() {
-        s if s.eq_ignore_ascii_case("Name DESC") => query.order_by_desc(name_col),
-        s if s.eq_ignore_ascii_case("Name ASC") || s.eq_ignore_ascii_case("Name") => {
-            query.order_by_asc(name_col)
-        }
-        _ => query.order_by_desc(id_col),
+    if let Some(desc) = hub_sort_desc(sort, "Name") {
+        order_col(query, name_col, desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Id") {
+        order_col(query, id_col, desc)
+    } else {
+        query.order_by_desc(id_col)
     }
+}
+
+pub fn sort_jobs_by_column(jobs: &mut [job::Model], sort: Option<&str>) {
+    let (key, desc) = if let Some(desc) = hub_sort_desc(sort, "Name") {
+        ("Name", desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Duration") {
+        ("Duration", desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Progress") {
+        ("Progress", desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Order") {
+        ("Order", desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Id") {
+        ("Id", desc)
+    } else {
+        jobs.sort_by_key(|j| (j.order, j.id));
+        return;
+    };
+    jobs.sort_by(|a, b| {
+        let primary = match key {
+            "Name" => a.name.cmp(&b.name),
+            "Duration" => a
+                .duration
+                .num_nanoseconds()
+                .cmp(&b.duration.num_nanoseconds()),
+            "Progress" => a.progress.cmp(&b.progress),
+            "Id" => a.id.cmp(&b.id),
+            _ => a.order.cmp(&b.order),
+        };
+        let primary = if desc { primary.reverse() } else { primary };
+        primary.then_with(|| a.id.cmp(&b.id))
+    });
 }
 
 fn hub_sort_desc(sort: Option<&str>, key: &str) -> Option<bool> {
@@ -161,6 +192,8 @@ pub fn apply_open_job_hub_sort(
         order_col(query, job::Column::Order, desc)
     } else if let Some(desc) = hub_sort_desc(sort, "Machines") {
         order_expr(query, expr_job_machine_count("machinery_jobs.id"), desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Id") {
+        return order_col(query, job::Column::Id, desc);
     } else {
         return query.order_by_desc(job::Column::Id);
     };
@@ -187,6 +220,8 @@ pub fn apply_completed_job_hub_sort(
         )
     } else if let Some(desc) = hub_sort_desc(sort, "Completed") {
         order_col(query, completed_job::Column::CompletedAt, desc)
+    } else if let Some(desc) = hub_sort_desc(sort, "Id") {
+        return order_col(query, completed_job::Column::Id, desc);
     } else {
         return query.order_by_desc(completed_job::Column::Id);
     };
