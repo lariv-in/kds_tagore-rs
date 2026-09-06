@@ -813,7 +813,7 @@ color: var(--text-dim);
   height: var(--nav-h);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1rem;
 }
 
@@ -823,10 +823,13 @@ color: var(--text-dim);
   list-style: none;
   gap: 1.75rem;
   align-items: center;
+  margin-left: auto;
 }
 
-.gjs-navbar .mobile-nav-toggle {
-  display: none;
+@media (min-width: 769px) {
+  .gjs-navbar .mobile-nav-toggle {
+    display: none;
+  }
 }
 
 .gjs-navbar .gjs-navbar-mobile {
