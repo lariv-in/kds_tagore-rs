@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use kds_tagore_rs::machinery_schedule;
+use kds_tagore_rs::{machinery_schedule, marketing_sheet};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{crm, dashboard, filesystem, users, website};
 
@@ -42,6 +42,7 @@ fn kds_tagore_stack_mounts() {
                 let app = filesystem::install(app);
                 let app = machinery_schedule::install(app);
                 let app = crm::install(app);
+                let app = marketing_sheet::install(app);
                 let app = dashboard::install(app);
                 let app = website::install(app);
 

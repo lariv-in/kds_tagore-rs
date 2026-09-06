@@ -34,5 +34,5 @@ jobs:
       - name: create release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/kds_tagore-rs
+          files: target/release/kds-tagore-rs
           generate_release_notes: true

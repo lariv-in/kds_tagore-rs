@@ -1,6 +1,6 @@
 #![recursion_limit = "512"]
 
-use kds_tagore_rs::{machinery_schedule, website_seed};
+use kds_tagore_rs::{machinery_schedule, marketing_sheet, website_seed};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes, finance_customer,
@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_accounts::install(app);
     let app = customer::install(app);
     let app = crm::install(app);
+    let app = marketing_sheet::install(app);
     let app = finance_customer::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);

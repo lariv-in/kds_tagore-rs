@@ -4,4 +4,5 @@
 #![recursion_limit = "512"]
 
 pub mod machinery_schedule;
+pub mod marketing_sheet;
 pub mod website_seed;
