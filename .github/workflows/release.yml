@@ -2,14 +2,13 @@ name: release
 
 on:
   push:
-    branches:
-      - master
     tags:
       - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build-and-release:
@@ -17,18 +16,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: restore binary built on master
+        id: prebuilt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p target/release
+          run_id="$(
+            gh run list \
+              --workflow CI \
+              --commit "${{ github.sha }}" \
+              --limit 10 \
+              --json databaseId,status,conclusion \
+              --jq '[.[] | select(.conclusion == "success")][0].databaseId
+                // [.[] | select(.status == "in_progress" or .status == "queued" or .status == "pending")][0].databaseId
+                // empty'
+          )"
+          if [ -z "$run_id" ]; then
+            echo "No CI run for ${{ github.sha }}"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Using CI run $run_id"
+          conclusion="$(gh run view "$run_id" --json conclusion --jq '.conclusion')"
+          if [ "$conclusion" != "success" ]; then
+            if ! gh run watch "$run_id" --exit-status; then
+              echo "CI run failed"
+              echo "hit=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          tmp="$(mktemp -d)"
+          if gh run download "$run_id" -n "kds-tagore-rs-${{ github.sha }}" -D "$tmp"; then
+            find "$tmp" -type f -name kds-tagore-rs -exec cp {} target/release/kds-tagore-rs \;
+            chmod +x target/release/kds-tagore-rs
+            test -x target/release/kds-tagore-rs
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: install rust nightly
+        if: steps.prebuilt.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-08-27
 
       - name: rust cache
+        if: steps.prebuilt.outputs.hit != 'true'
         uses: swatinem/rust-cache@v2
         with:
-          shared-key: "Release-Cache"
+          shared-key: Release-Cache
           add-rust-environment-hash-key: false
+          cache-workspace-crates: true
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: build release binary
+        if: steps.prebuilt.outputs.hit != 'true'
         run: cargo build --release
 
       - name: create release

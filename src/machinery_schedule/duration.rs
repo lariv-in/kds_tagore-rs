@@ -22,6 +22,10 @@ impl JobDuration {
     pub fn inner(self) -> Duration {
         self.0
     }
+
+    pub fn as_hours_f64(self) -> f64 {
+        self.num_nanoseconds() as f64 / 3_600_000_000_000.0
+    }
 }
 
 impl Default for JobDuration {

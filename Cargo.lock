@@ -2470,12 +2470,16 @@ dependencies = [
  "frunk_core",
  "lariv-rs",
  "maud",
+ "rust_decimal",
  "rust_xlsxwriter",
  "sea-orm",
  "sea-orm-migration",
  "serde",
  "serde_json",
+ "stl_io",
+ "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -2543,6 +2547,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs?rev=6b355ce04df91ae973f6b7e101a9e0b70675f399#6b355ce04df91ae973f6b7e101a9e0b70675f399"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2602,6 +2607,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs-macros"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs?rev=6b355ce04df91ae973f6b7e101a9e0b70675f399#6b355ce04df91ae973f6b7e101a9e0b70675f399"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4922,6 +4928,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stl_io"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "567641995c51a3b8befddb13e1826187bcf7eb7ca8d13746bfd1cc5a22e89fa8"
 
 [[package]]
 name = "strict-num"

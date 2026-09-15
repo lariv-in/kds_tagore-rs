@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use kds_tagore_rs::{machinery_schedule, marketing_sheet};
+use kds_tagore_rs::{machinery_schedule, marketing_sheet, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{crm, dashboard, filesystem, users, website};
 
@@ -41,6 +41,7 @@ fn kds_tagore_stack_mounts() {
                 let app = users::install(app);
                 let app = filesystem::install(app);
                 let app = machinery_schedule::install(app);
+                let app = work_orders::install(app);
                 let app = crm::install(app);
                 let app = marketing_sheet::install(app);
                 let app = dashboard::install(app);
@@ -49,7 +50,8 @@ fn kds_tagore_stack_mounts() {
                 let path = temp_config(MINIMAL_DB_TOML);
                 let app = app.load_config(&path).await.expect("load_config");
                 std::fs::remove_file(&path).ok();
-                let _mounted = app.mount();
+                let mounted = app.mount();
+                let _router = lariv_rs::http::into_axum_router(&mounted);
             });
         })
         .expect("spawn kds-tagore-mount thread")
