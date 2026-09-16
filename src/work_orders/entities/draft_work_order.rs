@@ -19,6 +19,15 @@ impl Model {
     pub fn total_amount(&self, lines: &[super::draft_work_order_material_line::Model]) -> Decimal {
         lines.iter().map(|l| l.final_cost).sum()
     }
+
+    /// Calculate the total amount of this draft work order including machine line totals.
+    pub fn total_amount_with_machine_lines(
+        &self,
+        lines: &[super::draft_work_order_material_line::Model],
+        machine_lines: &[super::draft_work_order_machine_line::Model],
+    ) -> Decimal {
+        self.total_amount(lines) + machine_lines.iter().map(|l| l.line_total()).sum::<Decimal>()
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -32,6 +41,8 @@ pub enum Relation {
     Customer,
     #[sea_orm(has_many = "super::draft_work_order_material_line::Entity")]
     Lines,
+    #[sea_orm(has_many = "super::draft_work_order_machine_line::Entity")]
+    MachineLines,
     #[sea_orm(has_many = "super::proforma_invoice::Entity")]
     ProformaInvoices,
 }
@@ -45,6 +56,12 @@ impl Related<lariv_rs::plugins::customer::entities::customer::Entity> for Entity
 impl Related<super::draft_work_order_material_line::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Lines.def()
+    }
+}
+
+impl Related<super::draft_work_order_machine_line::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MachineLines.def()
     }
 }
 

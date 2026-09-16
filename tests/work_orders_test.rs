@@ -560,7 +560,7 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
     use std::str::FromStr;
     use kds_tagore_rs::work_orders::{
         entities::{work_order, work_order_line},
-        handlers::{self, WorkOrderCreateForm, WorkOrderLineCreateForm},
+        handlers::{self, WorkOrderCreateForm},
         migrations::Migrator,
         state::WorkOrdersState,
     };
@@ -615,6 +615,7 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
         order_number: "WO-TEST-001".into(),
         customer_id: 42,
         items: Some(inline_items_json),
+        machine_lines: None,
     };
 
     let res = handlers::work_order_create_post(
@@ -674,18 +675,7 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
     let total_amount = created_order.total_amount(&lines);
     assert_eq!(total_amount, l1.final_cost + l2.final_cost);
 
-    // 3. Test standalone WorkOrderLine form with foreign key to Component
-    let line_create_modal = handlers::work_order_line_create_get(
-        Cap(state.clone()),
-        Cap(chrome.clone()),
-        lariv_rs::plugins::users::middleware::OptionalAuth(None),
-        axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-        axum::extract::Path(created_order.id),
-    ).await;
-    let line_create_html = line_create_modal.into_string();
-    assert!(line_create_html.contains("/work-orders/components/pick"), "WorkOrderLine form must have FK picker for Component");
-
-    // Test picker route for components
+    // 3. Test component FK picker route
     let comp_picker_res = handlers::component_select(
         Cap(state.clone()),
         lariv_rs::web::Htmx::default(),
@@ -698,33 +688,13 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
     let comp_picker_html = comp_picker_res.into_string();
     assert!(comp_picker_html.contains("MS Flat Bar"), "Component picker must return matching component");
 
-    // Add 3rd line via standalone line form
-    let line3_form = WorkOrderLineCreateForm {
-        draft_work_order_id: Some(created_order.id),
-        component_id: comp1.id,
-        variables: r#"{"length": 2000}"#.into(),
-        quantity: "20".into(),
-        extra_data: None,
-    };
-    let res3 = handlers::work_order_line_create_post(
-        Cap(state.clone()),
-        Cap(chrome.clone()),
-        lariv_rs::plugins::users::middleware::OptionalAuth(None),
-        lariv_rs::web::Htmx::default(),
-        axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-        axum::extract::Path(created_order.id),
-        axum::extract::Form(line3_form),
-    ).await;
-    let (parts3, _) = axum::response::IntoResponse::into_response(res3).into_parts();
-    assert_eq!(parts3.status, axum::http::StatusCode::SEE_OTHER);
-
-    // Verify 3 lines exist
+    // Verify the 2 inline lines exist
     let lines_after = work_order_line::Entity::find()
         .filter(work_order_line::Column::DraftWorkOrderId.eq(created_order.id))
         .all(&db)
         .await
         .expect("query lines");
-    assert_eq!(lines_after.len(), 3);
+    assert_eq!(lines_after.len(), 2);
 
     // 4. Verify Work Order Detail Page renders lines and grand total
     let detail_res = handlers::work_order_detail(
@@ -1013,6 +983,7 @@ async fn test_all_entities_edit_get_and_post() {
             items: Some(format!(r#"[
                 {{"component_id": {}, "variables": {{"length": 500}}, "quantity": "5", "extra_data": null}}
             ]"#, bar_comp.id)),
+            machine_lines: None,
         }),
     ).await.into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
@@ -1363,7 +1334,7 @@ async fn test_form_validation_and_pascal_case_deserialization() {
     use axum::extract::Form;
     use axum::response::IntoResponse;
     use kds_tagore_rs::work_orders::{
-        handlers::{self, WorkOrderCreateForm, WorkOrderLineCreateForm},
+        handlers::{self, WorkOrderCreateForm},
         migrations::Migrator,
         seed::ensure_standard_seeds,
         state::WorkOrdersState,
@@ -1383,16 +1354,6 @@ async fn test_form_validation_and_pascal_case_deserialization() {
     let Form(wo_form): Form<WorkOrderCreateForm> = Form::from_request(wo_req, &()).await.expect("deserialize PascalCase WorkOrderCreateForm");
     assert_eq!(wo_form.order_number, "WO-Pascal-1");
     assert_eq!(wo_form.customer_id, 10);
-
-    let req_line = axum::http::Request::builder()
-        .method("POST")
-        .header(axum::http::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(axum::body::Body::from("DraftWorkOrderID=5&ComponentID=12&Variables=%7B%22length%22%3A100%7D&Quantity=3"))
-        .unwrap();
-    let Form(line_form): Form<WorkOrderLineCreateForm> = Form::from_request(req_line, &()).await.expect("deserialize PascalCase WorkOrderLineCreateForm");
-    assert_eq!(line_form.draft_work_order_id, Some(5));
-    assert_eq!(line_form.component_id, 12);
-    assert_eq!(line_form.quantity, "3");
 
     // Empty fields deserialized safely without 422
     let req_empty = axum::http::Request::builder()
@@ -1429,6 +1390,7 @@ async fn test_form_validation_and_pascal_case_deserialization() {
             order_number: "".into(),
             customer_id: 1,
             items: None,
+            machine_lines: None,
         }),
     ).await.into_response();
     assert_eq!(res.status(), axum::http::StatusCode::OK);
@@ -1447,33 +1409,13 @@ async fn test_form_validation_and_pascal_case_deserialization() {
             order_number: "WO-999".into(),
             customer_id: 0,
             items: None,
+            machine_lines: None,
         }),
     ).await.into_response();
     assert_eq!(res.status(), axum::http::StatusCode::OK);
     let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
     assert!(html.contains("alert-error"));
     assert!(html.contains("Please select a customer."));
-
-    // Work order line with missing/0 Component ID
-    let res = handlers::work_order_line_create_post(
-        Cap(state.clone()),
-        Cap(chrome.clone()),
-        OptionalAuth(None),
-        Htmx::default(),
-        axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-        axum::extract::Path(1),
-        Form(WorkOrderLineCreateForm {
-            draft_work_order_id: Some(1),
-            component_id: 0,
-            variables: "{}".into(),
-            quantity: "1".into(),
-            extra_data: None,
-        }),
-    ).await.into_response();
-    assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
-    assert!(html.contains("alert-error"));
-    assert!(html.contains("Please select a component."));
 }
 
 #[tokio::test]

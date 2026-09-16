@@ -5,12 +5,16 @@ lariv_rs::swap_key!(DraftWorkOrderDeleteModalKey, "wo-draft-order-delete-modal")
 lariv_rs::swap_key!(DraftWorkOrderSelectTableKey, "wo-draft-order-select-table");
 lariv_rs::swap_key!(DraftWorkOrderSelectModalKey, "wo-draft-order-select-modal");
 lariv_rs::swap_key!(DraftWorkOrderMaterialLinesTableKey, "wo-draft-order-material-lines-table");
-lariv_rs::swap_key!(DraftWorkOrderMaterialLineCreateModalKey, "wo-draft-order-material-line-create-modal");
 lariv_rs::swap_key!(DraftWorkOrderMaterialLineEditModalKey, "wo-draft-order-material-line-edit-modal");
 lariv_rs::swap_key!(DraftWorkOrderMaterialLineDeleteModalKey, "wo-draft-order-material-line-delete-modal");
 
+lariv_rs::swap_key!(DraftWorkOrderMachineLinesTableKey, "wo-draft-order-machine-lines-table");
+lariv_rs::swap_key!(DraftWorkOrderMachineLineEditModalKey, "wo-draft-order-machine-line-edit-modal");
+lariv_rs::swap_key!(DraftWorkOrderMachineLineDeleteModalKey, "wo-draft-order-machine-line-delete-modal");
+lariv_rs::swap_key!(MachineSelectTableKey, "wo-machine-select-table");
+lariv_rs::swap_key!(MachineSelectModalKey, "wo-machine-select-modal");
+
 pub type DraftWorkOrderLinesTableKey = DraftWorkOrderMaterialLinesTableKey;
-pub type DraftWorkOrderLineCreateModalKey = DraftWorkOrderMaterialLineCreateModalKey;
 pub type DraftWorkOrderLineEditModalKey = DraftWorkOrderMaterialLineEditModalKey;
 pub type DraftWorkOrderLineDeleteModalKey = DraftWorkOrderMaterialLineDeleteModalKey;
 
@@ -21,19 +25,20 @@ pub type WorkOrderDeleteModalKey = DraftWorkOrderDeleteModalKey;
 pub type WorkOrderSelectTableKey = DraftWorkOrderSelectTableKey;
 pub type WorkOrderSelectModalKey = DraftWorkOrderSelectModalKey;
 pub type WorkOrderLinesTableKey = DraftWorkOrderMaterialLinesTableKey;
-pub type WorkOrderLineCreateModalKey = DraftWorkOrderMaterialLineCreateModalKey;
 pub type WorkOrderLineEditModalKey = DraftWorkOrderMaterialLineEditModalKey;
 pub type WorkOrderLineDeleteModalKey = DraftWorkOrderMaterialLineDeleteModalKey;
 
 pub type WorkOrderMaterialLinesTableKey = DraftWorkOrderMaterialLinesTableKey;
-pub type WorkOrderMaterialLineCreateModalKey = DraftWorkOrderMaterialLineCreateModalKey;
 pub type WorkOrderMaterialLineEditModalKey = DraftWorkOrderMaterialLineEditModalKey;
 pub type WorkOrderMaterialLineDeleteModalKey = DraftWorkOrderMaterialLineDeleteModalKey;
 
 pub type WorkOrderItemsTableKey = DraftWorkOrderMaterialLinesTableKey;
-pub type WorkOrderItemCreateModalKey = DraftWorkOrderMaterialLineCreateModalKey;
 pub type WorkOrderItemEditModalKey = DraftWorkOrderMaterialLineEditModalKey;
 pub type WorkOrderItemDeleteModalKey = DraftWorkOrderMaterialLineDeleteModalKey;
+
+pub type WorkOrderMachineLinesTableKey = DraftWorkOrderMachineLinesTableKey;
+pub type WorkOrderMachineLineEditModalKey = DraftWorkOrderMachineLineEditModalKey;
+pub type WorkOrderMachineLineDeleteModalKey = DraftWorkOrderMachineLineDeleteModalKey;
 
 lariv_rs::swap_key!(ComponentTableKey, "wo-component-table");
 lariv_rs::swap_key!(ComponentCreateModalKey, "wo-component-create-modal");

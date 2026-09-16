@@ -1031,12 +1031,200 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
     }
 }
 
+pub struct DraftWorkOrderMachineLinesWidget;
+
+impl FormWidget for DraftWorkOrderMachineLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        let machines_json = ctx.display_of(field.name);
+        let mut rows = Vec::new();
+        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+            for (i, v) in arr.into_iter().enumerate() {
+                if let serde_json::Value::Object(obj) = v {
+                    let machine_id = obj.get("machine_id").and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                        _ => None,
+                    }).unwrap_or(0);
+                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => String::new(),
+                    }).unwrap_or_default();
+                    let duration = obj.get("duration").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let db_id = obj.get("id").and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        _ => None,
+                    }).unwrap_or(0);
+
+                    rows.push(serde_json::json!({
+                        "id": i + 1,
+                        "db_id": db_id,
+                        "machine_id": machine_id,
+                        "rate": rate,
+                        "duration": duration,
+                        "total": 0,
+                    }));
+                }
+            }
+        }
+        let next_id = rows.len() + 1;
+        let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+
+        let alpine_data = format!(
+            r#"{{
+                machines: {machines_json},
+                items: {rows_json},
+                nextId: {next_id},
+                init() {{
+                    this.items.forEach(it => {{
+                        const m = this.getMachine(it.machine_id);
+                        if (m && (!it.rate || it.rate === '0')) it.rate = m.rate_decimal;
+                        this.recalc(it);
+                    }});
+                }},
+                getMachine(id) {{
+                    return this.machines.find(c => String(c.id) === String(id));
+                }},
+                addItem() {{
+                    const first = this.machines.length > 0 ? this.machines[0] : null;
+                    this.items.push({{
+                        id: this.nextId++,
+                        db_id: null,
+                        machine_id: first ? first.id : 0,
+                        rate: first ? first.rate_decimal : '0',
+                        duration: '',
+                        total: 0
+                    }});
+                }},
+                removeItem(idx) {{
+                    this.items.splice(idx, 1);
+                }},
+                onMachineChange(item) {{
+                    const m = this.getMachine(item.machine_id);
+                    if (m) item.rate = m.rate_decimal;
+                    this.recalc(item);
+                }},
+                parseDuration(s) {{
+                    s = (s || '').trim().toLowerCase();
+                    if (!s) return 0;
+                    let h = 0;
+                    const hh = s.match(/([\d.]+)\s*h/);
+                    const mm = s.match(/([\d.]+)\s*m/);
+                    if (hh) h += parseFloat(hh[1]);
+                    if (mm) h += parseFloat(mm[1]) / 60;
+                    if (!hh && !mm) h = parseFloat(s) || 0;
+                    return h;
+                }},
+                recalc(item) {{
+                    const rate = parseFloat(item.rate) || 0;
+                    item.total = Math.round(rate * this.parseDuration(item.duration) * 100) / 100;
+                }},
+                grandTotal() {{
+                    return this.items.reduce((s, it) => s + (it.total || 0), 0);
+                }},
+                formatMoney(val) {{
+                    return '₹ ' + (val || 0).toFixed(2);
+                }},
+                jsonOutput() {{
+                    const valid = this.items
+                        .filter(it => it.machine_id && parseInt(it.machine_id, 10) > 0 && (it.duration || '').trim() !== '')
+                        .map(it => ({{
+                            id: it.db_id || null,
+                            machine_id: parseInt(it.machine_id, 10),
+                            rate: String(it.rate || ''),
+                            duration: it.duration || ''
+                        }}));
+                    return JSON.stringify(valid);
+                }}
+            }}"#
+        );
+
+        html! {
+            div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
+
+                div class="flex justify-between items-center mb-2" {
+                    label class="label p-0" {
+                        span class="label-text font-bold text-base" { (field.label) }
+                    }
+                    (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
+                    (icon("plus", "w-3 h-3"))
+                    "Add Machine Line"
+                    (PreEscaped("</button>"))
+                }
+
+                (PreEscaped(r#"<template x-if="items.length === 0">"#))
+                div class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300" {
+                    "No machine lines added yet. Click \"Add Machine Line\" above to add machine time to this draft work order."
+                }
+                (PreEscaped("</template>"))
+
+                (PreEscaped(r#"<template x-if="items.length > 0">"#))
+                div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 shadow-sm" {
+                    table class="table table-xs w-full" {
+                        thead class="bg-base-200/80 text-base-content/70" {
+                            tr class="text-xs" {
+                                th class="w-7 text-center" { "#" }
+                                th class="min-w-[180px]" { "Machine" }
+                                th class="text-right w-28" { "Rate (₹/hr)" }
+                                th class="w-40" { "Duration" }
+                                th class="text-right w-24" { "Total (₹)" }
+                                th class="w-7 text-center" { "" }
+                            }
+                        }
+                        tbody {
+                            (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
+                            tr class="hover border-b border-base-200 last:border-none" {
+                                (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
+                                td class="align-middle" {
+                                    (PreEscaped(r#"
+                                    <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium"
+                                            x-model="item.machine_id"
+                                            @change="onMachineChange(item)">
+                                        <template x-for="m in machines" :key="m.id">
+                                            <option :value="m.id" x-text="m.name"></option>
+                                        </template>
+                                    </select>
+                                    "#))
+                                }
+                                td class="align-middle" {
+                                    (PreEscaped(r#"<input type="number" min="0" step="any" x-model="item.rate" @input="recalc(item)" placeholder="0.00" class="input input-xs input-bordered w-full h-7 min-h-0 text-right font-mono text-xs">"#))
+                                }
+                                td class="align-middle" {
+                                    (PreEscaped(r#"<input type="text" x-model="item.duration" @input="recalc(item)" placeholder="e.g. 2h 30m" class="input input-xs input-bordered w-full h-7 min-h-0 font-mono text-xs">"#))
+                                }
+                                td class="align-middle text-right font-mono font-bold text-primary text-xs" {
+                                    (PreEscaped(r#"<span x-text="formatMoney(item.total)"></span>"#))
+                                }
+                                td class="align-middle text-center" {
+                                    (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove machine line" @click="removeItem(idx)">✕</button>"#))
+                                }
+                            }
+                            (PreEscaped("</template>"))
+                        }
+                        tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
+                            tr {
+                                td colspan="4" class="align-middle text-right font-medium py-2" { "Machine Grand Total (₹):" }
+                                td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
+                                    (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
+                                }
+                                td class="align-middle" {}
+                            }
+                        }
+                    }
+                }
+                (PreEscaped("</template>"))
+            }
+        }
+    }
+}
+
 pub type DraftWorkOrderItemsWidget = DraftWorkOrderMaterialLinesWidget;
 pub type WorkOrderItemsWidget = DraftWorkOrderMaterialLinesWidget;
 
 #[html_form]
 pub struct DraftWorkOrderForm {
-    #[form(label = "Order Number", required, widget = Text, placeholder = "e.g. DWO-1001")]
+    #[form(label = "Order Number", widget = Text, placeholder = "e.g. DWO-1001 (optional)")]
     pub order_number: String,
 
     #[form(
@@ -1055,6 +1243,12 @@ pub struct DraftWorkOrderForm {
         widget = DraftWorkOrderMaterialLinesWidget,
     )]
     pub items: Option<String>,
+
+    #[form(
+        label = "Draft Work Order Machine Lines",
+        widget = DraftWorkOrderMachineLinesWidget,
+    )]
+    pub machine_lines: Option<String>,
 }
 
 pub type DraftWorkOrderCreateForm = DraftWorkOrderForm;
@@ -1102,18 +1296,67 @@ pub type DraftWorkOrderLineForm = DraftWorkOrderMaterialLineForm;
 pub type DraftWorkOrderLineFormField = DraftWorkOrderMaterialLineFormField;
 pub type WorkOrderLineFormField = DraftWorkOrderMaterialLineFormField;
 
-pub type DraftWorkOrderMaterialLineCreateForm = DraftWorkOrderMaterialLineForm;
 pub type DraftWorkOrderMaterialLineEditForm = DraftWorkOrderMaterialLineForm;
-pub type DraftWorkOrderLineCreateForm = DraftWorkOrderMaterialLineForm;
 pub type DraftWorkOrderLineEditForm = DraftWorkOrderMaterialLineForm;
 pub type WorkOrderLineForm = DraftWorkOrderMaterialLineForm;
-pub type WorkOrderLineCreateForm = DraftWorkOrderMaterialLineForm;
 pub type WorkOrderLineEditForm = DraftWorkOrderMaterialLineForm;
 
 pub type DraftWorkOrderItemForm = DraftWorkOrderMaterialLineForm;
 pub type WorkOrderItemForm = DraftWorkOrderMaterialLineForm;
 pub type WorkOrderItemCreateForm = DraftWorkOrderMaterialLineForm;
 pub type WorkOrderItemEditForm = DraftWorkOrderMaterialLineForm;
+
+#[html_form]
+pub struct DraftWorkOrderMachineLineForm {
+    #[form(
+        label = "Draft Work Order",
+        required,
+        widget = ForeignKey,
+        route = super::routes::WorkOrderFkSelectRouteTag,
+        swap_key = "fk-draft-work-order-machine-line-order",
+        display = "draft_work_order",
+        placeholder = "Select draft work order…"
+    )]
+    pub draft_work_order_id: i64,
+
+    #[form(
+        label = "Machine",
+        required,
+        widget = ForeignKey,
+        route = super::routes::MachineFkSelectRouteTag,
+        swap_key = "fk-draft-work-order-machine-line-machine",
+        display = "machine",
+        placeholder = "Select machine…"
+    )]
+    pub machine_id: i64,
+
+    #[form(label = "Rate (₹/hr)", required, widget = Text, placeholder = "Auto-filled from machine")]
+    pub rate: String,
+
+    #[form(label = "Duration", required, widget = Text, placeholder = "e.g. 2h 30m")]
+    pub duration: String,
+}
+
+pub type WorkOrderMachineLineForm = DraftWorkOrderMachineLineForm;
+pub type WorkOrderMachineLineEditForm = DraftWorkOrderMachineLineForm;
+pub type WorkOrderMachineLineFormField = DraftWorkOrderMachineLineFormField;
+pub type WorkOrderMachineLineEditFormField = DraftWorkOrderMachineLineFormField;
+pub type DraftWorkOrderMachineLineEditForm = DraftWorkOrderMachineLineForm;
+pub type DraftWorkOrderMachineLineEditFormField = DraftWorkOrderMachineLineFormField;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct DraftWorkOrderMachineLineInput {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub machine_id: i64,
+    #[serde(default)]
+    pub rate: Option<serde_json::Value>,
+    #[serde(default)]
+    pub duration: String,
+}
+
+pub type WorkOrderMachineLineInput = DraftWorkOrderMachineLineInput;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DraftWorkOrderMaterialLineInput {

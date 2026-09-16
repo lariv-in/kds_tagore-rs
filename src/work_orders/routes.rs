@@ -15,12 +15,16 @@ lariv_rs::define_plugin_routes! {
         post WorkOrderDeletePostRouteTag, "/work-orders/orders/{id}/delete", bare handlers::work_order_delete_post, fragment(WorkOrderDeleteModalKey);
 
         // Work Order Lines
-        get WorkOrderLineCreateGetRouteTag, "/work-orders/orders/{id}/lines/create", handlers::work_order_line_create_get, modal;
-        post WorkOrderLineCreatePostRouteTag, "/work-orders/orders/{id}/lines/create", handlers::work_order_line_create_post;
         get WorkOrderLineEditGetRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_get, modal;
         post WorkOrderLineEditPostRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_post;
         get WorkOrderLineDeleteGetRouteTag, "/work-orders/lines/{id}/delete", handlers::work_order_line_delete_get, modal;
         post WorkOrderLineDeletePostRouteTag, "/work-orders/lines/{id}/delete", bare handlers::work_order_line_delete_post, fragment(WorkOrderLineDeleteModalKey);
+
+        // Work Order Machine Lines
+        get WorkOrderMachineLineEditGetRouteTag, "/work-orders/machine-lines/{id}/edit", handlers::work_order_machine_line_edit_get, modal;
+        post WorkOrderMachineLineEditPostRouteTag, "/work-orders/machine-lines/{id}/edit", handlers::work_order_machine_line_edit_post;
+        get WorkOrderMachineLineDeleteGetRouteTag, "/work-orders/machine-lines/{id}/delete", handlers::work_order_machine_line_delete_get, modal;
+        post WorkOrderMachineLineDeletePostRouteTag, "/work-orders/machine-lines/{id}/delete", bare handlers::work_order_machine_line_delete_post, fragment(WorkOrderMachineLineDeleteModalKey);
 
         // Components
         get WorkOrdersComponentsRouteTag, "/work-orders/components", handlers::components_list, fragment(ComponentTableKey);
@@ -71,6 +75,7 @@ lariv_rs::define_plugin_routes! {
         post MachineEditPostRouteTag, "/work-orders/machines/{id}/edit", handlers::machine_edit_post;
         get MachineDeleteGetRouteTag, "/work-orders/machines/{id}/delete", handlers::machine_delete_get, modal;
         post MachineDeletePostRouteTag, "/work-orders/machines/{id}/delete", bare handlers::machine_delete_post, fragment(MachineDeleteModalKey);
+        get MachineFkSelectRouteTag, "/work-orders/machines/pick", handlers::machine_select, fk_select(MachineSelectTableKey, MachineSelectModalKey);
 
         // Proforma Invoices
         get WorkOrdersInvoicesRouteTag, "/work-orders/invoices", handlers::invoices_list, fragment(InvoiceTableKey);
@@ -97,24 +102,25 @@ pub type DraftWorkOrderEditPostRouteTag = WorkOrderEditPostRouteTag;
 pub type DraftWorkOrderDeleteGetRouteTag = WorkOrderDeleteGetRouteTag;
 pub type DraftWorkOrderDeletePostRouteTag = WorkOrderDeletePostRouteTag;
 
-pub type DraftWorkOrderLineCreateGetRouteTag = WorkOrderLineCreateGetRouteTag;
-pub type DraftWorkOrderLineCreatePostRouteTag = WorkOrderLineCreatePostRouteTag;
 pub type DraftWorkOrderLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
 pub type DraftWorkOrderLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
 pub type DraftWorkOrderLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
 pub type DraftWorkOrderLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
 
-pub type DraftWorkOrderMaterialLineCreateGetRouteTag = WorkOrderLineCreateGetRouteTag;
-pub type DraftWorkOrderMaterialLineCreatePostRouteTag = WorkOrderLineCreatePostRouteTag;
 pub type DraftWorkOrderMaterialLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
 pub type DraftWorkOrderMaterialLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
 pub type DraftWorkOrderMaterialLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
 pub type DraftWorkOrderMaterialLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
 
-pub type WorkOrderMaterialLineCreateGetRouteTag = WorkOrderLineCreateGetRouteTag;
-pub type WorkOrderMaterialLineCreatePostRouteTag = WorkOrderLineCreatePostRouteTag;
 pub type WorkOrderMaterialLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
 pub type WorkOrderMaterialLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
 pub type WorkOrderMaterialLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
 pub type WorkOrderMaterialLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
+
+pub type DraftWorkOrderMachineLineEditGetRouteTag = WorkOrderMachineLineEditGetRouteTag;
+pub type DraftWorkOrderMachineLineEditPostRouteTag = WorkOrderMachineLineEditPostRouteTag;
+pub type DraftWorkOrderMachineLineDeleteGetRouteTag = WorkOrderMachineLineDeleteGetRouteTag;
+pub type DraftWorkOrderMachineLineDeletePostRouteTag = WorkOrderMachineLineDeletePostRouteTag;
+
+pub type DraftMachineFkSelectRouteTag = MachineFkSelectRouteTag;
 

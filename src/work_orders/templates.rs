@@ -1,4 +1,5 @@
 use frunk::Generic;
+use maud::PreEscaped;
 use lariv_rs::{
     components::{
         button_modal_form, button_submit, container_column, container_row, data_table_list_refresh,
@@ -14,21 +15,33 @@ use lariv_rs::{
 };
 use maud::{Markup, html};
 
+use crate::machinery_schedule::logic::format_job_duration;
+
 use lariv_rs::html_form::{FormCtx, HtmlForm};
 
 use rust_decimal::Decimal;
 
 use super::crumbs::*;
 use super::entities::{
-    component, draft_work_order_material_line, machine, material, material_rate, proforma_invoice,
-    proforma_invoice_machine_line, proforma_invoice_material_line, shape, work_order,
+    component, draft_work_order_machine_line, draft_work_order_material_line, machine, material,
+    material_rate, proforma_invoice, proforma_invoice_machine_line, proforma_invoice_material_line,
+    shape, work_order,
 };
 use super::forms::{
     ComponentForm, ComponentFormField, DraftWorkOrderForm, DraftWorkOrderFormField,
-    DraftWorkOrderLineForm, DraftWorkOrderLineFormField, ShapeForm, ShapeFormField,
+    DraftWorkOrderLineForm, DraftWorkOrderLineFormField, DraftWorkOrderMachineLineForm,
+    DraftWorkOrderMachineLineFormField, ShapeForm, ShapeFormField,
 };
 use super::keys::*;
 use super::routes::*;
+
+fn order_number_display(s: &str) -> &str {
+    if s.trim().is_empty() {
+        "—"
+    } else {
+        s
+    }
+}
 
 lariv_rs::define_register_items! {
     plugin: super::WorkOrdersTag;
@@ -77,8 +90,9 @@ lariv_rs::define_register_items! {
         InvoiceEditModalPageIdx: InvoiceEditModalPageTag => InvoiceEditModalPage,
 
         ConfirmDeleteModalPageIdx: ConfirmDeleteModalPageTag => ConfirmDeleteModalPage,
-        WorkOrderLineCreateModalPageIdx: WorkOrderLineCreateModalPageTag => WorkOrderLineCreateModalPage,
         WorkOrderLineEditModalPageIdx: WorkOrderLineEditModalPageTag => WorkOrderLineEditModalPage,
+        WorkOrderMachineLineEditModalPageIdx: WorkOrderMachineLineEditModalPageTag => WorkOrderMachineLineEditModalPage,
+        MachineSelectPageIdx: MachineSelectPageTag => MachineSelectPage,
     ]
 }
 
@@ -159,7 +173,7 @@ impl WorkOrderListPage {
             attrs: row_attr_navigate_route(WorkOrderDetailRouteTag::new(o.id)),
             cells: vec![
                 field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &o.order_number, classes: "font-semibold" }),
+                field_text(FieldText { value: order_number_display(&o.order_number), classes: "font-semibold" }),
                 field_text(FieldText { value: &cust_labels[i], classes: "" }),
                 field_text(FieldText { value: &lines_labels[i], classes: "" }),
                 field_text(FieldText { value: &total_labels[i], classes: "font-mono font-semibold" }),
@@ -203,6 +217,7 @@ impl RenderTemplate for WorkOrderListPage {
 pub struct WorkOrderDetailPage {
     pub order: work_order::Model,
     pub lines: Vec<(draft_work_order_material_line::Model, String)>,
+    pub machine_lines: Vec<(draft_work_order_machine_line::Model, String)>,
     pub customer_name: Option<String>,
     pub total_amount: Decimal,
 }
@@ -210,8 +225,6 @@ pub struct WorkOrderDetailPage {
 impl WorkOrderDetailPage {
     fn body(&self) -> Markup {
         let edit_url = WorkOrderEditGetRouteTag::new(self.order.id).url();
-        let delete_url = WorkOrderDeleteGetRouteTag::new(self.order.id).url();
-        let add_line_url = WorkOrderLineCreateGetRouteTag::new(self.order.id).url();
         let actions = html! {
             (button_modal_form(ButtonModalForm {
                 label: "Edit",
@@ -223,16 +236,6 @@ impl WorkOrderDetailPage {
                 classes: "btn-outline btn-sm",
                 ..Default::default()
             }))
-            (button_modal_form(ButtonModalForm {
-                label: "Delete",
-                icon_name: Some("trash"),
-                name: "wo.WorkOrderDeleteForm",
-                href: &delete_url,
-                form_post_url: &delete_url,
-                modal_uid: WorkOrderDeleteModalKey::ID,
-                classes: "btn-error btn-sm",
-                ..Default::default()
-            }))
         };
 
         let cust_label = match &self.customer_name {
@@ -240,39 +243,37 @@ impl WorkOrderDetailPage {
             None => format!("#{}", self.order.customer_id),
         };
         let lines_count_str = self.lines.len().to_string();
+        let machine_lines_count_str = self.machine_lines.len().to_string();
         let total_str = format!("₹ {:.2}", self.total_amount);
+        let order_num_display = order_number_display(&self.order.order_number);
+        let title_str = if self.order.order_number.trim().is_empty() {
+            "Draft Work Order".to_string()
+        } else {
+            format!("Draft Work Order {}", self.order.order_number)
+        };
 
         html! {
             (detail(html! {
                 (container_column("", html! {
                     (detail_header(DetailHeader {
-                        title: &format!("Draft Work Order {}", self.order.order_number),
+                        title: &title_str,
                         actions,
                     }))
                     (container_row("gap-6", html! {
                         (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
                         (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
+                        (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
                         (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
                     }))
 
                     div class="mt-8" {
-                        div class="flex justify-between items-center mb-3" {
+                        div class="mb-3" {
                             h4 class="font-bold text-lg" { "Draft Work Order Material Lines" }
-                            (button_modal_form(ButtonModalForm {
-                                label: "Add Line",
-                                icon_name: Some("plus"),
-                                name: "wo.WorkOrderLineCreateForm",
-                                href: &add_line_url,
-                                form_post_url: &add_line_url,
-                                modal_uid: WorkOrderLineCreateModalKey::ID,
-                                classes: "btn-primary btn-sm",
-                                ..Default::default()
-                            }))
                         }
 
                         @if self.lines.is_empty() {
                             div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
-                                "No line items added yet. Click \"Add Line\" above to add items to this draft work order."
+                                "No line items added yet."
                             }
                         } @else {
                             div class="overflow-x-auto border border-base-200 rounded-lg" {
@@ -286,14 +287,10 @@ impl WorkOrderDetailPage {
                                             th class="text-right" { "Rate (₹/kg)" }
                                             th class="text-right" { "Quantity" }
                                             th class="text-right" { "Final Cost (₹)" }
-                                            th { "Extra Data" }
-                                            th class="text-right w-24" { "Actions" }
                                         }
                                     }
                                     tbody {
                                         @for (idx, (l, comp_name)) in self.lines.iter().enumerate() {
-                                            @let edit_line_url = WorkOrderLineEditGetRouteTag::new(l.id).url();
-                                            @let delete_line_url = WorkOrderLineDeleteGetRouteTag::new(l.id).url();
                                             tr {
                                                 td class="opacity-60" { (idx + 1) }
                                                 td class="font-semibold" { (comp_name) }
@@ -302,42 +299,54 @@ impl WorkOrderDetailPage {
                                                 td class="text-right font-mono" { (format!("₹ {:.2}", l.material_rate)) }
                                                 td class="text-right font-mono" { (format!("{:.2}", l.quantity)) }
                                                 td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", l.final_cost)) }
-                                                td class="font-mono text-xs max-w-xs truncate opacity-70" { (l.extra_data_str()) }
-                                                td class="text-right" {
-                                                    div class="flex justify-end gap-1" {
-                                                        (button_modal_form(ButtonModalForm {
-                                                             label: "Edit",
-                                                             icon_name: Some("pencil"),
-                                                             name: "wo.WorkOrderLineEditForm",
-                                                             href: &edit_line_url,
-                                                             form_post_url: &edit_line_url,
-                                                             modal_uid: WorkOrderLineEditModalKey::ID,
-                                                             classes: "btn-ghost btn-xs",
-                                                             ..Default::default()
-                                                         }))
-                                                        (button_modal_form(ButtonModalForm {
-                                                            label: "Delete",
-                                                            icon_name: Some("trash"),
-                                                            name: "wo.WorkOrderLineDeleteForm",
-                                                             href: &delete_line_url,
-                                                             form_post_url: &delete_line_url,
-                                                             modal_uid: WorkOrderLineDeleteModalKey::ID,
-                                                             classes: "btn-ghost btn-xs text-error",
-                                                             ..Default::default()
-                                                         }))
-                                                    }
-                                                }
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
 
-                            div class="mt-4 p-4 bg-base-200/60 rounded-lg flex justify-between items-center border border-base-200" {
-                                span class="font-semibold" { "Final Grand Total" }
-                                span class="text-xl font-extrabold text-primary font-mono" { (format!("₹ {:.2}", self.total_amount)) }
+                    div class="mt-8" {
+                        div class="mb-3" {
+                            h4 class="font-bold text-lg" { "Draft Work Order Machine Lines" }
+                        }
+
+                        @if self.machine_lines.is_empty() {
+                            div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
+                                "No machine lines added yet."
+                            }
+                        } @else {
+                            div class="overflow-x-auto border border-base-200 rounded-lg" {
+                                table class="table table-zebra w-full text-sm" {
+                                    thead {
+                                        tr {
+                                            th class="w-12" { "#" }
+                                            th { "Machine" }
+                                            th class="text-right" { "Rate (₹/hr)" }
+                                            th class="text-right" { "Duration" }
+                                            th class="text-right" { "Total (₹)" }
+                                        }
+                                    }
+                                    tbody {
+                                        @for (idx, (l, machine_name)) in self.machine_lines.iter().enumerate() {
+                                            tr {
+                                                td class="opacity-60" { (idx + 1) }
+                                                td class="font-semibold" { (machine_name) }
+                                                td class="text-right font-mono" { (format!("₹ {:.2}", l.rate_decimal)) }
+                                                td class="text-right font-mono" { (format_job_duration(l.time_used)) }
+                                                td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", l.line_total())) }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
+                    }
+
+                    div class="mt-4 p-4 bg-base-200/60 rounded-lg flex justify-between items-center border border-base-200" {
+                        span class="font-semibold" { "Final Grand Total" }
+                        span class="text-xl font-extrabold text-primary font-mono" { (format!("₹ {:.2}", self.total_amount)) }
                     }
                 }))
             }))
@@ -347,16 +356,21 @@ impl WorkOrderDetailPage {
 
 impl RenderAppPane for WorkOrderDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("orders"), work_order_crumbs(&self.order.order_number, self.order.id), self.body())
+        scaffold_pane(wo_menu("orders"), work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(work_order_crumbs(&self.order.order_number, self.order.id), self.body())
+        scaffold_main(work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
     }
 }
 
 impl RenderTemplate for WorkOrderDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("Order {} — Draft Work Orders", self.order.order_number), chrome, wo_menu("orders"), work_order_crumbs(&self.order.order_number, self.order.id), self.body())
+        let page_title = if self.order.order_number.trim().is_empty() {
+            "Draft Work Order — Draft Work Orders".to_string()
+        } else {
+            format!("Order {} — Draft Work Orders", self.order.order_number)
+        };
+        app_scaffold(&page_title, chrome, wo_menu("orders"), work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
     }
 }
 
@@ -368,6 +382,8 @@ pub struct WorkOrderCreateModalPage {
     pub customer_name: String,
     pub items_json: String,
     pub components_json: String,
+    pub machine_lines_json: String,
+    pub machines_json: String,
     pub error: String,
 }
 
@@ -375,12 +391,15 @@ impl RenderTemplate for WorkOrderCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let cust_id_str = self.customer_id.map(|id| id.to_string()).unwrap_or_default();
         let items_val = if self.items_json.is_empty() { "[]" } else { &self.items_json };
+        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
         let ctx = FormCtx::form::<DraftWorkOrderForm>()
             .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
             .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
             .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
             .value(DraftWorkOrderFormField::Items, items_val)
-            .display(DraftWorkOrderFormField::Items, &self.components_json);
+            .display(DraftWorkOrderFormField::Items, &self.components_json)
+            .value(DraftWorkOrderFormField::MachineLines, machine_lines_val)
+            .display(DraftWorkOrderFormField::MachineLines, &self.machines_json);
 
         let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
         modal_keyed::<DraftWorkOrderCreateModalKey>(
@@ -419,6 +438,8 @@ pub struct WorkOrderEditModalPage {
     pub customer_name: String,
     pub items_json: String,
     pub components_json: String,
+    pub machine_lines_json: String,
+    pub machines_json: String,
     pub error: String,
 }
 
@@ -426,12 +447,16 @@ impl RenderTemplate for WorkOrderEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let cust_id_str = self.customer_id.to_string();
         let items_val = if self.items_json.is_empty() { "[]" } else { &self.items_json };
+        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
         let ctx = FormCtx::form::<DraftWorkOrderForm>()
             .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
             .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
             .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
             .value(DraftWorkOrderFormField::Items, items_val)
-            .display(DraftWorkOrderFormField::Items, &self.components_json);
+            .display(DraftWorkOrderFormField::Items, &self.components_json)
+            .value(DraftWorkOrderFormField::MachineLines, machine_lines_val)
+            .display(DraftWorkOrderFormField::MachineLines, &self.machines_json);
+        let delete_url = WorkOrderDeleteGetRouteTag::new(self.id).url();
 
         let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
         modal_keyed::<DraftWorkOrderEditModalKey>(
@@ -452,62 +477,17 @@ impl RenderTemplate for WorkOrderEditModalPage {
                         (DraftWorkOrderForm::render_inputs(&ctx))
                     },
                     actions: html! {
+                        (button_modal_form(ButtonModalForm {
+                            label: "Delete",
+                            icon_name: Some("trash"),
+                            name: "wo.WorkOrderDeleteForm",
+                            href: &delete_url,
+                            form_post_url: &delete_url,
+                            modal_uid: WorkOrderDeleteModalKey::ID,
+                            classes: "btn-error btn-sm",
+                            ..Default::default()
+                        }))
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct WorkOrderLineCreateModalPage {
-    pub draft_work_order_id: i64,
-    pub draft_work_order_label: String,
-    pub form_name: String,
-    pub component_id: Option<i64>,
-    pub component_label: String,
-    pub variables: String,
-    pub quantity: String,
-    pub extra_data: String,
-    pub error: String,
-}
-
-impl RenderTemplate for WorkOrderLineCreateModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let wo_id_str = self.draft_work_order_id.to_string();
-        let comp_id_str = self.component_id.map(|id| id.to_string()).unwrap_or_default();
-        let qty_str = if self.quantity.is_empty() { "1" } else { &self.quantity };
-        let vars_str = if self.variables.is_empty() { "{}" } else { &self.variables };
-        let ctx = FormCtx::form::<DraftWorkOrderLineForm>()
-            .value(DraftWorkOrderLineFormField::DraftWorkOrderId, &wo_id_str)
-            .display(DraftWorkOrderLineFormField::DraftWorkOrderId, &self.draft_work_order_label)
-            .value(DraftWorkOrderLineFormField::ComponentId, &comp_id_str)
-            .display(DraftWorkOrderLineFormField::ComponentId, &self.component_label)
-            .value(DraftWorkOrderLineFormField::Variables, vars_str)
-            .value(DraftWorkOrderLineFormField::Quantity, qty_str)
-            .value(DraftWorkOrderLineFormField::ExtraData, &self.extra_data);
-
-        modal_keyed::<DraftWorkOrderLineCreateModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Add Draft Work Order Material Line" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(FormOpts {
-                    attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderLineCreateModalKey>(
-                        &WorkOrderLineCreatePostRouteTag::new(self.draft_work_order_id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (DraftWorkOrderLineForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Add Material Line", ..Default::default() }))
                     },
                     ..Default::default()
                 }))
@@ -573,6 +553,112 @@ impl RenderTemplate for WorkOrderLineEditModalPage {
 }
 
 #[derive(Clone, Generic)]
+pub struct WorkOrderMachineLineEditModalPage {
+    pub id: i64,
+    pub form_name: String,
+    pub draft_work_order_id: i64,
+    pub draft_work_order_label: String,
+    pub machine_id: i64,
+    pub machine_label: String,
+    pub rate: String,
+    pub duration: String,
+    pub error: String,
+}
+
+impl RenderTemplate for WorkOrderMachineLineEditModalPage {
+    fn render(&self, _chrome: &ShellChrome) -> Markup {
+        let wo_id_str = self.draft_work_order_id.to_string();
+        let machine_id_str = self.machine_id.to_string();
+        let ctx = FormCtx::form::<DraftWorkOrderMachineLineForm>()
+            .value(DraftWorkOrderMachineLineFormField::DraftWorkOrderId, &wo_id_str)
+            .display(DraftWorkOrderMachineLineFormField::DraftWorkOrderId, &self.draft_work_order_label)
+            .value(DraftWorkOrderMachineLineFormField::MachineId, &machine_id_str)
+            .display(DraftWorkOrderMachineLineFormField::MachineId, &self.machine_label)
+            .value(DraftWorkOrderMachineLineFormField::Rate, &self.rate)
+            .value(DraftWorkOrderMachineLineFormField::Duration, &self.duration);
+
+        let rate_input = "input[name=Rate], input[name=rate], input[name=RATE]";
+        let alpine_wrap = format!(
+            r#"<div x-data="{{ onMachineSelect(d) {{ if (d && d.rate !== undefined) {{ try {{ const i = this.$el.querySelector('{rate_input}'); if (i) i.value = String(d.rate) }} catch (e) {{}} }} }} }}" @fk-select.window="onMachineSelect($event.detail)">"#);
+
+        modal_keyed::<DraftWorkOrderMachineLineEditModalKey>(
+            &self.form_name,
+            html! {
+                (PreEscaped(alpine_wrap))
+                    h3 class="font-bold text-lg mb-4" { "Edit Draft Work Order Machine Line" }
+                    @if !self.error.is_empty() {
+                        div class="alert alert-error text-sm mb-4 shadow-sm" {
+                            span { (self.error) }
+                        }
+                    }
+                    (form(FormOpts {
+                        attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderMachineLineEditModalKey>(
+                            &WorkOrderMachineLineEditPostRouteTag::new(self.id).url(),
+                        ),
+                        form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                        inputs: html! {
+                            (DraftWorkOrderMachineLineForm::render_inputs(&ctx))
+                        },
+                        actions: html! {
+                            (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
+                        },
+                        ..Default::default()
+                    }))
+                    (PreEscaped("</div>"))
+                },
+        )
+    }
+}
+
+#[derive(Clone, Generic, Default)]
+pub struct MachineSelectPage {
+    pub machines: Vec<(machine::Model, String)>,
+    pub target_input: String,
+    pub path_and_query: String,
+}
+
+impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for MachineSelectPage {
+    fn render_table(&self) -> Markup {
+        let target = if self.target_input.is_empty() {
+            "machine_id"
+        } else {
+            self.target_input.as_str()
+        };
+        let headers = [
+            TableColumnHeader { key: "Name", label: "Machine", sort_url: None, push_url: false },
+            TableColumnHeader { key: "Rate", label: "Rate (₹/hr)", sort_url: None, push_url: false },
+        ];
+        let rows: Vec<TableRow> = self.machines.iter().map(|(m, rate_str)| {
+            let rate_num = m.rate_decimal.to_string();
+            TableRow {
+                attrs: row_attr_select_extra(target, &m.id.to_string(), &m.name, &[("rate", rate_num.as_str())]),
+                cells: vec![
+                    field_text(FieldText { value: &m.name, classes: "font-semibold" }),
+                    field_text(FieldText { value: rate_str, classes: "font-mono" }),
+                ],
+            }
+        }).collect();
+
+        let actions = html! {};
+
+        data_table_list_refresh::<MachineSelectTableKey>(
+            "Select Machine",
+            actions,
+            &headers,
+            &rows,
+            html! {},
+            &self.path_and_query,
+        )
+    }
+}
+
+impl RenderTemplate for MachineSelectPage {
+    fn render(&self, _chrome: &ShellChrome) -> Markup {
+        self.render_modal().into_inner()
+    }
+}
+
+#[derive(Clone, Generic)]
 pub struct WorkOrderSelectPage {
     pub orders: Vec<work_order::Model>,
     pub target_input: String,
@@ -592,9 +678,9 @@ impl RenderPickerSelect<WorkOrderSelectTableKey, WorkOrderSelectModalKey> for Wo
         ];
         let rows: Vec<TableRow> = self.orders.iter().map(|o| {
             TableRow {
-                attrs: row_attr_select(target, &o.id.to_string(), &o.order_number),
+                attrs: row_attr_select(target, &o.id.to_string(), order_number_display(&o.order_number)),
                 cells: vec![
-                    field_text(FieldText { value: &o.order_number, classes: "font-semibold" }),
+                    field_text(FieldText { value: order_number_display(&o.order_number), classes: "font-semibold" }),
                     field_text(FieldText { value: &o.customer_id.to_string(), classes: "font-mono" }),
                 ],
             }
@@ -624,12 +710,10 @@ pub type DraftWorkOrderDetailPage = WorkOrderDetailPage;
 pub type DraftWorkOrderCreateModalPage = WorkOrderCreateModalPage;
 pub type DraftWorkOrderEditModalPage = WorkOrderEditModalPage;
 pub type DraftWorkOrderSelectPage = WorkOrderSelectPage;
-pub type DraftWorkOrderLineCreateModalPage = WorkOrderLineCreateModalPage;
 pub type DraftWorkOrderLineEditModalPage = WorkOrderLineEditModalPage;
-pub type DraftWorkOrderMaterialLineCreateModalPage = WorkOrderLineCreateModalPage;
 pub type DraftWorkOrderMaterialLineEditModalPage = WorkOrderLineEditModalPage;
-pub type WorkOrderMaterialLineCreateModalPage = WorkOrderLineCreateModalPage;
 pub type WorkOrderMaterialLineEditModalPage = WorkOrderLineEditModalPage;
+pub type DraftWorkOrderMachineLineEditModalPage = WorkOrderMachineLineEditModalPage;
 
 #[derive(Clone, Generic)]
 pub struct ComponentSelectPage {
@@ -2195,9 +2279,9 @@ impl RenderTemplate for InvoiceEditModalPage {
                                 option value="" { "None" }
                                 @for w in &self.work_orders {
                                     @if Some(w.id) == self.work_order_id {
-                                        option value=(w.id) selected { (w.order_number) }
+                                        option value=(w.id) selected { (order_number_display(&w.order_number)) }
                                     } @else {
-                                        option value=(w.id) { (w.order_number) }
+                                        option value=(w.id) { (order_number_display(&w.order_number)) }
                                     }
                                 }
                             }

@@ -1,6 +1,7 @@
 pub mod component;
 pub mod draft_work_order;
 pub mod draft_work_order_line;
+pub mod draft_work_order_machine_line;
 pub mod draft_work_order_material_line;
 pub mod machine;
 pub mod material;
@@ -14,6 +15,7 @@ pub mod work_order_line;
 
 pub use component::Entity as ComponentEntity;
 pub use draft_work_order::Entity as DraftWorkOrderEntity;
+pub use draft_work_order_machine_line::Entity as DraftWorkOrderMachineLineEntity;
 pub use draft_work_order_material_line::Entity as DraftWorkOrderMaterialLineEntity;
 pub use draft_work_order_line::Entity as DraftWorkOrderLineEntity;
 pub use machine::Entity as MachineEntity;

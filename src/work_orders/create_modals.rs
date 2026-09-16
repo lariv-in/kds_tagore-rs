@@ -1,10 +1,10 @@
 //! Typed [`CreateModal`] wiring for Work Orders swap keys.
 
 use super::keys::{
-    ComponentCreateModalKey, InvoiceCreateModalKey, MachineCreateModalKey,
-    MaterialCreateModalKey, MaterialRateCreateModalKey, MaterialSelectModalKey,
-    MaterialSelectTableKey, ShapeCreateModalKey, ShapeSelectModalKey, ShapeSelectTableKey,
-    WorkOrderCreateModalKey,
+    ComponentCreateModalKey, InvoiceCreateModalKey, MachineCreateModalKey, MachineSelectModalKey,
+    MachineSelectTableKey, MaterialCreateModalKey, MaterialRateCreateModalKey,
+    MaterialSelectModalKey, MaterialSelectTableKey, ShapeCreateModalKey, ShapeSelectModalKey,
+    ShapeSelectTableKey, WorkOrderCreateModalKey,
 };
 use super::routes::{
     ComponentCreateGetRouteTag, ComponentCreatePostRouteTag, InvoiceCreateGetRouteTag,
@@ -65,4 +65,5 @@ lariv_rs::impl_create_modal!(
 
 lariv_rs::impl_picker_modal!(ShapeSelectModalKey, ShapeSelectTableKey);
 lariv_rs::impl_picker_modal!(MaterialSelectModalKey, MaterialSelectTableKey);
+lariv_rs::impl_picker_modal!(MachineSelectModalKey, MachineSelectTableKey);
 
