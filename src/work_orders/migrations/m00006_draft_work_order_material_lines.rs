@@ -133,12 +133,22 @@ impl MigrationTrait for Migration {
         if backend == DbBackend::Postgres {
             db.execute(Statement::from_string(
                 backend,
-                r#"
-                DROP VIEW IF EXISTS work_order_lines CASCADE;
-                DROP VIEW IF EXISTS draft_work_proposal_lines CASCADE;
-                DROP VIEW IF EXISTS draft_work_order_lines CASCADE;
-                ALTER TABLE IF EXISTS draft_work_order_material_lines RENAME TO draft_work_order_lines;
-                "#.to_string(),
+                "DROP VIEW IF EXISTS work_order_lines CASCADE;".to_string(),
+            ))
+            .await?;
+            db.execute(Statement::from_string(
+                backend,
+                "DROP VIEW IF EXISTS draft_work_proposal_lines CASCADE;".to_string(),
+            ))
+            .await?;
+            db.execute(Statement::from_string(
+                backend,
+                "DROP VIEW IF EXISTS draft_work_order_lines CASCADE;".to_string(),
+            ))
+            .await?;
+            db.execute(Statement::from_string(
+                backend,
+                "ALTER TABLE IF EXISTS draft_work_order_material_lines RENAME TO draft_work_order_lines;".to_string(),
             ))
             .await?;
         }

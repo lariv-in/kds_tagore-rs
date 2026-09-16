@@ -41,11 +41,19 @@ impl MigrationTrait for Migration {
 
             db.execute(Statement::from_string(
                 backend,
-                r#"
-                ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS component_id;
-                ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS quantity;
-                ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS variables;
-                "#.to_string(),
+                "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS component_id;".to_string(),
+            ))
+            .await?;
+
+            db.execute(Statement::from_string(
+                backend,
+                "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS quantity;".to_string(),
+            ))
+            .await?;
+
+            db.execute(Statement::from_string(
+                backend,
+                "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS variables;".to_string(),
             ))
             .await?;
 
@@ -71,10 +79,13 @@ impl MigrationTrait for Migration {
 
             db.execute(Statement::from_string(
                 backend,
-                r#"
-                CREATE OR REPLACE VIEW draft_work_proposals AS SELECT * FROM draft_work_orders;
-                CREATE OR REPLACE VIEW draft_work_proposal_lines AS SELECT * FROM draft_work_order_lines;
-                "#.to_string(),
+                "CREATE OR REPLACE VIEW draft_work_proposals AS SELECT * FROM draft_work_orders;".to_string(),
+            ))
+            .await?;
+
+            db.execute(Statement::from_string(
+                backend,
+                "CREATE OR REPLACE VIEW draft_work_proposal_lines AS SELECT * FROM draft_work_order_lines;".to_string(),
             ))
             .await?;
         } else {
