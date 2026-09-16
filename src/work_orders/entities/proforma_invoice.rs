@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDate, Utc};
+use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,20 @@ pub struct Model {
     pub customer_id: i64,
     pub invoice_number: String,
     pub work_order_id: Option<i64>,
+}
+
+impl Model {
+    pub fn material_lines_total(&self, lines: &[super::proforma_invoice_material_line::Model]) -> Decimal {
+        lines.iter().map(|l| l.line_total()).sum()
+    }
+
+    pub fn machine_lines_total(&self, ml: &[super::proforma_invoice_machine_line::Model]) -> Decimal {
+        ml.iter().map(|l| l.line_total()).sum()
+    }
+
+    pub fn grand_total(&self, material_lines: &[super::proforma_invoice_material_line::Model], machine_lines: &[super::proforma_invoice_machine_line::Model]) -> Decimal {
+        self.material_lines_total(material_lines) + self.machine_lines_total(machine_lines)
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

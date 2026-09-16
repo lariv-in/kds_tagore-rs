@@ -12,6 +12,7 @@ pub mod proforma_invoice_material_line;
 pub mod shape;
 pub mod work_order;
 pub mod work_order_line;
+pub mod work_orders_preferences;
 
 pub use component::Entity as ComponentEntity;
 pub use draft_work_order::Entity as DraftWorkOrderEntity;
@@ -27,3 +28,5 @@ pub use proforma_invoice_material_line::Entity as ProformaInvoiceMaterialLineEnt
 pub use shape::Entity as ShapeEntity;
 pub use work_order::Entity as WorkOrderEntity;
 pub use work_order_line::Entity as WorkOrderLineEntity;
+pub use work_orders_preferences::Entity as WorkOrdersPreferencesEntity;
+pub use work_orders_preferences::WorkOrdersPreferences;

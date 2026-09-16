@@ -9,7 +9,8 @@ use super::routes::{
     ComponentDetailRouteTag, InvoiceDetailRouteTag, MachineDetailRouteTag, MaterialDetailRouteTag,
     ShapeDetailRouteTag, WorkOrderDetailRouteTag, WorkOrdersComponentsRouteTag,
     WorkOrdersDefaultRouteTag, WorkOrdersInvoicesRouteTag, WorkOrdersMachinesRouteTag,
-    WorkOrdersMaterialsRouteTag, WorkOrdersRatesRouteTag, WorkOrdersShapesRouteTag,
+    WorkOrdersMaterialsRouteTag, WorkOrdersPrefsGetRouteTag, WorkOrdersRatesRouteTag,
+    WorkOrdersShapesRouteTag,
 };
 
 pub fn wo_menu(active: &str) -> Markup {
@@ -56,6 +57,12 @@ pub fn wo_menu(active: &str) -> Markup {
                 title: "Proforma Invoices",
                 url: &WorkOrdersInvoicesRouteTag.url(),
                 active: active == "invoices",
+                ..Default::default()
+            }))
+            (sidebar_menu_item_pane(SidebarMenuItem {
+                title: "PDF Preferences",
+                url: &WorkOrdersPrefsGetRouteTag.url(),
+                active: active == "preferences",
                 ..Default::default()
             }))
         },
@@ -204,6 +211,13 @@ pub fn invoice_crumbs(invoice_number: &str, id: i64) -> Markup {
         &InvoiceDetailRouteTag::new(id).url(),
         None,
     )
+}
+
+pub fn work_orders_prefs_crumbs() -> Markup {
+    breadcrumbs(&[Crumb {
+        label: "Work Orders PDF Preferences",
+        href: None,
+    }])
 }
 
 pub fn work_order_edit_crumbs(order_number: &str, id: i64) -> Markup {

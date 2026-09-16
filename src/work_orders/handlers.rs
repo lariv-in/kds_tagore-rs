@@ -1,23 +1,29 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use axum::{
     Form, Json,
+    body::Body,
     extract::{Path, Query},
-    http::Uri,
+    http::{StatusCode, Uri, header},
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::Utc;
 use lariv_rs::{
-    components::{SharedChromeFolder, SlotCtx, SwapKey},
+    components::{SharedChromeFolder, SlotCtx, SwapKey, modal_keyed},
     html_form::HtmlFormBody,
     http::Cap,
     picker::respond_picker_select,
-    plugins::users::middleware::OptionalAuth,
+    plugins::{
+        finance_common::require_superuser,
+        users::middleware::{OptionalAuth, RequireAuth, RequireStaff},
+    },
     template::RenderAppPane,
     web::{
         Htmx, ModalFormQuery, html_built_page_or_app_layout, html_built_page_with_slots,
         respond_create_modal_done, respond_edit_modal_done,
     },
 };
+use maud::{Markup, html};
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder,
@@ -28,11 +34,15 @@ use std::str::FromStr;
 
 use super::{
     entities::{
-        component, draft_work_order_machine_line, draft_work_order_material_line, machine, material,
-        material_rate, proforma_invoice, proforma_invoice_machine_line, proforma_invoice_material_line,
-        shape, work_order, work_order_line,
+        WorkOrdersPreferences, component, draft_work_order_machine_line,
+        draft_work_order_material_line, machine, material, material_rate, proforma_invoice,
+        proforma_invoice_machine_line, proforma_invoice_material_line, shape, work_order,
+        work_order_line,
     },
+    forms::WorkOrdersPreferencesForm,
     keys::*,
+    pdf::{self, PdfError, PdfResult},
+    preferences::{empty_preferences, load_preferences, save_preferences},
     routes::*,
     state::WorkOrdersState,
     templates::*,
@@ -1174,6 +1184,143 @@ async fn sync_machine_lines(
             time_used: Set(time_used),
         };
         let _ = am.insert(db).await;
+    }
+}
+
+async fn fetch_materials_json(db: &sea_orm::DatabaseConnection) -> String {
+    let materials = material::Entity::find()
+        .order_by_asc(material::Column::Name)
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let rates = material_rate::Entity::find()
+        .order_by_desc(material_rate::Column::Datetime)
+        .order_by_desc(material_rate::Column::Id)
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let mut latest_rate_by_mat: HashMap<i64, Decimal> = HashMap::new();
+    for r in rates {
+        latest_rate_by_mat.entry(r.material_id).or_insert(r.rate_decimal);
+    }
+    let rows: Vec<serde_json::Value> = materials
+        .into_iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "name": m.name,
+                "rate": latest_rate_by_mat.get(&m.id).map(|r| r.to_string()).unwrap_or_else(|| "0".into()),
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+}
+
+async fn invoice_material_lines_json(db: &sea_orm::DatabaseConnection, invoice_id: i64) -> String {
+    let lines = proforma_invoice_material_line::Entity::find()
+        .filter(proforma_invoice_material_line::Column::InvoiceId.eq(invoice_id))
+        .order_by_asc(proforma_invoice_material_line::Column::Id)
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let rows: Vec<serde_json::Value> = lines
+        .into_iter()
+        .map(|l| {
+            serde_json::json!({
+                "id": l.id,
+                "db_id": l.id,
+                "material_id": l.material_id,
+                "name": l.name,
+                "qty": l.qty_decimal.to_string(),
+                "rate": l.rate_decimal.to_string(),
+                "amount": l.line_total().to_string().parse::<f64>().unwrap_or(0.0),
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+}
+
+async fn invoice_machine_lines_json(db: &sea_orm::DatabaseConnection, invoice_id: i64) -> String {
+    let lines = proforma_invoice_machine_line::Entity::find()
+        .filter(proforma_invoice_machine_line::Column::InvoiceId.eq(invoice_id))
+        .order_by_asc(proforma_invoice_machine_line::Column::Id)
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let rows: Vec<serde_json::Value> = lines
+        .into_iter()
+        .map(|l| {
+            serde_json::json!({
+                "id": l.id,
+                "db_id": l.id,
+                "machine_id": l.machine_id,
+                "name": l.name,
+                "duration": format_job_duration(l.time_used),
+                "rate": l.rate_decimal.to_string(),
+                "amount": l.line_total().to_string().parse::<f64>().unwrap_or(0.0),
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+}
+
+async fn sync_invoice_lines(
+    db: &sea_orm::DatabaseConnection,
+    invoice_id: i64,
+    material_lines_str: Option<String>,
+    machine_lines_str: Option<String>,
+    now: chrono::DateTime<chrono::Utc>,
+) {
+    if let Some(s) = material_lines_str.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Ok(lines) = serde_json::from_str::<Vec<super::forms::InvoiceMaterialLineInput>>(s) {
+            let _ = proforma_invoice_material_line::Entity::delete_many()
+                .filter(proforma_invoice_material_line::Column::InvoiceId.eq(invoice_id))
+                .exec(db)
+                .await;
+            for line in lines {
+                if line.name.trim().is_empty() { continue; }
+                let material_id = line.material_id.filter(|&id| id > 0);
+                let qty: Decimal = line.qty.parse().unwrap_or(Decimal::ZERO);
+                let rate: Decimal = line.rate.parse().unwrap_or(Decimal::ZERO);
+                let am = proforma_invoice_material_line::ActiveModel {
+                    id: Default::default(),
+                    created_at: Set(Some(now)),
+                    updated_at: Set(Some(now)),
+                    invoice_id: Set(invoice_id),
+                    material_id: Set(material_id),
+                    name: Set(line.name.clone()),
+                    rate_decimal: Set(rate),
+                    qty_decimal: Set(qty),
+                };
+                let _ = am.insert(db).await;
+            }
+        }
+    }
+    if let Some(s) = machine_lines_str.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Ok(lines) = serde_json::from_str::<Vec<super::forms::InvoiceMachineLineInput>>(s) {
+            let _ = proforma_invoice_machine_line::Entity::delete_many()
+                .filter(proforma_invoice_machine_line::Column::InvoiceId.eq(invoice_id))
+                .exec(db)
+                .await;
+            for line in lines {
+                let duration_str = line.duration.trim();
+                if duration_str.is_empty() { continue; }
+                let Ok(time_used) = parse_job_duration(duration_str) else { continue; };
+                let machine_id = line.machine_id.filter(|&id| id > 0);
+                let rate: Decimal = line.rate.parse().unwrap_or(Decimal::ZERO);
+                let am = proforma_invoice_machine_line::ActiveModel {
+                    id: Default::default(),
+                    created_at: Set(Some(now)),
+                    updated_at: Set(Some(now)),
+                    invoice_id: Set(invoice_id),
+                    machine_id: Set(machine_id),
+                    name: Set(line.name.clone()),
+                    time_used: Set(time_used),
+                    rate_decimal: Set(rate),
+                };
+                let _ = am.insert(db).await;
+            }
+        }
     }
 }
 
@@ -2741,8 +2888,27 @@ pub async fn invoices_list(
         .await
         .unwrap_or_default();
 
+    let mut customer_names = Vec::with_capacity(invoices.len());
+    let mut grand_totals = Vec::with_capacity(invoices.len());
+    for inv in &invoices {
+        let name = lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(inv.customer_id)
+            .one(&state.db).await.ok().flatten()
+            .map(|c| c.name)
+            .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
+        customer_names.push(name);
+        let mlines = proforma_invoice_material_line::Entity::find()
+            .filter(proforma_invoice_material_line::Column::InvoiceId.eq(inv.id))
+            .all(&state.db).await.unwrap_or_default();
+        let mlmach = proforma_invoice_machine_line::Entity::find()
+            .filter(proforma_invoice_machine_line::Column::InvoiceId.eq(inv.id))
+            .all(&state.db).await.unwrap_or_default();
+        grand_totals.push(inv.grand_total(&mlines, &mlmach));
+    }
+
     let page = InvoiceListPage {
         invoices,
+        customer_names,
+        grand_totals,
         path_and_query: path_and_query(&uri),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
@@ -2781,19 +2947,28 @@ pub async fn invoice_detail(
         .await
         .unwrap_or_default();
 
-    let mut grand_total = Decimal::ZERO;
-    for l in &machine_lines {
-        grand_total += l.line_total();
-    }
-    for l in &material_lines {
-        grand_total += l.line_total();
-    }
+    let grand_total = inv.grand_total(&material_lines, &machine_lines);
+
+    let customer_name = lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(inv.customer_id)
+        .one(&state.db).await.ok().flatten()
+        .map(|c| c.name)
+        .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
+
+    let work_order_number = if let Some(wo_id) = inv.work_order_id {
+        work_order::Entity::find_by_id(wo_id).one(&state.db).await.ok().flatten()
+            .map(|wo| wo.order_number)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let page = InvoiceDetailPage {
         invoice: inv,
         machine_lines,
         material_lines,
         grand_total,
+        customer_name,
+        work_order_number,
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
@@ -2805,28 +2980,40 @@ pub async fn invoice_create_get(
     auth: OptionalAuth,
     Query(q): Query<ModalFormQuery>,
 ) -> maud::Markup {
-    let work_orders = work_order::Entity::find()
-        .order_by_desc(work_order::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let materials_json = fetch_materials_json(&state.db).await;
+    let machines_json = fetch_machines_json(&state.db).await;
 
     let page = InvoiceCreateModalPage {
         form_name: q.form_name(),
-        work_orders,
+        date: today,
+        customer_name: String::new(),
+        work_order_name: String::new(),
+        material_lines_json: "[]".into(),
+        machine_lines_json: "[]".into(),
+        materials_json,
+        machines_json,
         error: String::new(),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     html_built_page_with_slots(&page, &chrome, &slot_ctx)
 }
 
-#[derive(Deserialize)]
-pub struct InvoiceCreateForm {
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct InvoiceFormData {
+    #[serde(alias = "invoice_number", default)]
     pub invoice_number: String,
-    pub date: chrono::NaiveDate,
+    #[serde(alias = "date", default)]
+    pub date: String,
+    #[serde(alias = "customer_id", alias = "CustomerID", default, deserialize_with = "i64_from_str_or_zero")]
     pub customer_id: i64,
-    #[serde(default)]
-    pub work_order_id: Option<String>,
+    #[serde(alias = "work_order_id", alias = "WorkOrderID", default, deserialize_with = "opt_i64_from_str")]
+    pub work_order_id: Option<i64>,
+    #[serde(alias = "material_lines", default)]
+    pub material_lines: Option<String>,
+    #[serde(alias = "machine_lines", default)]
+    pub machine_lines: Option<String>,
 }
 
 pub async fn invoice_create_post(
@@ -2835,50 +3022,99 @@ pub async fn invoice_create_post(
     auth: OptionalAuth,
     htmx: Htmx,
     Query(q): Query<ModalFormQuery>,
-    Form(form): Form<InvoiceCreateForm>,
+    Form(form): Form<InvoiceFormData>,
 ) -> Response {
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let wo_id = form
-        .work_order_id
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .and_then(|s| s.parse::<i64>().ok());
+
+    if form.customer_id <= 0 {
+        let customer_name = String::new();
+        let work_order_name = if let Some(wo_id) = form.work_order_id {
+            work_order::Entity::find_by_id(wo_id).one(&state.db).await.ok().flatten()
+                .map(|wo| wo.order_number).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let materials_json = fetch_materials_json(&state.db).await;
+        let machines_json = fetch_machines_json(&state.db).await;
+        let page = InvoiceCreateModalPage {
+            form_name: q.form_name(),
+            date: form.date.clone(),
+            customer_name,
+            work_order_name,
+            material_lines_json: form.material_lines.clone().unwrap_or_default(),
+            machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
+            materials_json,
+            machines_json,
+            error: "Please select a customer.".into(),
+        };
+        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+    }
+
+    let date = match chrono::NaiveDate::parse_from_str(form.date.trim(), "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => {
+            let materials_json = fetch_materials_json(&state.db).await;
+            let machines_json = fetch_machines_json(&state.db).await;
+            let page = InvoiceCreateModalPage {
+                form_name: q.form_name(),
+                date: form.date.clone(),
+                customer_name: String::new(),
+                work_order_name: String::new(),
+                material_lines_json: form.material_lines.clone().unwrap_or_default(),
+                machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
+                materials_json,
+                machines_json,
+                error: "Invalid date format. Use YYYY-MM-DD.".into(),
+            };
+            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+        }
+    };
 
     let now = Utc::now();
     let model = proforma_invoice::ActiveModel {
         id: Default::default(),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
-        date: Set(form.date),
+        date: Set(date),
         customer_id: Set(form.customer_id),
         invoice_number: Set(form.invoice_number.trim().to_string()),
-        work_order_id: Set(wo_id),
+        work_order_id: Set(form.work_order_id),
     };
 
     match model.insert(&state.db).await {
-        Ok(saved) => respond_create_modal_done::<InvoiceCreateModalKey>(
-            &htmx,
-            &q.refresh_table(),
-            &InvoiceDetailRouteTag::new(saved.id).url(),
-        ),
+        Ok(saved) => {
+            sync_invoice_lines(&state.db, saved.id, form.material_lines, form.machine_lines, now).await;
+            respond_create_modal_done::<InvoiceCreateModalKey>(
+                &htmx,
+                &q.refresh_table(),
+                &InvoiceDetailRouteTag::new(saved.id).url(),
+            )
+        }
         Err(e) => {
-            let work_orders = work_order::Entity::find().all(&state.db).await.unwrap_or_default();
+            let customer_name = lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(form.customer_id)
+                .one(&state.db).await.ok().flatten().map(|c| c.name).unwrap_or_default();
+            let work_order_name = if let Some(wo_id) = form.work_order_id {
+                work_order::Entity::find_by_id(wo_id).one(&state.db).await.ok().flatten()
+                    .map(|wo| wo.order_number).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let materials_json = fetch_materials_json(&state.db).await;
+            let machines_json = fetch_machines_json(&state.db).await;
             let page = InvoiceCreateModalPage {
                 form_name: q.form_name(),
-                work_orders,
+                date: form.date.clone(),
+                customer_name,
+                work_order_name,
+                material_lines_json: form.material_lines.clone().unwrap_or_default(),
+                machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
+                materials_json,
+                machines_json,
                 error: e.to_string(),
             };
             html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InvoiceEditForm {
-    pub invoice_number: String,
-    pub date: String,
-    pub customer_id: i64,
-    pub work_order_id: Option<i64>,
 }
 
 pub async fn invoice_edit_get(
@@ -2893,15 +3129,38 @@ pub async fn invoice_edit_get(
         Ok(Some(i)) => i,
         _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
     };
-    let work_orders = work_order::Entity::find().all(&state.db).await.unwrap_or_default();
+
+    let customer_name = lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(inv.customer_id)
+        .one(&state.db).await.ok().flatten()
+        .map(|c| c.name)
+        .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
+
+    let work_order_name = if let Some(wo_id) = inv.work_order_id {
+        work_order::Entity::find_by_id(wo_id).one(&state.db).await.ok().flatten()
+            .map(|wo| wo.order_number)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let material_lines_json = invoice_material_lines_json(&state.db, inv.id).await;
+    let machine_lines_json = invoice_machine_lines_json(&state.db, inv.id).await;
+    let materials_json = fetch_materials_json(&state.db).await;
+    let machines_json = fetch_machines_json(&state.db).await;
+
     let page = InvoiceEditModalPage {
         id,
         form_name: q.form_name(),
         invoice_number: inv.invoice_number,
         date: inv.date.to_string(),
         customer_id: inv.customer_id,
+        customer_name,
         work_order_id: inv.work_order_id,
-        work_orders,
+        work_order_name,
+        material_lines_json,
+        machine_lines_json,
+        materials_json,
+        machines_json,
         error: String::new(),
     };
     html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
@@ -2914,7 +3173,7 @@ pub async fn invoice_edit_post(
     htmx: Htmx,
     Query(q): Query<ModalFormQuery>,
     Path(id): Path<i64>,
-    Form(form): Form<InvoiceEditForm>,
+    Form(form): Form<InvoiceFormData>,
 ) -> impl IntoResponse {
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     let existing = match proforma_invoice::Entity::find_by_id(id).one(&state.db).await {
@@ -2934,20 +3193,37 @@ pub async fn invoice_edit_post(
     am.work_order_id = Set(form.work_order_id);
 
     match am.update(&state.db).await {
-        Ok(_) => respond_edit_modal_done::<InvoiceEditModalKey>(
-            &htmx,
-            &InvoiceDetailRouteTag::new(id).url(),
-        ),
+        Ok(_) => {
+            sync_invoice_lines(&state.db, id, form.material_lines, form.machine_lines, now).await;
+            respond_edit_modal_done::<InvoiceEditModalKey>(
+                &htmx,
+                &InvoiceDetailRouteTag::new(id).url(),
+            )
+        }
         Err(e) => {
-            let work_orders = work_order::Entity::find().all(&state.db).await.unwrap_or_default();
+            let customer_name = lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(form.customer_id)
+                .one(&state.db).await.ok().flatten().map(|c| c.name).unwrap_or_default();
+            let work_order_name = if let Some(wo_id) = form.work_order_id {
+                work_order::Entity::find_by_id(wo_id).one(&state.db).await.ok().flatten()
+                    .map(|wo| wo.order_number).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let materials_json = fetch_materials_json(&state.db).await;
+            let machines_json = fetch_machines_json(&state.db).await;
             let page = InvoiceEditModalPage {
                 id,
                 form_name: q.form_name(),
-                invoice_number: form.invoice_number,
-                date: form.date,
+                invoice_number: form.invoice_number.clone(),
+                date: form.date.clone(),
                 customer_id: form.customer_id,
+                customer_name,
                 work_order_id: form.work_order_id,
-                work_orders,
+                work_order_name,
+                material_lines_json: form.material_lines.clone().unwrap_or_default(),
+                machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
+                materials_json,
+                machines_json,
                 error: e.to_string(),
             };
             html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
@@ -3076,4 +3352,360 @@ pub async fn calculate_api(
         cost_inr: cost,
         error: None,
     })
+}
+
+// ==========================================
+// 10. PDF EXPORT + PREFERENCES
+// ==========================================
+
+const WORK_ORDER_PDF_PREVIEW_CACHE_DIR: &str = "lariv-work-orders-pdf-preview";
+
+fn preview_cache_dir() -> PathBuf {
+    std::env::temp_dir().join(WORK_ORDER_PDF_PREVIEW_CACHE_DIR)
+}
+
+fn preview_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{}", std::process::id(), nanos)
+}
+
+fn is_valid_preview_token(token: &str) -> bool {
+    !token.is_empty()
+        && token.len() <= 64
+        && token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn preview_pdf_path(token: &str) -> PathBuf {
+    preview_cache_dir().join(format!("{token}.pdf"))
+}
+
+fn store_preview_pdf(token: &str, bytes: &[u8]) -> Result<(), String> {
+    let dir = preview_cache_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create preview cache: {e}"))?;
+    std::fs::write(preview_pdf_path(token), bytes).map_err(|e| format!("write preview pdf: {e}"))
+}
+
+fn remove_preview_pdf(token: &str) {
+    let path = preview_pdf_path(token);
+    if let Err(e) = std::fs::remove_file(&path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(error = %e, path = %path.display(), "failed to remove preview pdf");
+        }
+    }
+}
+
+fn cleanup_stale_previews(max_age_secs: u64) {
+    let Ok(read_dir) = std::fs::read_dir(preview_cache_dir()) else {
+        return;
+    };
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(max_age_secs))
+        .unwrap_or(std::time::UNIX_EPOCH);
+    for entry in read_dir.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        if modified < cutoff {
+            if let Err(e) = std::fs::remove_file(entry.path()) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(
+                        error = %e,
+                        path = %entry.path().display(),
+                        "failed to remove stale preview pdf"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn pdf_error_response(err: PdfError) -> Response {
+    match err {
+        PdfError::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
+        PdfError::Message(msg) => {
+            tracing::error!("work orders pdf: {msg}");
+            (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+        }
+    }
+}
+
+fn pdf_ok_response(result: PdfResult) -> Response {
+    let filename = format!("{}.pdf", result.filename_base);
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{filename}\""),
+            ),
+        ],
+        Body::from(result.bytes),
+    )
+        .into_response()
+}
+
+fn render_preview_modal(pdf_url: &str, error: Option<&str>) -> Markup {
+    if let Some(err) = error {
+        return modal_keyed::<WorkOrdersPdfPreviewModalKey>(
+            "max-w-2xl",
+            html! {
+                h3 class="text-lg font-semibold mb-2" { "Work Orders PDF preview failed" }
+                p class="text-error whitespace-pre-wrap" { (err) }
+            },
+        );
+    }
+    modal_keyed::<WorkOrdersPdfPreviewModalKey>(
+        "max-w-6xl w-[95vw]",
+        html! {
+            h3 class="text-lg font-semibold mb-3" { "Work Orders PDF preview (sample data)" }
+            iframe
+                src=(pdf_url)
+                class="w-full h-[75vh] border border-base-300 rounded bg-white"
+                title="Work Orders PDF preview" {}
+        },
+    )
+}
+
+fn prefs_page(prefs: WorkOrdersPreferences, error: String) -> WorkOrdersPreferencesPage {
+    WorkOrdersPreferencesPage {
+        draft_work_order_pdf_template: prefs
+            .draft_work_order_pdf_template
+            .unwrap_or_default(),
+        proforma_invoice_pdf_template: prefs
+            .proforma_invoice_pdf_template
+            .unwrap_or_default(),
+        error,
+    }
+}
+
+/// HTTP handler: `get /work-orders/preferences`.
+pub async fn preferences_get(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireStaff(ctx): RequireStaff,
+    htmx: Htmx,
+) -> Response {
+    let slot_ctx = SlotCtx::from_auth(&ctx);
+    let prefs = match load_preferences(&state.db).await {
+        Ok(p) => p,
+        Err(e) => {
+            let page = prefs_page(empty_preferences(), format!("Failed to load preferences: {e}"));
+            return html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response();
+        }
+    };
+    let page = prefs_page(prefs, String::new());
+    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
+}
+
+/// HTTP handler: `post /work-orders/preferences`.
+pub async fn preferences_post(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireStaff(ctx): RequireStaff,
+    htmx: Htmx,
+    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
+) -> Response {
+    let slot_ctx = SlotCtx::from_auth(&ctx);
+    let prefs = WorkOrdersPreferences {
+        id: 1,
+        created_at: None,
+        updated_at: None,
+        draft_work_order_pdf_template: Some(form.draft_work_order_pdf_template),
+        proforma_invoice_pdf_template: Some(form.proforma_invoice_pdf_template),
+    };
+    match save_preferences(&state.db, prefs.clone()).await {
+        Ok(_) => htmx.redirect(&WorkOrdersPrefsGetRouteTag.url()),
+        Err(e) => {
+            let page = prefs_page(prefs, format!("Failed to save preferences: {e}"));
+            html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
+        }
+    }
+}
+
+/// HTTP handler: `get /work-orders/orders/{id}/pdf`.
+pub async fn work_order_pdf(
+    Cap(state): Cap<WorkOrdersState>,
+    RequireAuth(ctx): RequireAuth,
+    Path(id): Path<i64>,
+) -> Response {
+    if !require_superuser(&ctx) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match pdf::render_work_order_pdf(&state.db, id, &ctx.timezone).await {
+        Ok(result) => pdf_ok_response(result),
+        Err(e) => pdf_error_response(e),
+    }
+}
+
+/// HTTP handler: `get /work-orders/invoices/{id}/pdf`.
+pub async fn invoice_pdf(
+    Cap(state): Cap<WorkOrdersState>,
+    RequireAuth(ctx): RequireAuth,
+    Path(id): Path<i64>,
+) -> Response {
+    if !require_superuser(&ctx) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match pdf::render_proforma_invoice_pdf(&state.db, id, &ctx.timezone).await {
+        Ok(result) => pdf_ok_response(result),
+        Err(e) => pdf_error_response(e),
+    }
+}
+
+/// HTTP handler: `post /work-orders/pdf/preview/work-order`.
+pub async fn work_order_pdf_preview_post(
+    Cap(state): Cap<WorkOrdersState>,
+    RequireAuth(ctx): RequireAuth,
+    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
+) -> Markup {
+    if !require_superuser(&ctx) {
+        return render_preview_modal("", Some("Forbidden"));
+    }
+    cleanup_stale_previews(3600);
+    let template = if form.draft_work_order_pdf_template.trim().is_empty() {
+        None
+    } else {
+        Some(form.draft_work_order_pdf_template.as_str())
+    };
+    match pdf::render_work_order_pdf_preview(&state.db, template, &ctx.timezone).await {
+        Ok(result) => {
+            let token = preview_token();
+            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
+                return render_preview_modal("", Some(&msg));
+            }
+            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
+            render_preview_modal(&pdf_url, None)
+        }
+        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
+        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
+    }
+}
+
+/// HTTP handler: `post /work-orders/pdf/preview/invoice`.
+pub async fn invoice_pdf_preview_post(
+    Cap(state): Cap<WorkOrdersState>,
+    RequireAuth(ctx): RequireAuth,
+    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
+) -> Markup {
+    if !require_superuser(&ctx) {
+        return render_preview_modal("", Some("Forbidden"));
+    }
+    cleanup_stale_previews(3600);
+    let template = if form.proforma_invoice_pdf_template.trim().is_empty() {
+        None
+    } else {
+        Some(form.proforma_invoice_pdf_template.as_str())
+    };
+    match pdf::render_proforma_invoice_pdf_preview(&state.db, template).await {
+        Ok(result) => {
+            let token = preview_token();
+            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
+                return render_preview_modal("", Some(&msg));
+            }
+            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
+            render_preview_modal(&pdf_url, None)
+        }
+        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
+        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
+    }
+}
+
+/// HTTP handler: `get /work-orders/pdf/preview/{token}`.
+pub async fn preview_pdf_get(
+    RequireAuth(ctx): RequireAuth,
+    Path(token): Path<String>,
+) -> Response {
+    if !require_superuser(&ctx) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if !is_valid_preview_token(&token) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let path = preview_pdf_path(&token);
+    if !path.starts_with(preview_cache_dir()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    remove_preview_pdf(&token);
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                "inline; filename=\"work-orders-preview.pdf\"".to_string(),
+            ),
+        ],
+        Body::from(bytes),
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_token_validation_rejects_path_traversal() {
+        assert!(!is_valid_preview_token("../etc/passwd"));
+        assert!(!is_valid_preview_token(""));
+        assert!(is_valid_preview_token("12345-67890"));
+    }
+
+    #[test]
+    fn preview_pdf_path_stays_in_cache_dir() {
+        let path = preview_pdf_path("abc-123");
+        assert!(path.starts_with(preview_cache_dir()));
+    }
+
+    #[test]
+    fn invoice_material_lines_parse_widget_snake_case_json() {
+        let json = r#"[{"id":null,"material_id":1,"name":"MS","qty":"10","rate":"250","amount":2500}]"#;
+        let lines: Vec<crate::work_orders::forms::InvoiceMaterialLineInput> =
+            serde_json::from_str(json).expect("widget snake_case json must parse");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].material_id, Some(1));
+        assert_eq!(lines[0].name, "MS");
+        assert_eq!(lines[0].qty, "10");
+        assert_eq!(lines[0].rate, "250");
+    }
+
+    #[test]
+    fn invoice_machine_lines_parse_widget_snake_case_json() {
+        let json = r#"[{"id":null,"machine_id":1,"name":"CNC","duration":"2h 30m","rate":"950","amount":2375}]"#;
+        let lines: Vec<crate::work_orders::forms::InvoiceMachineLineInput> =
+            serde_json::from_str(json).expect("widget snake_case json must parse");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].machine_id, Some(1));
+        assert_eq!(lines[0].duration, "2h 30m");
+        assert_eq!(lines[0].rate, "950");
+    }
+
+    #[test]
+    fn invoice_line_inputs_still_accept_pascal_case_json() {
+        let material: Vec<crate::work_orders::forms::InvoiceMaterialLineInput> =
+            serde_json::from_str(r#"[{"MaterialId":2,"Name":"Aluminium","Qty":"5","Rate":"500"}]"#)
+                .expect("pascal case json must parse");
+        assert_eq!(material[0].material_id, Some(2));
+        assert_eq!(material[0].qty, "5");
+
+        let machine: Vec<crate::work_orders::forms::InvoiceMachineLineInput> =
+            serde_json::from_str(r#"[{"MachineId":3,"Duration":"1h","Rate":"300"}]"#)
+                .expect("pascal case json must parse");
+        assert_eq!(machine[0].machine_id, Some(3));
+        assert_eq!(machine[0].duration, "1h");
+    }
 }

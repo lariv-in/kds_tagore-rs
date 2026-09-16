@@ -4,7 +4,7 @@ use lariv_rs::{
     components::icon,
     html_form::{
         html_form,
-        widgets::{ForeignKey, List, Text, Textarea},
+        widgets::{CodeEditor, ForeignKey, List, Section, Text, Textarea},
         FieldRender, FormCtx, FormWidget,
     },
 };
@@ -1387,5 +1387,547 @@ pub type DraftWorkOrderLineInput = DraftWorkOrderMaterialLineInput;
 
 pub type WorkOrderItemInput = DraftWorkOrderLineInput;
 pub type DraftWorkOrderItemInput = DraftWorkOrderLineInput;
+
+#[html_form(default)]
+pub struct WorkOrdersPreferencesForm {
+    #[form(widget = Section, label = "Draft Work Order PDF")]
+    _section_wo: (),
+
+    #[form(
+        label = "Draft Work Order Template (Typst)",
+        widget = CodeEditor,
+        language = "typst",
+        rows = 24
+    )]
+    pub draft_work_order_pdf_template: String,
+
+    #[form(widget = Section, label = "Proforma Invoice PDF")]
+    _section_inv: (),
+
+    #[form(
+        label = "Proforma Invoice Template (Typst)",
+        widget = CodeEditor,
+        language = "typst",
+        rows = 24
+    )]
+    pub proforma_invoice_pdf_template: String,
+}
+
+// ==========================================
+// 10. PROFORMA INVOICE FORM WIDGETS
+// ==========================================
+
+pub struct DateInput;
+
+impl FormWidget for DateInput {
+    fn render(_ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        use maud::{html, PreEscaped};
+        let required = if field.required { " required" } else { "" };
+        html! {
+            div class="form-control mb-3" {
+                @if !field.label.is_empty() {
+                    label class="label" { span class="label-text" { (field.label) } }
+                }
+                (PreEscaped(format!(
+                    r#"<input type="date" name="{}" value="{}" class="input input-bordered w-full"{}>"#,
+                    field.name, field.value, required
+                )))
+            }
+        }
+    }
+}
+
+pub struct ProformaInvoiceMaterialLinesWidget;
+
+impl FormWidget for ProformaInvoiceMaterialLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        let materials_json: &str = ctx.display_of(field.name);
+        let materials_json = if materials_json.is_empty() { "[]" } else { materials_json };
+        let mut rows = Vec::new();
+        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+            for (i, v) in arr.into_iter().enumerate() {
+                if let serde_json::Value::Object(obj) = v {
+                    let material_id = obj.get("material_id").and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                        _ => None,
+                    }).unwrap_or(0);
+                    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let qty = obj.get("qty").map(|x| match x {
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => "0".into(),
+                    }).unwrap_or_default();
+                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => "0".into(),
+                    }).unwrap_or_default();
+                    let amount = obj.get("amount").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                    let db_id = obj.get("id").or_else(|| obj.get("db_id")).and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        _ => None,
+                    }).unwrap_or(0);
+
+                    rows.push(serde_json::json!({
+                        "id": i + 1,
+                        "db_id": db_id,
+                        "material_id": material_id,
+                        "name": name,
+                        "qty": qty,
+                        "rate": rate,
+                        "amount": amount,
+                    }));
+                }
+            }
+        }
+        let next_id = rows.len() + 1;
+        let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+
+        let alpine_data = format!(
+            r#"{{
+                materials: {materials_json},
+                items: {rows_json},
+                nextId: {next_id},
+                init() {{
+                    this.items.forEach(it => this.recalc(it));
+                }},
+                getMaterial(id) {{
+                    return this.materials.find(m => String(m.id) === String(id));
+                }},
+                addItem() {{
+                    const first = this.materials.length > 0 ? this.materials[0] : null;
+                    this.items.push({{
+                        id: this.nextId++,
+                        db_id: null,
+                        material_id: first ? first.id : 0,
+                        name: first ? first.name : '',
+                        qty: '',
+                        rate: first ? first.rate : '0',
+                        amount: 0,
+                    }});
+                }},
+                removeItem(idx) {{
+                    this.items.splice(idx, 1);
+                }},
+                moveUp(idx) {{
+                    if (idx <= 0) return;
+                    const arr = this.items.slice();
+                    const tmp = arr[idx - 1];
+                    arr[idx - 1] = arr[idx];
+                    arr[idx] = tmp;
+                    this.items = arr;
+                }},
+                moveDown(idx) {{
+                    if (idx >= this.items.length - 1) return;
+                    const arr = this.items.slice();
+                    const tmp = arr[idx + 1];
+                    arr[idx + 1] = arr[idx];
+                    arr[idx] = tmp;
+                    this.items = arr;
+                }},
+                onMaterialChange(item) {{
+                    const m = this.getMaterial(item.material_id);
+                    if (m) {{
+                        item.name = m.name;
+                        item.rate = m.rate;
+                    }}
+                    this.recalc(item);
+                }},
+                recalc(item) {{
+                    const qty = parseFloat(item.qty) || 0;
+                    const rate = parseFloat(item.rate) || 0;
+                    item.amount = parseFloat((qty * rate).toFixed(2));
+                }},
+                grandTotal() {{
+                    return this.items.reduce((sum, it) => sum + (it.amount || 0), 0);
+                }},
+                jsonOutput() {{
+                    return JSON.stringify(this.items.filter(it => it.name || it.material_id).map(it => ({{
+                        id: it.db_id || null,
+                        material_id: it.material_id,
+                        name: it.name,
+                        qty: String(it.qty || '0'),
+                        rate: String(it.rate || '0'),
+                        amount: it.amount,
+                    }})));
+                }}
+            }}"#
+        );
+
+        use maud::{html, PreEscaped};
+        html! {
+            div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
+
+                div class="flex justify-between items-center mb-2" {
+                    label class="label p-0" {
+                        span class="label-text font-bold text-base" { (field.label) }
+                    }
+                    (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
+                    (PreEscaped(r#"<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>"#))
+                    "Add Material Line"
+                    (PreEscaped("</button>"))
+                }
+
+                (PreEscaped(r#"<template x-if="items.length === 0">"#))
+                div class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300" {
+                    "No material lines yet."
+                }
+                (PreEscaped("</template>"))
+
+                (PreEscaped(r#"<template x-if="items.length > 0">"#))
+                div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 shadow-sm" {
+                    table class="table table-xs w-full" {
+                        thead class="bg-base-200/80 text-base-content/70" {
+                            tr class="text-xs" {
+                                th class="w-7 text-center" { "#" }
+                                th { "Material" }
+                                th class="text-right w-20" { "Qty (kg)" }
+                                th class="text-right w-20" { "Rate (₹/kg)" }
+                                th class="text-right w-24" { "Amount (₹)" }
+                                th class="w-7 text-center" { "" }
+                            }
+                        }
+                        tbody {
+                            (PreEscaped(r#"
+                            <template x-for="(item, idx) in items" :key="item.id">
+                            <tr class="hover border-b border-base-200 last:border-none">
+                                <td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>
+                                <td class="align-middle">
+                                    <div class="flex items-center gap-1">
+                                        <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium" x-model="item.material_id" @change="onMaterialChange(item)">
+                                            <template x-for="m in materials" :key="m.id">
+                                                <option :value="m.id" x-text="m.name"></option>
+                                            </template>
+                                        </select>
+                                        <input type="text" class="input input-xs input-bordered w-32 h-7 min-h-0 text-xs font-medium" x-model="item.name" placeholder="Custom name" @change="item.material_id = 0">
+                                    </div>
+                                </td>
+                                <td class="align-middle text-right">
+                                    <input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.qty" @input="recalc(item)" placeholder="0">
+                                </td>
+                                <td class="align-middle text-right">
+                                    <input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.rate" @input="recalc(item)">
+                                </td>
+                                <td class="align-middle text-right font-mono font-bold text-primary text-xs">
+                                    <span x-text="'₹ ' + (item.amount || 0).toFixed(2)"></span>
+                                </td>
+                                <td class="align-middle text-center">
+                                    <button type="button" class="btn btn-ghost btn-square btn-sm shrink-0 text-error hover:bg-error/10" @click="removeItem(idx)" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                                </td>
+                            </tr>
+                            </template>
+                            "#))
+                        }
+                    }
+                }
+                (PreEscaped("</template>"))
+
+                div class="mt-2 p-3 bg-base-200/60 rounded flex justify-between items-center text-sm border border-base-200" {
+                    span class="font-semibold" { "Material Total" }
+                    span class="font-mono font-bold text-primary" {
+                        (PreEscaped(r#"<span x-text="'₹ ' + grandTotal().toFixed(2)"></span>"#))
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct ProformaInvoiceMachineLinesWidget;
+
+impl FormWidget for ProformaInvoiceMachineLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        let machines_json: &str = ctx.display_of(field.name);
+        let machines_json = if machines_json.is_empty() { "[]" } else { machines_json };
+        let mut rows = Vec::new();
+        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+            for (i, v) in arr.into_iter().enumerate() {
+                if let serde_json::Value::Object(obj) = v {
+                    let machine_id = obj.get("machine_id").and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                        _ => None,
+                    }).unwrap_or(0);
+                    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => "0".into(),
+                    }).unwrap_or_default();
+                    let duration = obj.get("duration").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let amount = obj.get("amount").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                    let db_id = obj.get("id").or_else(|| obj.get("db_id")).and_then(|x| match x {
+                        serde_json::Value::Number(n) => n.as_i64(),
+                        _ => None,
+                    }).unwrap_or(0);
+
+                    rows.push(serde_json::json!({
+                        "id": i + 1,
+                        "db_id": db_id,
+                        "machine_id": machine_id,
+                        "name": name,
+                        "duration": duration,
+                        "rate": rate,
+                        "amount": amount,
+                    }));
+                }
+            }
+        }
+        let next_id = rows.len() + 1;
+        let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+
+        let alpine_data = format!(
+            r#"{{
+                machines: {machines_json},
+                items: {rows_json},
+                nextId: {next_id},
+                init() {{
+                    this.items.forEach(it => this.recalc(it));
+                }},
+                getMachine(id) {{
+                    return this.machines.find(m => String(m.id) === String(id));
+                }},
+                addItem() {{
+                    const first = this.machines.length > 0 ? this.machines[0] : null;
+                    this.items.push({{
+                        id: this.nextId++,
+                        db_id: null,
+                        machine_id: first ? first.id : 0,
+                        name: first ? first.name : '',
+                        duration: '',
+                        rate: first ? first.rate : '0',
+                        amount: 0,
+                    }});
+                }},
+                removeItem(idx) {{
+                    this.items.splice(idx, 1);
+                }},
+                moveUp(idx) {{
+                    if (idx <= 0) return;
+                    const arr = this.items.slice();
+                    const tmp = arr[idx - 1];
+                    arr[idx - 1] = arr[idx];
+                    arr[idx] = tmp;
+                    this.items = arr;
+                }},
+                moveDown(idx) {{
+                    if (idx >= this.items.length - 1) return;
+                    const arr = this.items.slice();
+                    const tmp = arr[idx + 1];
+                    arr[idx + 1] = arr[idx];
+                    arr[idx] = tmp;
+                    this.items = arr;
+                }},
+                onMachineChange(item) {{
+                    const m = this.getMachine(item.machine_id);
+                    if (m) {{
+                        item.name = m.name;
+                        item.rate = m.rate_decimal;
+                    }}
+                    this.recalc(item);
+                }},
+                parseDuration(s) {{
+                    s = (s || '').trim().toLowerCase();
+                    if (!s) return 0;
+                    let h = 0;
+                    const hh = s.match(/([\d.]+)\s*h/);
+                    const mm = s.match(/([\d.]+)\s*m/);
+                    if (hh) h += parseFloat(hh[1]);
+                    if (mm) h += parseFloat(mm[1]) / 60;
+                    if (!hh && !mm) {{
+                        const num = parseFloat(s);
+                        if (!isNaN(num)) h = num;
+                    }}
+                    return h;
+                }},
+                formatHours(h) {{
+                    if (!h || h <= 0) return '';
+                    const whole = Math.floor(h);
+                    const mins = Math.round((h - whole) * 60);
+                    if (whole > 0 && mins > 0) return whole + 'h ' + mins + 'm';
+                    if (whole > 0) return whole + 'h';
+                    return mins + 'm';
+                }},
+                recalc(item) {{
+                    const hours = this.parseDuration(item.duration);
+                    const rate = parseFloat(item.rate) || 0;
+                    item.amount = parseFloat((rate * hours).toFixed(2));
+                }},
+                grandTotal() {{
+                    return this.items.reduce((sum, it) => sum + (it.amount || 0), 0);
+                }},
+                jsonOutput() {{
+                    return JSON.stringify(this.items.filter(it => it.duration || it.machine_id).map(it => ({{
+                        id: it.db_id || null,
+                        machine_id: it.machine_id,
+                        name: it.name,
+                        duration: it.duration,
+                        rate: String(it.rate || '0'),
+                        amount: it.amount,
+                    }})));
+                }}
+            }}"#
+        );
+
+        use maud::{html, PreEscaped};
+        html! {
+            div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
+
+                div class="flex justify-between items-center mb-2" {
+                    label class="label p-0" {
+                        span class="label-text font-bold text-base" { (field.label) }
+                    }
+                    (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
+                    (PreEscaped(r#"<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>"#))
+                    "Add Machine Line"
+                    (PreEscaped("</button>"))
+                }
+
+                (PreEscaped(r#"<template x-if="items.length === 0">"#))
+                div class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300" {
+                    "No machine lines yet."
+                }
+                (PreEscaped("</template>"))
+
+                (PreEscaped(r#"<template x-if="items.length > 0">"#))
+                div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 shadow-sm" {
+                    table class="table table-xs w-full" {
+                        thead class="bg-base-200/80 text-base-content/70" {
+                            tr class="text-xs" {
+                                th class="w-7 text-center" { "#" }
+                                th { "Machine" }
+                                th class="text-right w-28" { "Duration" }
+                                th class="text-right w-20" { "Rate (₹/hr)" }
+                                th class="text-right w-24" { "Amount (₹)" }
+                                th class="w-7 text-center" { "" }
+                            }
+                        }
+                        tbody {
+                            (PreEscaped(r#"
+                            <template x-for="(item, idx) in items" :key="item.id">
+                            <tr class="hover border-b border-base-200 last:border-none">
+                                <td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>
+                                <td class="align-middle">
+                                    <div class="flex items-center gap-1">
+                                        <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium" x-model="item.machine_id" @change="onMachineChange(item)">
+                                            <template x-for="m in machines" :key="m.id">
+                                                <option :value="m.id" x-text="m.name"></option>
+                                            </template>
+                                        </select>
+                                        <input type="text" class="input input-xs input-bordered w-28 h-7 min-h-0 text-xs font-medium" x-model="item.name" placeholder="Custom" @change="item.machine_id = 0">
+                                    </div>
+                                </td>
+                                <td class="align-middle text-right">
+                                    <input type="text" class="input input-xs input-bordered w-24 h-7 min-h-0 font-mono text-xs text-right" x-model="item.duration" @input="recalc(item)" placeholder="1h 30m">
+                                </td>
+                                <td class="align-middle text-right">
+                                    <input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.rate" @input="recalc(item)">
+                                </td>
+                                <td class="align-middle text-right font-mono font-bold text-primary text-xs">
+                                    <span x-text="'₹ ' + (item.amount || 0).toFixed(2)"></span>
+                                </td>
+                                <td class="align-middle text-center">
+                                    <button type="button" class="btn btn-ghost btn-square btn-sm shrink-0 text-error hover:bg-error/10" @click="removeItem(idx)" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                                </td>
+                            </tr>
+                            </template>
+                            "#))
+                        }
+                    }
+                }
+                (PreEscaped("</template>"))
+
+                div class="mt-2 p-3 bg-base-200/60 rounded flex justify-between items-center text-sm border border-base-200" {
+                    span class="font-semibold" { "Machine Total" }
+                    span class="font-mono font-bold text-primary" {
+                        (PreEscaped(r#"<span x-text="'₹ ' + grandTotal().toFixed(2)"></span>"#))
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[html_form]
+pub struct InvoiceForm {
+    #[form(label = "Invoice Number", required, widget = Text, placeholder = "e.g. PF/2026/0049")]
+    pub invoice_number: String,
+
+    #[form(label = "Invoice Date", required, widget = DateInput)]
+    pub date: String,
+
+    #[form(
+        label = "Customer",
+        required,
+        widget = ForeignKey,
+        route = lariv_rs::plugins::customer::routes::CustomerFkSelectRouteTag,
+        swap_key = "fk-proforma-invoice-customer",
+        display = "customer",
+        placeholder = "Select customer…"
+    )]
+    pub customer_id: i64,
+
+    #[form(
+        label = "Work Order (Optional)",
+        widget = ForeignKey,
+        route = super::routes::WorkOrderFkSelectRouteTag,
+        swap_key = "fk-proforma-invoice-work-order",
+        display = "work_order",
+        placeholder = "Select work order…"
+    )]
+    pub work_order_id: Option<i64>,
+
+    #[form(
+        label = "Material Lines",
+        widget = ProformaInvoiceMaterialLinesWidget,
+    )]
+    pub material_lines: Option<String>,
+
+    #[form(
+        label = "Machine Lines",
+        widget = ProformaInvoiceMachineLinesWidget,
+    )]
+    pub machine_lines: Option<String>,
+}
+
+pub type InvoiceCreateForm = InvoiceForm;
+pub type InvoiceEditForm = InvoiceForm;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct InvoiceMaterialLineInput {
+    #[serde(default, alias = "id")]
+    pub id: Option<i64>,
+    #[serde(default, alias = "material_id")]
+    pub material_id: Option<i64>,
+    #[serde(default, alias = "name")]
+    pub name: String,
+    #[serde(default, alias = "qty")]
+    pub qty: String,
+    #[serde(default, alias = "rate")]
+    pub rate: String,
+    #[serde(default, alias = "amount")]
+    pub amount: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct InvoiceMachineLineInput {
+    #[serde(default, alias = "id")]
+    pub id: Option<i64>,
+    #[serde(default, alias = "machine_id")]
+    pub machine_id: Option<i64>,
+    #[serde(default, alias = "name")]
+    pub name: String,
+    #[serde(default, alias = "duration")]
+    pub duration: String,
+    #[serde(default, alias = "rate")]
+    pub rate: String,
+    #[serde(default, alias = "amount")]
+    pub amount: Option<f64>,
+}
 
 

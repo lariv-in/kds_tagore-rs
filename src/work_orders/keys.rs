@@ -74,3 +74,5 @@ lariv_rs::swap_key!(InvoiceTableKey, "wo-invoice-table");
 lariv_rs::swap_key!(InvoiceCreateModalKey, "wo-invoice-create-modal");
 lariv_rs::swap_key!(InvoiceEditModalKey, "wo-invoice-edit-modal");
 lariv_rs::swap_key!(InvoiceDeleteModalKey, "wo-invoice-delete-modal");
+
+lariv_rs::swap_key!(WorkOrdersPdfPreviewModalKey, "wo-pdf-preview-modal");

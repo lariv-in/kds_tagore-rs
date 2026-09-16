@@ -2470,6 +2470,8 @@ dependencies = [
  "frunk_core",
  "lariv-rs",
  "maud",
+ "minijinja",
+ "num2words",
  "rust_decimal",
  "rust_xlsxwriter",
  "sea-orm",

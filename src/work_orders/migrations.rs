@@ -9,6 +9,7 @@ mod m00004_draft_work_orders;
 mod m00005_remove_status_from_draft_work_orders;
 mod m00006_draft_work_order_material_lines;
 mod m00007_draft_work_order_machine_lines;
+mod m00008_work_orders_preferences;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -24,6 +25,7 @@ impl MigratorTrait for Migrator {
             Box::new(m00005_remove_status_from_draft_work_orders::Migration),
             Box::new(m00006_draft_work_order_material_lines::Migration),
             Box::new(m00007_draft_work_order_machine_lines::Migration),
+            Box::new(m00008_work_orders_preferences::Migration),
         ]
     }
 }

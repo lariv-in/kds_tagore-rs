@@ -87,6 +87,17 @@ lariv_rs::define_plugin_routes! {
         get InvoiceDeleteGetRouteTag, "/work-orders/invoices/{id}/delete", handlers::invoice_delete_get, modal;
         post InvoiceDeletePostRouteTag, "/work-orders/invoices/{id}/delete", bare handlers::invoice_delete_post, fragment(InvoiceDeleteModalKey);
 
+        // Preferences
+        get WorkOrdersPrefsGetRouteTag, "/work-orders/preferences", handlers::preferences_get;
+        post WorkOrdersPrefsPostRouteTag, "/work-orders/preferences", handlers::preferences_post;
+
+        // PDFs
+        get WorkOrderPdfRouteTag, "/work-orders/orders/{id}/pdf", bare handlers::work_order_pdf, file;
+        get InvoicePdfRouteTag, "/work-orders/invoices/{id}/pdf", bare handlers::invoice_pdf, file;
+        post WorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/work-order", bare handlers::work_order_pdf_preview_post, modal;
+        post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/invoice", bare handlers::invoice_pdf_preview_post, modal;
+        get WorkOrdersPdfPreviewPdfRouteTag, "/work-orders/pdf/preview/{token}", bare handlers::preview_pdf_get, file, param token: String;
+
         // API
         post WorkOrdersCalculateApiRouteTag, "/work-orders/api/calculate", bare handlers::calculate_api, raw;
     ]

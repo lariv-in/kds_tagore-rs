@@ -2,12 +2,14 @@ use frunk::Generic;
 use maud::PreEscaped;
 use lariv_rs::{
     components::{
-        button_modal_form, button_submit, container_column, container_row, data_table_list_refresh,
-        delete_confirmation, detail, detail_header, field_text, form, label, layout_main,
-        layout_sidebar, modal, modal_keyed, row_attr_navigate_route, row_attr_select,
-        row_attr_select_extra, shell_scaffold, table_create_button, ButtonModalForm, ButtonSubmit, DeleteConfirmation,
-        DetailHeader, FieldText, FormOpts, LayoutMain, LayoutSidebar, ShellChrome, ShellScaffold,
-        SlotCapability, SlotRegistrar, SwapKey, TableColumnHeader, TableRow,
+        attrs::escape_attr, CodeEditorInput, button_modal_form, button_submit, code_editor_input,
+        container_column, container_row, data_table_list_refresh, delete_confirmation, detail,
+        detail_header, field_text, form, label, layout_main, layout_sidebar, modal, modal_keyed,
+        row_attr_navigate_route, row_attr_select, row_attr_select_extra, shell_scaffold,
+        table_create_button, ButtonModalForm, ButtonSubmit, DeleteConfirmation, DetailHeader,
+        FieldText, FormOpts, HTMX_SWAP_BODY_MODAL, HTMX_TARGET_BODY_MODAL, LayoutMain,
+        LayoutSidebar, ShellChrome, ShellScaffold, SlotCapability, SlotRegistrar, SwapKey,
+        TableColumnHeader, TableRow,
     },
     http::ProvideRequestCaps,
     picker::{picker_create_button, RenderPickerSelect},
@@ -30,7 +32,7 @@ use super::entities::{
 use super::forms::{
     ComponentForm, ComponentFormField, DraftWorkOrderForm, DraftWorkOrderFormField,
     DraftWorkOrderLineForm, DraftWorkOrderLineFormField, DraftWorkOrderMachineLineForm,
-    DraftWorkOrderMachineLineFormField, ShapeForm, ShapeFormField,
+    DraftWorkOrderMachineLineFormField, InvoiceForm, InvoiceFormField, ShapeForm, ShapeFormField,
 };
 use super::keys::*;
 use super::routes::*;
@@ -93,6 +95,7 @@ lariv_rs::define_register_items! {
         WorkOrderLineEditModalPageIdx: WorkOrderLineEditModalPageTag => WorkOrderLineEditModalPage,
         WorkOrderMachineLineEditModalPageIdx: WorkOrderMachineLineEditModalPageTag => WorkOrderMachineLineEditModalPage,
         MachineSelectPageIdx: MachineSelectPageTag => MachineSelectPage,
+        WorkOrdersPreferencesPageIdx: WorkOrdersPreferencesPageTag => WorkOrdersPreferencesPage,
     ]
 }
 
@@ -225,6 +228,7 @@ pub struct WorkOrderDetailPage {
 impl WorkOrderDetailPage {
     fn body(&self) -> Markup {
         let edit_url = WorkOrderEditGetRouteTag::new(self.order.id).url();
+        let pdf_url = WorkOrderPdfRouteTag::new(self.order.id).url();
         let actions = html! {
             (button_modal_form(ButtonModalForm {
                 label: "Edit",
@@ -236,6 +240,9 @@ impl WorkOrderDetailPage {
                 classes: "btn-outline btn-sm",
                 ..Default::default()
             }))
+            a class="btn btn-outline btn-sm" href=(pdf_url) target="_blank" rel="noopener" {
+                "Download PDF"
+            }
         };
 
         let cust_label = match &self.customer_name {
@@ -245,7 +252,6 @@ impl WorkOrderDetailPage {
         let lines_count_str = self.lines.len().to_string();
         let machine_lines_count_str = self.machine_lines.len().to_string();
         let total_str = format!("₹ {:.2}", self.total_amount);
-        let order_num_display = order_number_display(&self.order.order_number);
         let title_str = if self.order.order_number.trim().is_empty() {
             "Draft Work Order".to_string()
         } else {
@@ -1986,6 +1992,8 @@ impl RenderTemplate for MachineEditModalPage {
 #[derive(Clone, Generic)]
 pub struct InvoiceListPage {
     pub invoices: Vec<proforma_invoice::Model>,
+    pub customer_names: Vec<String>,
+    pub grand_totals: Vec<rust_decimal::Decimal>,
     pub path_and_query: String,
 }
 
@@ -1995,14 +2003,15 @@ impl InvoiceListPage {
             TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
             TableColumnHeader { key: "InvoiceNumber", label: "Invoice #", sort_url: None, push_url: false },
             TableColumnHeader { key: "Date", label: "Date", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Customer", label: "Customer ID", sort_url: None, push_url: false },
-            TableColumnHeader { key: "WorkOrder", label: "Work Order ID", sort_url: None, push_url: false },
+            TableColumnHeader { key: "Customer", label: "Customer", sort_url: None, push_url: false },
+            TableColumnHeader { key: "WorkOrder", label: "Work Order", sort_url: None, push_url: false },
+            TableColumnHeader { key: "Total", label: "Total", sort_url: None, push_url: false },
         ];
 
         let id_labels: Vec<String> = self.invoices.iter().map(|inv| inv.id.to_string()).collect();
         let date_labels: Vec<String> = self.invoices.iter().map(|inv| inv.date.to_string()).collect();
-        let cust_labels: Vec<String> = self.invoices.iter().map(|inv| inv.customer_id.to_string()).collect();
         let wo_labels: Vec<String> = self.invoices.iter().map(|inv| inv.work_order_id.map(|w| format!("#{w}")).unwrap_or_else(|| "-".into())).collect();
+        let total_labels: Vec<String> = self.grand_totals.iter().map(|t| format!("₹ {:.2}", t)).collect();
 
         let rows: Vec<TableRow> = self.invoices.iter().enumerate().map(|(i, inv)| TableRow {
             attrs: row_attr_navigate_route(InvoiceDetailRouteTag::new(inv.id)),
@@ -2010,8 +2019,9 @@ impl InvoiceListPage {
                 field_text(FieldText { value: &id_labels[i], classes: "" }),
                 field_text(FieldText { value: &inv.invoice_number, classes: "font-semibold" }),
                 field_text(FieldText { value: &date_labels[i], classes: "" }),
-                field_text(FieldText { value: &cust_labels[i], classes: "" }),
+                field_text(FieldText { value: self.customer_names.get(i).map(String::as_str).unwrap_or_default(), classes: "" }),
                 field_text(FieldText { value: &wo_labels[i], classes: "" }),
+                field_text(FieldText { value: &total_labels[i], classes: "font-semibold" }),
             ],
         }).collect();
 
@@ -2054,12 +2064,15 @@ pub struct InvoiceDetailPage {
     pub machine_lines: Vec<proforma_invoice_machine_line::Model>,
     pub material_lines: Vec<proforma_invoice_material_line::Model>,
     pub grand_total: rust_decimal::Decimal,
+    pub customer_name: String,
+    pub work_order_number: String,
 }
 
 impl InvoiceDetailPage {
     fn body(&self) -> Markup {
         let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
         let delete_url = InvoiceDeleteGetRouteTag::new(self.invoice.id).url();
+        let pdf_url = InvoicePdfRouteTag::new(self.invoice.id).url();
         let actions = html! {
             (button_modal_form(ButtonModalForm {
                 label: "Edit",
@@ -2081,11 +2094,18 @@ impl InvoiceDetailPage {
                 classes: "btn-error btn-sm",
                 ..Default::default()
             }))
+            a class="btn btn-outline btn-sm" href=(pdf_url) target="_blank" rel="noopener" {
+                "Download PDF"
+            }
         };
 
         let date_str = self.invoice.date.to_string();
-        let cust_str = self.invoice.customer_id.to_string();
-        let wo_str = self.invoice.work_order_id.map(|w| format!("#{w}")).unwrap_or_else(|| "None".into());
+        let cust_str = self.customer_name.clone();
+        let wo_str = if self.work_order_number.is_empty() {
+            self.invoice.work_order_id.map(|w| format!("#{w}")).unwrap_or_else(|| "None".into())
+        } else {
+            self.work_order_number.clone()
+        };
 
         html! {
             (detail(html! {
@@ -2096,8 +2116,8 @@ impl InvoiceDetailPage {
                     }))
                     (container_row("gap-6", html! {
                         (label("Invoice Date", field_text(FieldText { value: &date_str, classes: "" })))
-                        (label("Customer ID", field_text(FieldText { value: &cust_str, classes: "" })))
-                        (label("Work Order ID", field_text(FieldText { value: &wo_str, classes: "" })))
+                        (label("Customer", field_text(FieldText { value: &cust_str, classes: "" })))
+                        (label("Work Order", field_text(FieldText { value: &wo_str, classes: "" })))
                     }))
 
                     // Machine Lines Table
@@ -2189,43 +2209,48 @@ impl RenderTemplate for InvoiceDetailPage {
 #[derive(Clone, Generic)]
 pub struct InvoiceCreateModalPage {
     pub form_name: String,
-    pub work_orders: Vec<work_order::Model>,
+    pub date: String,
+    pub customer_name: String,
+    pub work_order_name: String,
+    pub material_lines_json: String,
+    pub machine_lines_json: String,
+    pub materials_json: String,
+    pub machines_json: String,
     pub error: String,
 }
 
 impl RenderTemplate for InvoiceCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
+        let material_lines_val = if self.material_lines_json.is_empty() { "[]" } else { &self.material_lines_json };
+        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
+        let ctx = FormCtx::form::<InvoiceForm>()
+            .value(InvoiceFormField::Date, &self.date)
+            .value(InvoiceFormField::CustomerId, "")
+            .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::WorkOrderId, "")
+            .display(InvoiceFormField::WorkOrderId, &self.work_order_name)
+            .value(InvoiceFormField::MaterialLines, material_lines_val)
+            .display(InvoiceFormField::MaterialLines, &self.materials_json)
+            .value(InvoiceFormField::MachineLines, machine_lines_val)
+            .display(InvoiceFormField::MachineLines, &self.machines_json);
+
+        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
         modal_keyed::<InvoiceCreateModalKey>(
-            &self.form_name,
+            &modal_classes,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New Proforma Invoice" }
+                @if !self.error.is_empty() {
+                    div class="alert alert-error text-sm mb-4 shadow-sm" {
+                        span { (self.error) }
+                    }
+                }
                 (form(FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<InvoiceCreateModalKey>(
                         &InvoiceCreatePostRouteTag.url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Invoice Number" } }
-                            input type="text" name="invoice_number" class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Invoice Date" } }
-                            input type="date" name="date" class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Customer ID" } }
-                            input type="number" name="customer_id" class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Work Order (Optional)" } }
-                            select name="work_order_id" class="select select-bordered w-full" {
-                                option value="" { "None" }
-                                @for w in &self.work_orders {
-                                    option value=(w.id) { (w.order_number) }
-                                }
-                            }
-                        }
+                        (InvoiceForm::render_inputs(&ctx))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Create Invoice", ..Default::default() }))
@@ -2244,50 +2269,64 @@ pub struct InvoiceEditModalPage {
     pub invoice_number: String,
     pub date: String,
     pub customer_id: i64,
+    pub customer_name: String,
     pub work_order_id: Option<i64>,
-    pub work_orders: Vec<work_order::Model>,
+    pub work_order_name: String,
+    pub material_lines_json: String,
+    pub machine_lines_json: String,
+    pub materials_json: String,
+    pub machines_json: String,
     pub error: String,
 }
 
 impl RenderTemplate for InvoiceEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
+        let cust_id_str = self.customer_id.to_string();
+        let wo_id_str = self.work_order_id.map(|w| w.to_string()).unwrap_or_default();
+        let material_lines_val = if self.material_lines_json.is_empty() { "[]" } else { &self.material_lines_json };
+        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
+        let ctx = FormCtx::form::<InvoiceForm>()
+            .value(InvoiceFormField::InvoiceNumber, &self.invoice_number)
+            .value(InvoiceFormField::Date, &self.date)
+            .value(InvoiceFormField::CustomerId, &cust_id_str)
+            .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::WorkOrderId, &wo_id_str)
+            .display(InvoiceFormField::WorkOrderId, &self.work_order_name)
+            .value(InvoiceFormField::MaterialLines, material_lines_val)
+            .display(InvoiceFormField::MaterialLines, &self.materials_json)
+            .value(InvoiceFormField::MachineLines, machine_lines_val)
+            .display(InvoiceFormField::MachineLines, &self.machines_json);
+        let delete_url = InvoiceDeleteGetRouteTag::new(self.id).url();
+
+        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
         modal_keyed::<InvoiceEditModalKey>(
-            &self.form_name,
+            &modal_classes,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit Proforma Invoice" }
+                @if !self.error.is_empty() {
+                    div class="alert alert-error text-sm mb-4 shadow-sm" {
+                        span { (self.error) }
+                    }
+                }
                 (form(FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<InvoiceEditModalKey>(
                         &InvoiceEditPostRouteTag::new(self.id).url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Invoice Number" } }
-                            input type="text" name="invoice_number" value=(self.invoice_number) class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Invoice Date" } }
-                            input type="date" name="date" value=(self.date) class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Customer ID" } }
-                            input type="number" name="customer_id" value=(self.customer_id) class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Work Order (Optional)" } }
-                            select name="work_order_id" class="select select-bordered w-full" {
-                                option value="" { "None" }
-                                @for w in &self.work_orders {
-                                    @if Some(w.id) == self.work_order_id {
-                                        option value=(w.id) selected { (order_number_display(&w.order_number)) }
-                                    } @else {
-                                        option value=(w.id) { (order_number_display(&w.order_number)) }
-                                    }
-                                }
-                            }
-                        }
+                        (InvoiceForm::render_inputs(&ctx))
                     },
                     actions: html! {
+                        (button_modal_form(ButtonModalForm {
+                            label: "Delete",
+                            icon_name: Some("trash"),
+                            name: "wo.InvoiceDeleteForm",
+                            href: &delete_url,
+                            form_post_url: &delete_url,
+                            modal_uid: InvoiceDeleteModalKey::ID,
+                            classes: "btn-error btn-sm",
+                            ..Default::default()
+                        }))
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
                     },
                     ..Default::default()
@@ -2324,5 +2363,120 @@ impl RenderTemplate for ConfirmDeleteModalPage {
             }),
             ..Default::default()
         })
+    }
+}
+
+// ==========================================
+// 9. PDF PREFERENCES
+// ==========================================
+
+#[derive(Clone, Generic)]
+pub struct WorkOrdersPreferencesPage {
+    pub draft_work_order_pdf_template: String,
+    pub proforma_invoice_pdf_template: String,
+    pub error: String,
+}
+
+fn pdf_template_editor(
+    label: &str,
+    field_id: &str,
+    value: &str,
+    preview_post_url: &str,
+    default_hint: &str,
+    rows: u32,
+) -> Markup {
+    html! {
+        div class="form-control mb-8" {
+            label class="label" {
+                span class="label-text font-bold text-base" { (label) }
+            }
+            (code_editor_input(CodeEditorInput {
+                label: "",
+                name: field_id,
+                value,
+                id: field_id,
+                language: "typst",
+                rows,
+                max_height: "26rem",
+                required: false,
+                classes: "",
+                attrs: Default::default(),
+                hint: None,
+            }))
+            textarea id=(format!("{field_id}-default")) hidden readonly { (default_hint) }
+            div class="flex justify-end gap-2 mt-2" {
+                button type="button" class="btn btn-ghost btn-sm"
+                    onclick=(format!(
+                        "if (confirm('This will overwrite the template with the default example template. Continue?')) {{ const ta = document.getElementById('{}'); const def = document.getElementById('{}-default'); if (!ta || !def) return; ta.value = def.value; const root = ta.closest('[data-code-editor-root]'); if (root) {{ root.dispatchEvent(new CustomEvent('code-editor:set', {{ detail: {{ value: def.value }} }})); }} else {{ ta.dispatchEvent(new Event('change', {{ bubbles: true }})); }} }}",
+                        field_id, field_id
+                    )) {
+                    "Use default template"
+                }
+                (PreEscaped(format!(
+                    r#"<button type="button" class="btn btn-outline btn-sm" hx-post="{url}" hx-target="{target}" hx-swap="{swap}" hx-include="closest form" hx-push-url="false">Preview sample PDF</button>"#,
+                    url = escape_attr(preview_post_url),
+                    target = escape_attr(HTMX_TARGET_BODY_MODAL),
+                    swap = escape_attr(HTMX_SWAP_BODY_MODAL),
+                )))
+            }
+        }
+    }
+}
+
+impl WorkOrdersPreferencesPage {
+    fn body(&self) -> Markup {
+        form(lariv_rs::components::FormOpts {
+                attrs: lariv_rs::components::form_hx_post_main_url(&WorkOrdersPrefsPostRouteTag.url()),
+                title: "Work Orders PDF Preferences",
+                subtitle: "Configure the PDF templates used for draft work orders and proforma invoices. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
+                form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                inputs: html! {
+                    (pdf_template_editor(
+                        "Draft Work Order PDF Template",
+                        "draft_work_order_pdf_template",
+                        &self.draft_work_order_pdf_template,
+                        &WorkOrderPdfPreviewPostRouteTag.url(),
+                        crate::work_orders::pdf_templates::DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
+                        18,
+                    ))
+                    (pdf_template_editor(
+                        "Proforma Invoice PDF Template",
+                        "proforma_invoice_pdf_template",
+                        &self.proforma_invoice_pdf_template,
+                        &InvoicePdfPreviewPostRouteTag.url(),
+                        crate::work_orders::pdf_templates::DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE,
+                        18,
+                    ))
+                },
+                actions: html! {
+                    (button_submit(ButtonSubmit {
+                        label: "Save Preferences",
+                        ..Default::default()
+                    }))
+                },
+                ..Default::default()
+            },
+        )
+    }
+}
+
+impl RenderAppPane for WorkOrdersPreferencesPage {
+    fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
+        scaffold_pane(wo_menu("preferences"), work_orders_prefs_crumbs(), self.body())
+    }
+    fn render_main(&self) -> lariv_rs::components::MainContentHtml {
+        scaffold_main(work_orders_prefs_crumbs(), self.body())
+    }
+}
+
+impl RenderTemplate for WorkOrdersPreferencesPage {
+    fn render(&self, chrome: &ShellChrome) -> Markup {
+        app_scaffold(
+            "Work Orders PDF Preferences",
+            chrome,
+            wo_menu("preferences"),
+            work_orders_prefs_crumbs(),
+            self.body(),
+        )
     }
 }

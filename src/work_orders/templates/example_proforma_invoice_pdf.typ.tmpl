@@ -1,0 +1,132 @@
+{# Minijinja template: the rendered output must be valid Typst markup.
+   Context (PascalCase) for a proforma invoice PDF:
+     ID, InvoiceNumber, CustomerId, Date, WorkOrderId,
+     Customer { ID, Name, Address, GSTIN, PAN, Phone, Email, Website },
+     MaterialLines [ { ID, Name, Qty, Rate, LineTotal } ],
+     MachineLines  [ { ID, Name, TimeUsedHours, Rate, LineTotal } ],
+     GrandTotal (string).
+   Functions: num2words, num2wordsAnd, num2wordsRupees, grandTotalWords. #}
+#set page(paper: "a4", margin: 1.2cm)
+#set text(font: "Liberation Sans", size: 9pt)
+#set table(stroke: 0.4pt, inset: 5pt)
+
+#let fmt-num(n) = {
+  let v = calc.round(n, digits: 2)
+  let s = str(v)
+  let parts = s.split(".")
+  let whole = parts.at(0)
+  let frac = if parts.len() > 1 {
+    let f = parts.at(1)
+    if f.len() == 1 { "." + f + "0" } else { "." + f }
+  } else { ".00" }
+  let grouped = {
+    let chars = whole.clusters().rev()
+    let out = ()
+    for (i, c) in chars.enumerate() {
+      out = (c,) + out
+      if calc.rem(i + 1, 3) == 0 and i + 1 < chars.len() {
+        out = (",",) + out
+      }
+    }
+    out.join()
+  }
+  [#grouped#frac]
+}
+
+#let inr(n) = [₹ #fmt-num(n)]
+
+#let fmt-qty(q) = {
+  let s = str(q)
+  if not s.contains(".") { s + ".00" }
+  else if s.split(".").at(1).len() == 1 { s + "0" }
+  else { s }
+}
+
+#let material-lines = (
+{% for line in MaterialLines %}
+  (name: [{{ line.Name }}], qty: float(str({{ line.Qty }})), rate: float(str({{ line.Rate }})), amount: float(str({{ line.LineTotal }}))),
+{% endfor %}
+)
+
+#let machine-lines = (
+{% for line in MachineLines %}
+  (name: [{{ line.Name }}], hours: float(str({{ line.TimeUsedHours }})), rate: float(str({{ line.Rate }})), amount: float(str({{ line.LineTotal }}))),
+{% endfor %}
+)
+
+#let grand = float(str({{ GrandTotal }}))
+
+#align(center)[
+  *PROFORMA INVOICE*
+]
+#v(0.4em)
+
+#table(
+  columns: (1fr, 1fr),
+  [
+    *Bill To* \
+    {% if Customer.Name %}*{{ Customer.Name }}* \ {% endif %}
+    {% if Customer.Address %}{{ Customer.Address }} \ {% endif %}
+    {% if Customer.GSTIN %}GSTIN: {{ Customer.GSTIN }} \ {% endif %}
+    {% if Customer.PAN %}PAN: {{ Customer.PAN }}{% endif %}
+  ],
+  [
+    *Invoice No.:* {% if InvoiceNumber %}{{ InvoiceNumber }}{% else %}Draft \#{{ ID }}{% endif %} \
+    *Date:* {{ Date }} \
+    *Customer ID:* {{ CustomerId }} \
+    *Work Order:* {% if WorkOrderId %}#{{ WorkOrderId }}{% else %}—{% endif %}
+  ],
+)
+
+#v(0.5em)
+
+{% if MachineLines %}
+*Machine Operations*
+
+#table(
+  columns: (0.4fr, 2.4fr, 1.2fr, 1.2fr, 1.2fr),
+  align: (center, left, right, right, right),
+  [*Sl*], [*Operation / Machine*], [*Hours*], [*Rate (₹/hr)*], [*Amount*],
+  ..machine-lines.enumerate().map(((i, ln)) => (
+    str(i + 1),
+    ln.name,
+    fmt-qty(ln.hours),
+    fmt-num(ln.rate),
+    inr(ln.amount),
+  )).flatten(),
+)
+#v(0.5em)
+{% endif %}
+
+{% if MaterialLines %}
+*Material Lines*
+
+#table(
+  columns: (0.4fr, 2.4fr, 1.2fr, 1.2fr, 1.2fr),
+  align: (center, left, right, right, right),
+  [*Sl*], [*Material*], [*Qty (kg)*], [*Rate (₹/kg)*], [*Amount*],
+  ..material-lines.enumerate().map(((i, ln)) => (
+    str(i + 1),
+    ln.name,
+    fmt-qty(ln.qty),
+    fmt-num(ln.rate),
+    inr(ln.amount),
+  )).flatten(),
+)
+#v(0.5em)
+{% endif %}
+
+#grid(
+  columns: (1.4fr, 1fr),
+  column-gutter: 1em,
+  align: (left + horizon, right + horizon),
+  [
+    *Amount (in words)* \
+    {{ grandTotalWords() }}
+  ],
+  table(
+    columns: (1fr, auto),
+    align: (left, right),
+    [*Grand Total*], [*#inr(grand)*],
+  ),
+)

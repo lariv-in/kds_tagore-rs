@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use kds_tagore_rs::machinery_schedule::duration::JobDuration;
 use kds_tagore_rs::work_orders::{
     entities::{
-        component, machine, material, proforma_invoice_machine_line,
+        component, machine, material, proforma_invoice, proforma_invoice_machine_line,
         proforma_invoice_material_line, shape,
     },
     geometry::{
@@ -239,6 +239,57 @@ fn test_invoice_material_line_qty_and_total() {
 
     // Line total: 2.500 * 420.50 = 1051.25
     assert_eq!(line.line_total(), Decimal::from_str_exact("1051.25").unwrap());
+}
+
+#[test]
+fn test_invoice_grand_total() {
+    use chrono::NaiveDate;
+
+    let inv = proforma_invoice::Model {
+        id: 1,
+        created_at: None,
+        updated_at: None,
+        date: NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+        customer_id: 1,
+        invoice_number: "PF/2026/0049".into(),
+        work_order_id: Some(2),
+    };
+
+    let mat_line = proforma_invoice_material_line::Model {
+        id: 1,
+        created_at: None,
+        updated_at: None,
+        invoice_id: 1,
+        material_id: Some(1),
+        name: "SS 304 Round Bar".into(),
+        rate_decimal: Decimal::from_str_exact("420.50").unwrap(),
+        qty_decimal: Decimal::from_str_exact("2.500").unwrap(),
+    };
+
+    let mach_line = proforma_invoice_machine_line::Model {
+        id: 1,
+        created_at: None,
+        updated_at: None,
+        invoice_id: 1,
+        machine_id: Some(1),
+        name: "Milling Operation".into(),
+        time_used: JobDuration::from_nanos(5_400_000_000_000), // 1.5 hours
+        rate_decimal: Decimal::from(800),
+    };
+
+    // 2.5 kg × 420.50 = 1051.25 material + 1.5 h × 800 = 1200 machine → 2251.25
+    assert_eq!(
+        inv.material_lines_total(&[mat_line.clone()]),
+        Decimal::from_str_exact("1051.25").unwrap()
+    );
+    assert_eq!(
+        inv.machine_lines_total(&[mach_line.clone()]),
+        Decimal::from(1200)
+    );
+    assert_eq!(
+        inv.grand_total(&[mat_line], &[mach_line]),
+        Decimal::from_str_exact("2251.25").unwrap()
+    );
 }
 
 #[test]
@@ -719,7 +770,7 @@ async fn test_all_entities_edit_get_and_post() {
     use kds_tagore_rs::work_orders::{
         entities::{component, machine, material, proforma_invoice, shape, work_order, work_order_line},
         handlers::{
-            self, ComponentEditForm, InvoiceEditForm, MachineEditForm, MaterialEditForm,
+            self, ComponentEditForm, InvoiceFormData, MachineEditForm, MaterialEditForm,
             ShapeEditForm, WorkOrderEditForm,
         },
         migrations::Migrator,
@@ -1037,11 +1088,13 @@ async fn test_all_entities_edit_get_and_post() {
         lariv_rs::web::Htmx::default(),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(invoice.id),
-        axum::extract::Form(InvoiceEditForm {
+        axum::extract::Form(InvoiceFormData {
             invoice_number: "PI-EDIT-100-FINAL".into(),
             date: "2026-09-15".into(),
             customer_id: 101,
             work_order_id: Some(order.id),
+            material_lines: None,
+            machine_lines: None,
         }),
     ).await.into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
@@ -1334,6 +1387,7 @@ async fn test_form_validation_and_pascal_case_deserialization() {
     use axum::extract::Form;
     use axum::response::IntoResponse;
     use kds_tagore_rs::work_orders::{
+        entities::work_order,
         handlers::{self, WorkOrderCreateForm},
         migrations::Migrator,
         seed::ensure_standard_seeds,
@@ -1343,6 +1397,9 @@ async fn test_form_validation_and_pascal_case_deserialization() {
         components::SharedChromeFolder, http::Cap,
         plugins::users::middleware::OptionalAuth, web::Htmx,
     };
+    use sea_orm::ColumnTrait;
+    use sea_orm::EntityTrait;
+    use sea_orm::QueryFilter;
     use sea_orm_migration::MigratorTrait;
 
     // 1. Verify PascalCase deserialization matches what HTML form submits
@@ -1379,7 +1436,7 @@ async fn test_form_validation_and_pascal_case_deserialization() {
     }
     let chrome: SharedChromeFolder = std::sync::Arc::new(DummyFolder);
 
-    // Empty Order Number should re-render modal with alert-error
+    // Empty Order Number is optional now; order should be created and redirect
     let res = handlers::work_order_create_post(
         Cap(state.clone()),
         Cap(chrome.clone()),
@@ -1393,10 +1450,15 @@ async fn test_form_validation_and_pascal_case_deserialization() {
             machine_lines: None,
         }),
     ).await.into_response();
-    assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
-    assert!(html.contains("alert-error"), "Must contain DaisyUI alert-error banner");
-    assert!(html.contains("Order number is required."), "Must display order number required message");
+    assert!(res.status().is_redirection(), "Empty order number should create and redirect, got {}", res.status());
+
+    let created = work_order::Entity::find()
+        .filter(work_order::Column::OrderNumber.eq(""))
+        .one(&db)
+        .await
+        .unwrap();
+    assert!(created.is_some(), "Order with empty order number should be created");
+    assert_eq!(created.expect("order exists").order_number, "");
 
     // Missing/0 Customer ID should re-render modal with alert-error
     let res = handlers::work_order_create_post(

@@ -51,6 +51,8 @@ rust_xlsxwriter = "0.79"
 stl_io = "0.11"
 uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
+minijinja = { version = "2", features = ["loader"] }
+num2words = "1"
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
