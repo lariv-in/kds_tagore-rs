@@ -12,6 +12,14 @@ use super::geometry::PrimitiveKind;
 /// Ensures standard shapes, materials, rates, and machines exist in the database.
 /// Idempotent: only inserts if tables are empty.
 pub async fn ensure_standard_seeds<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
+    ensure_standard_bases(db).await?;
+    ensure_standard_components(db).await
+}
+
+/// Ensures standard shapes, materials/rates, and machines exist in the database.
+/// Does NOT seed components (which require the `fixed_variables` column on
+/// `work_order_components`). Idempotent: only inserts if tables are empty.
+pub async fn ensure_standard_bases<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
     // 1. Seed standard shapes
     let shape_count = shape::Entity::find().count(db).await.unwrap_or(0);
     if shape_count == 0 {
@@ -90,7 +98,14 @@ pub async fn ensure_standard_seeds<C: ConnectionTrait>(db: &C) -> Result<(), sea
         }
     }
 
-    // 4. Seed standard components with fixed stock dimensions in mm
+    Ok(())
+}
+
+/// Ensures standard components with fixed stock dimensions in mm exist.
+/// Requires the `fixed_variables` column on `work_order_components`,
+/// so it must run after `m00003_component_fixed_variables`.
+/// Idempotent: only inserts if the table is empty.
+pub async fn ensure_standard_components<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
     let comp_count = component::Entity::find().count(db).await.unwrap_or(0);
     if comp_count == 0 {
         let now = Utc::now();
