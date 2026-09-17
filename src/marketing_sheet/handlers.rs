@@ -7,7 +7,7 @@ use axum::{
 use chrono::Utc;
 use lariv_rs::{
     components::{SharedChromeFolder, SlotCtx},
-    html_form::HtmlForm,
+    html_form::{CsrfToken, HtmlForm},
     http::Cap,
     plugins::{
         crm::state::CrmState,
@@ -72,13 +72,14 @@ pub async fn import_post(
     Cap(chrome): Cap<SharedChromeFolder>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
+    csrf: CsrfToken,
     multipart: Multipart,
 ) -> Response {
     if !ctx.user.is_superuser {
         return RedirectForbidden.into_response();
     }
 
-    let parsed_form = match ImportForm::from_multipart(multipart).await {
+    let parsed_form = match ImportForm::from_multipart(multipart, &csrf).await {
         Ok(form) => form,
         Err(err) => {
             let page = page_from_db(&crm.db, &ctx.timezone, err.to_string(), None).await;

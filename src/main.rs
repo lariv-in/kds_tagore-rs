@@ -3,8 +3,9 @@
 use kds_tagore_rs::{machinery_schedule, marketing_sheet, website_seed, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
-    crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes, finance_customer,
-    finance_indian, finance_invoices, finance_products, finance_taxes, users, website,
+    contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
+    finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, users,
+    website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -26,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let app = work_orders::install(app);
     let app = finance_accounts::install(app);
     let app = customer::install(app);
+    let app = contacts::install(app);
     let app = crm::install(app);
     let app = marketing_sheet::install(app);
     let app = finance_customer::install(app);

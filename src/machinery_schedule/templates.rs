@@ -15,7 +15,7 @@ use lariv_rs::{
         shell_scaffold, sidebar_menu, sidebar_menu_item_pane, sort_indicator, table_button_filter,
         table_create_button, table_pagination, table_pagination_picker,
     },
-    html_form::{FormCtx, HtmlForm},
+    html_form::{CsrfToken, FormCtx, HtmlForm},
     http::{ProvideRequestCaps, RouteQueryBuilder, RouteUrl},
     picker::{RenderPickerSelect, picker_create_button},
     plugins::filesystem::routes::VNodeDetailRouteTag,
@@ -291,7 +291,7 @@ fn job_form_ctx<'a>(
     progress: &'a str,
     x_data: &'a str,
 ) -> FormCtx<'a> {
-    FormCtx::form::<JobForm>()
+    FormCtx::form::<JobForm>(CsrfToken::current())
         .value(JobFormField::Name, name)
         .m2m(JobFormField::Machines, machines)
         .value(JobFormField::Duration, duration)
@@ -624,14 +624,14 @@ impl JobHubPage {
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(FormOpts {
+                panel: form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_get_route::<JobHubTableKey, JobDefaultRouteTag>(
                         JobDefaultRouteTag,
                     ),
                     inputs: html! {
                         input type="hidden" name="tab" value=(self.tab) {}
                         (JobFilterForm::render_inputs(
-                            &FormCtx::form::<JobFilterForm>()
+                            &FormCtx::form::<JobFilterForm>(CsrfToken::current())
                                 .value(JobFilterFormField::Name, &self.filter_name),
                         ))
                     },
@@ -1021,7 +1021,7 @@ impl RenderTemplate for JobCreateModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New job" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_post_url::<JobCreateModalKey>(&modal_create_post_query(
                         JobCreatePostRouteTag,
                         &self.form_name,
@@ -1073,7 +1073,7 @@ impl RenderTemplate for JobEditModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit job" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_post_url::<JobEditModalKey>(&modal_edit_post_url(
                         JobEditPostRouteTag::new(self.id),
                         &self.form_name,
@@ -1166,12 +1166,12 @@ impl MachineListPage {
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(FormOpts {
+                panel: form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_get_route::<MachineTableKey, MachineDefaultRouteTag>(
                         MachineDefaultRouteTag,
                     ),
                     inputs: MachineFilterForm::render_inputs(
-                        &FormCtx::form::<MachineFilterForm>()
+                        &FormCtx::form::<MachineFilterForm>(CsrfToken::current())
                             .value(MachineFilterFormField::Name, &self.filter_name),
                     ),
                     actions: html! {
@@ -1419,7 +1419,7 @@ impl RenderTemplate for MachineCreateModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New machine" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_post_url::<MachineCreateModalKey>(&modal_create_post_query(
                         MachineCreatePostRouteTag,
                         &self.form_name,
@@ -1428,7 +1428,7 @@ impl RenderTemplate for MachineCreateModalPage {
                     )),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: MachineForm::render_inputs(
-                        &FormCtx::form::<MachineForm>().value(MachineFormField::Name, &self.name),
+                        &FormCtx::form::<MachineForm>(CsrfToken::current()).value(MachineFormField::Name, &self.name),
                     ),
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Create machine", ..Default::default() }))
@@ -1455,14 +1455,14 @@ impl RenderTemplate for MachineEditModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit machine" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_post_url::<MachineEditModalKey>(&modal_edit_post_url(
                         MachineEditPostRouteTag::new(self.id),
                         &self.form_name,
                     )),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: MachineForm::render_inputs(
-                        &FormCtx::form::<MachineForm>().value(MachineFormField::Name, &self.name),
+                        &FormCtx::form::<MachineForm>(CsrfToken::current()).value(MachineFormField::Name, &self.name),
                     ),
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Save", ..Default::default() }))
@@ -1541,7 +1541,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(FormOpts {
+                panel: form(&CsrfToken::current(), FormOpts {
                     attrs: form_hx_get_picker_route::<
                         MachineSelectTableKey,
                         MachineSelectModalKey,
@@ -1550,7 +1550,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                     .set("hx-push-url", "false"),
                     inputs: html! {
                         (MachineFilterForm::render_inputs(
-                            &FormCtx::form::<MachineFilterForm>()
+                            &FormCtx::form::<MachineFilterForm>(CsrfToken::current())
                                 .value(MachineFilterFormField::Name, &self.filter_name),
                         ))
                         input type="hidden" name="target_input" value=(self.target_input) {}

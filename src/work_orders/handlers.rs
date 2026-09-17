@@ -275,15 +275,34 @@ pub async fn fetch_components_meta(db: &sea_orm::DatabaseConnection) -> Vec<supe
     }).collect()
 }
 
+fn json_positive_f64(v: Option<&serde_json::Value>) -> Option<f64> {
+    let n = match v? {
+        serde_json::Value::Number(num) => num.as_f64()?,
+        serde_json::Value::String(s) => s.trim().parse().ok()?,
+        _ => return None,
+    };
+    (n > 0.0).then_some(n)
+}
+
+fn json_nonneg_f64(v: Option<&serde_json::Value>) -> Option<f64> {
+    let n = match v? {
+        serde_json::Value::Number(num) => num.as_f64()?,
+        serde_json::Value::String(s) => s.trim().parse().ok()?,
+        _ => return None,
+    };
+    n.is_finite().then_some(n).filter(|x| *x >= 0.0)
+}
+
 async fn resolve_and_compute_line_data(
     db: &sea_orm::DatabaseConnection,
     component_id: i64,
     variables_val: Option<&serde_json::Value>,
-    mode: Option<&str>,
     target_weight: Option<f64>,
     target_cost: Option<f64>,
     quantity_val: &serde_json::Value,
     extra_data_val: Option<&serde_json::Value>,
+    submitted_final_cost: Option<f64>,
+    submitted_material_rate: Option<f64>,
 ) -> Result<(sea_orm::prelude::Json, Decimal, Decimal, Decimal, Decimal, sea_orm::prelude::Json), String> {
 
     let comp = component::Entity::find_by_id(component_id)
@@ -312,8 +331,12 @@ async fn resolve_and_compute_line_data(
         .ok()
         .flatten();
 
-    let material_rate = latest_rate_model.as_ref().map(|r| r.rate_decimal).unwrap_or(Decimal::ZERO);
-    let material_rate_f64 = latest_rate_model.as_ref().map(|r| r.rate()).unwrap_or(0.0);
+    let mut material_rate = latest_rate_model.as_ref().map(|r| r.rate_decimal).unwrap_or(Decimal::ZERO);
+    let mut material_rate_f64 = latest_rate_model.as_ref().map(|r| r.rate()).unwrap_or(0.0);
+    if let Some(r) = submitted_material_rate.filter(|x| *x >= 0.0) {
+        material_rate = Decimal::from_f64_retain(r).unwrap_or(material_rate);
+        material_rate_f64 = r;
+    }
 
     let free_vars = comp.free_variable_names(&shape);
     let mut vars: HashMap<String, f64> = HashMap::new();
@@ -362,18 +385,37 @@ async fn resolve_and_compute_line_data(
         }
     }
 
-    if free_vars.len() == 1 {
-        let fv = &free_vars[0];
-        if mode == Some("weight") {
-            if let Some(w) = target_weight.filter(|x| *x > 0.0) {
+    let quantity = match quantity_val {
+        serde_json::Value::Number(n) => Decimal::from_str(&n.to_string()).unwrap_or(Decimal::ONE),
+        serde_json::Value::String(s) => Decimal::from_str(s.trim()).unwrap_or(Decimal::ONE),
+        _ => Decimal::ONE,
+    };
+
+    let dims_complete = |vars: &HashMap<String, f64>| {
+        free_vars.is_empty()
+            || free_vars
+                .iter()
+                .all(|fv| vars.get(fv).copied().filter(|n| *n > 0.0).is_some())
+    };
+
+    if !dims_complete(&vars) {
+        if let Some(w) = target_weight.filter(|x| *x > 0.0) {
+            if free_vars.len() == 1 {
                 if let Ok((_, solved_dim)) = comp.solve_final_variable_from_weight(&shape, &mat, w) {
-                    vars.insert(fv.clone(), solved_dim);
+                    vars.insert(free_vars[0].clone(), solved_dim);
                 }
             }
-        } else if mode == Some("cost") {
-            if let Some(c) = target_cost.filter(|x| *x > 0.0) {
-                if let Ok((_, solved_dim)) = comp.solve_final_variable_from_cost(&shape, &mat, material_rate_f64, c) {
-                    vars.insert(fv.clone(), solved_dim);
+        } else {
+            let line_cost = submitted_final_cost.or(target_cost).filter(|x| *x > 0.0);
+            if let Some(c) = line_cost {
+                if free_vars.len() == 1 && material_rate_f64 > 0.0 {
+                    let qty_f = quantity.to_string().parse::<f64>().unwrap_or(1.0);
+                    let unit_cost = if qty_f > 0.0 { c / qty_f } else { c };
+                    if let Ok((_, solved_dim)) =
+                        comp.solve_final_variable_from_cost(&shape, &mat, material_rate_f64, unit_cost)
+                    {
+                        vars.insert(free_vars[0].clone(), solved_dim);
+                    }
                 }
             }
         }
@@ -384,15 +426,27 @@ async fn resolve_and_compute_line_data(
         full_vars.insert(k.clone(), *v);
     }
 
-    let unit_weight_f64 = component::Model::get_weight_from_models(&shape, &mat, full_vars);
-    let unit_weight = Decimal::from_f64_retain(unit_weight_f64).unwrap_or(Decimal::ZERO).round_dp(4);
+    let geom_weight_f64 = component::Model::get_weight_from_models(&shape, &mat, full_vars);
+    let mut unit_weight =
+        Decimal::from_f64_retain(geom_weight_f64).unwrap_or(Decimal::ZERO).round_dp(4);
 
-    let quantity = match quantity_val {
-        serde_json::Value::Number(n) => Decimal::from_str(&n.to_string()).unwrap_or(Decimal::ONE),
-        serde_json::Value::String(s) => Decimal::from_str(s.trim()).unwrap_or(Decimal::ONE),
-        _ => Decimal::ONE,
+    let has_dims = dims_complete(&vars);
+    let has_weight = target_weight.filter(|x| *x > 0.0);
+    if !has_dims {
+        if let Some(w) = has_weight {
+            unit_weight = Decimal::from_f64_retain(w).unwrap_or(unit_weight).round_dp(4);
+        }
+    }
+
+    let computed_cost =
+        draft_work_order_material_line::Model::calculate_final_cost(quantity, material_rate, unit_weight);
+    let final_cost = if has_dims || has_weight.is_some() {
+        computed_cost
+    } else if let Some(c) = submitted_final_cost.or(target_cost).filter(|x| *x > 0.0) {
+        Decimal::from_f64_retain(c).unwrap_or(computed_cost).round_dp(2)
+    } else {
+        computed_cost
     };
-    let final_cost = draft_work_order_material_line::Model::calculate_final_cost(quantity, material_rate, unit_weight);
 
     let extra_data = match extra_data_val {
         Some(serde_json::Value::Object(_)) | Some(serde_json::Value::Array(_)) => {
@@ -540,11 +594,12 @@ pub async fn work_order_create_post(
                                 &state.db,
                                 item.component_id,
                                 item.variables.as_ref(),
-                                item.mode.as_deref(),
                                 item.target_weight,
                                 item.target_cost,
                                 &item.quantity,
                                 item.extra_data.as_ref(),
+                                json_positive_f64(item.final_cost.as_ref()),
+                                json_nonneg_f64(item.material_rate.as_ref()),
                             ).await
                         {
                             let line_am = draft_work_order_material_line::ActiveModel {
@@ -721,11 +776,12 @@ pub async fn work_order_edit_post(
                                 &state.db,
                                 item.component_id,
                                 item.variables.as_ref(),
-                                item.mode.as_deref(),
                                 item.target_weight,
                                 item.target_cost,
                                 &item.quantity,
                                 item.extra_data.as_ref(),
+                                json_positive_f64(item.final_cost.as_ref()),
+                                json_nonneg_f64(item.material_rate.as_ref()),
                             ).await
                         {
                             let line_am = work_order_line::ActiveModel {
@@ -930,9 +986,10 @@ pub async fn work_order_line_edit_post(
         Some(&vars_val),
         None,
         None,
-        None,
         &qty_val,
         extra_val.as_ref(),
+        None,
+        None,
     ).await {
         Ok((vars_json, quantity, unit_weight, material_rate, final_cost, extra_data)) => {
             let now = Utc::now();
@@ -1280,8 +1337,16 @@ async fn sync_invoice_lines(
             for line in lines {
                 if line.name.trim().is_empty() { continue; }
                 let material_id = line.material_id.filter(|&id| id > 0);
-                let qty: Decimal = line.qty.parse().unwrap_or(Decimal::ZERO);
+                let mut qty: Decimal = line.qty.parse().unwrap_or(Decimal::ZERO);
                 let rate: Decimal = line.rate.parse().unwrap_or(Decimal::ZERO);
+                if qty <= Decimal::ZERO {
+                    if let Some(amount) = line.amount.filter(|a| *a > 0.0) {
+                        if rate > Decimal::ZERO {
+                            let amt = Decimal::from_f64_retain(amount).unwrap_or(Decimal::ZERO);
+                            qty = (amt / rate).round_dp(6);
+                        }
+                    }
+                }
                 let am = proforma_invoice_material_line::ActiveModel {
                     id: Default::default(),
                     created_at: Set(Some(now)),
@@ -1304,10 +1369,30 @@ async fn sync_invoice_lines(
                 .await;
             for line in lines {
                 let duration_str = line.duration.trim();
-                if duration_str.is_empty() { continue; }
-                let Ok(time_used) = parse_job_duration(duration_str) else { continue; };
-                let machine_id = line.machine_id.filter(|&id| id > 0);
                 let rate: Decimal = line.rate.parse().unwrap_or(Decimal::ZERO);
+                let time_used = if !duration_str.is_empty() {
+                    match parse_job_duration(duration_str) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    }
+                } else if let Some(amount) = line.amount.filter(|a| *a > 0.0) {
+                    if rate <= Decimal::ZERO {
+                        continue;
+                    }
+                    let amt = amount / rate.to_string().parse::<f64>().unwrap_or(0.0);
+                    if amt <= 0.0 {
+                        continue;
+                    }
+                    crate::machinery_schedule::duration::JobDuration(chrono::Duration::nanoseconds(
+                        (amt * 3_600_000_000_000.0) as i64,
+                    ))
+                } else {
+                    continue;
+                };
+                if line.name.trim().is_empty() {
+                    continue;
+                }
+                let machine_id = line.machine_id.filter(|&id| id > 0);
                 let am = proforma_invoice_machine_line::ActiveModel {
                     id: Default::default(),
                     created_at: Set(Some(now)),
@@ -1524,14 +1609,24 @@ pub async fn component_select(
     let shapes = shape::Entity::find().all(&state.db).await.unwrap_or_default();
     let materials = material::Entity::find().all(&state.db).await.unwrap_or_default();
     let shape_map: HashMap<i64, String> = shapes.into_iter().map(|s| (s.id, s.name)).collect();
-    let mat_map: HashMap<i64, String> = materials.into_iter().map(|m| (m.id, m.name)).collect();
+    let mat_map: HashMap<i64, String> = materials.iter().map(|m| (m.id, m.name.clone())).collect();
+    let rates = material_rate::Entity::find()
+        .order_by_desc(material_rate::Column::Datetime)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let mut latest_rate_by_mat: HashMap<i64, f64> = HashMap::new();
+    for r in rates {
+        latest_rate_by_mat.entry(r.material_id).or_insert_with(|| r.rate());
+    }
 
     let items = components
         .into_iter()
         .map(|c| {
             let s_name = shape_map.get(&c.shape_id).cloned().unwrap_or_default();
             let m_name = mat_map.get(&c.material_id).cloned().unwrap_or_default();
-            (c, s_name, m_name)
+            let rate = latest_rate_by_mat.get(&c.material_id).copied().unwrap_or(0.0);
+            (c, s_name, m_name, rate)
         })
         .collect();
 

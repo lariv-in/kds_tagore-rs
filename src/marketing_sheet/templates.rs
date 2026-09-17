@@ -5,7 +5,7 @@ use lariv_rs::{
         SlotCapability, SlotRegistrar, breadcrumbs, button_submit, form, form_hx_post_main,
         form_post_download_route, layout_main, layout_sidebar, shell_scaffold,
     },
-    html_form::{FormCtx, HtmlForm},
+    html_form::{CsrfToken, FormCtx, HtmlForm},
     http::ProvideRequestCaps,
     plugins::crm::{routes::LeadDefaultRouteTag, templates::crm_menu},
     template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
@@ -89,7 +89,7 @@ impl MarketingSheetPage {
                     div class="flex-1 card bg-base-100 border border-base-300" {
                         div class="card-body" {
                             h2 class="card-title text-lg" { "Import" }
-                            (form(FormOpts {
+                            (form(&CsrfToken::current(), FormOpts {
                                 attrs: form_hx_post_main(MarketingSheetImportRouteTag)
                                     .set("hx-encoding", "multipart/form-data"),
                                 enctype: Some("multipart/form-data"),
@@ -98,7 +98,7 @@ impl MarketingSheetPage {
                                 } else {
                                     Some(self.error.as_str())
                                 },
-                                inputs: ImportForm::render_inputs(&FormCtx::form::<ImportForm>()),
+                                inputs: ImportForm::render_inputs(&FormCtx::form::<ImportForm>(CsrfToken::current())),
                                 actions: html! {
                                     div class="flex gap-2 mt-4" {
                                         (button_submit(ButtonSubmit {
@@ -117,7 +117,7 @@ impl MarketingSheetPage {
                             p class="text-sm text-base-content/70" {
                                 "Download the current CRM leads as a marketing sheet."
                             }
-                            (form(FormOpts {
+                            (form(&CsrfToken::current(), FormOpts {
                                 attrs: form_post_download_route(MarketingSheetExportRouteTag),
                                 actions: html! {
                                     div class="flex gap-2 mt-4" {

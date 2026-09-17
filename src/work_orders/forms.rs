@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use lariv_rs::{
-    components::icon,
+    components::{icon, input_foreign_key, input_length, label, InputForeignKey, InputLength},
     html_form::{
-        html_form,
+        FieldRender, FormCtx, FormWidget, html_form,
         widgets::{CodeEditor, ForeignKey, List, Section, Text, Textarea},
-        FieldRender, FormCtx, FormWidget,
     },
 };
-use maud::{html, Markup, PreEscaped};
+use maud::{Markup, PreEscaped, html};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[html_form]
 pub struct ShapeForm {
@@ -59,6 +58,192 @@ pub fn is_allowed_variable_name(name: &str) -> bool {
     ALLOWED_VARIABLE_NAMES.iter().any(|&v| v == lower)
 }
 
+/// Embeddable length control (no form `name`) for Alpine lists.
+fn embed_input_length() -> Markup {
+    input_length(InputLength {
+        label: "",
+        name: "",
+        value: "",
+        unit: "mm",
+        required: false,
+        classes: "!my-0",
+        attrs: Default::default(),
+    })
+}
+
+/// Embeddable FK picker (no form `name`) for Alpine lists.
+fn embed_input_fkey(url: &'static str, placeholder: &'static str) -> Markup {
+    input_foreign_key(InputForeignKey {
+        label: "",
+        name: "",
+        value: "",
+        display: "",
+        placeholder,
+        url,
+        required: false,
+        classes: "!my-0",
+        ..Default::default()
+    })
+}
+
+const ALPINE_LENGTH_BRIDGE: &str = r#"
+                lengthData(el) {
+                    const root = el.querySelector('[x-data]');
+                    return root && window.Alpine ? Alpine.$data(root) : null;
+                },
+                bindLengthInput(el, target, key) {
+                    this.$nextTick(() => {
+                        const d = this.lengthData(el);
+                        if (!d) return;
+                        let mm;
+                        if (key) {
+                            mm = target.variables ? target.variables[key] : '';
+                            d.unit = (target.dim_units && target.dim_units[key]) || 'mm';
+                        } else {
+                            mm = target.value;
+                        }
+                        d.mm = (mm !== '' && mm !== null && mm !== undefined) ? String(mm) : '';
+                        if (typeof d.mmToDisplay === 'function') d.mmToDisplay();
+                    });
+                },
+                pullLengthInput(el, target, key) {
+                    const d = this.lengthData(el);
+                    if (!d) return;
+                    if (key) {
+                        if (!target.variables) target.variables = {};
+                        if (!target.dim_units) target.dim_units = {};
+                        if (!target.dim_inputs) target.dim_inputs = {};
+                        target.variables[key] = d.mm;
+                        target.dim_units[key] = d.unit || 'mm';
+                        target.dim_inputs[key] = d.display;
+                        if (typeof this.recalc === 'function') this.recalc(target);
+                    } else {
+                        target.value = d.mm;
+                    }
+                },
+"#;
+
+const ALPINE_FKEY_BRIDGE: &str = r#"
+                fkeyRoot(el) {
+                    return el.querySelector('[x-data]');
+                },
+                fkeyData(el) {
+                    const root = this.fkeyRoot(el);
+                    return root && window.Alpine ? Alpine.$data(root) : null;
+                },
+                applyFkeyToItem(item, field, detail) {
+                    if (!item || !detail) return;
+                    const id = parseInt(detail.value, 10) || 0;
+                    const display = detail.display ? String(detail.display) : '';
+                    if (field === 'component') {
+                        item.component_id = id;
+                        item.component_label = display;
+                        if (typeof this.onCompChange === 'function') this.onCompChange(item);
+                        const picked = detail.material_rate;
+                        if (picked != null && String(picked).trim() !== '') {
+                            const r = parseFloat(picked);
+                            if (!isNaN(r)) item.material_rate = r;
+                        }
+                        if (typeof this.recalc === 'function') this.recalc(item);
+                    } else if (field === 'machine') {
+                        item.machine_id = id;
+                        item.machine_label = display;
+                        if (item.name !== undefined) item.name = display || item.name;
+                        if (typeof this.onMachineChange === 'function') this.onMachineChange(item);
+                        const picked = detail.rate != null ? detail.rate : detail.rate_decimal;
+                        if (picked != null && String(picked).trim() !== '' && (!item.rate || item.rate === '0')) {
+                            item.rate = String(picked);
+                            if (typeof this.recalc === 'function') this.recalc(item);
+                        }
+                    }
+                },
+                onFkeySelect(detail) {
+                    if (!detail) return;
+                    const n = String(detail.name || '');
+                    for (const item of this.items) {
+                        if (n === 'component-' + item.id) {
+                            this.applyFkeyToItem(item, 'component', detail);
+                            return;
+                        }
+                        if (n === 'machine-' + item.id) {
+                            this.applyFkeyToItem(item, 'machine', detail);
+                            return;
+                        }
+                    }
+                },
+                bindFkeyInput(el, item, field) {
+                    const root = this.fkeyRoot(el);
+                    const d = this.fkeyData(el);
+                    if (!root || !d) {
+                        const n = Number(el.dataset.fkeyTries || 0);
+                        if (n > 20) return;
+                        el.dataset.fkeyTries = String(n + 1);
+                        this.$nextTick(() => this.bindFkeyInput(el, item, field));
+                        return;
+                    }
+                    el.dataset.fkeyTries = '0';
+                    const slot = field + '-' + item.id;
+                    const idKey = field + '_id';
+                    const labelKey = field + '_label';
+                    const idVal = item[idKey];
+                    let label = item[labelKey] || '';
+                    if (field === 'component') {
+                        const c = typeof this.getComp === 'function' ? this.getComp(idVal) : null;
+                        if (c) {
+                            label = c.name + (c.material_name ? ' (' + c.material_name + ')' : '');
+                        }
+                    } else if (field === 'machine' && typeof this.getMachine === 'function') {
+                        const m = this.getMachine(idVal);
+                        if (m && m.name) label = m.name;
+                        else if (!label && item.name) label = item.name;
+                    }
+                    if (item[labelKey] !== label) item[labelKey] = label;
+                    if (!d._woFkeyDom) {
+                        d._woFkeyDom = true;
+                        const uid = 'fk-' + slot;
+                        const search = root.querySelector('input[type="search"]');
+                        const results = root.querySelector('.fk-picker-results');
+                        const tableBtn = root.querySelector('button[aria-label="Open selection table"]');
+                        const setTarget = (node) => {
+                            if (!node) return;
+                            const raw = node.getAttribute('hx-get') || '';
+                            try {
+                                const u = new URL(raw, window.location.href);
+                                u.searchParams.set('target_input', slot);
+                                node.setAttribute('hx-get', u.pathname + u.search + u.hash);
+                            } catch (e) {}
+                        };
+                        if (search) {
+                            search.id = uid + '-q';
+                            search.setAttribute('hx-target', '#' + uid);
+                            search.setAttribute('aria-controls', uid);
+                            setTarget(search);
+                            if (window.htmx) window.htmx.process(search);
+                        }
+                        if (results) results.id = uid;
+                        if (tableBtn) {
+                            tableBtn.setAttribute('hx-include', '#' + uid + '-q');
+                            setTarget(tableBtn);
+                            if (window.htmx) window.htmx.process(tableBtn);
+                        }
+                        const self = this;
+                        const orig = d.applySelect.bind(d);
+                        d.applySelect = function(detail) {
+                            orig(detail);
+                            if (!detail || String(detail.name) !== String(this.fieldName)) return;
+                            self.applyFkeyToItem(item, field, Object.assign({}, detail, {
+                                value: this.value,
+                                display: this.display,
+                            }));
+                        };
+                    }
+                    d.fieldName = slot;
+                    d.value = idVal && Number(idVal) > 0 ? String(idVal) : '';
+                    d.display = label || '';
+                    d.query = d.display;
+                },
+"#;
+
 pub struct KvList;
 
 impl FormWidget for KvList {
@@ -70,7 +255,10 @@ impl FormWidget for KvList {
         } else if !choices.is_empty() {
             Vec::new()
         } else {
-            ALLOWED_VARIABLE_NAMES.iter().map(|s| s.to_string()).collect()
+            ALLOWED_VARIABLE_NAMES
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         };
 
         let mut shape_vars_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -79,10 +267,13 @@ impl FormWidget for KvList {
                 shape_vars_map.insert(sid.clone(), vars);
             }
         }
-        let shape_vars_map_json = serde_json::to_string(&shape_vars_map).unwrap_or_else(|_| "{}".into());
+        let shape_vars_map_json =
+            serde_json::to_string(&shape_vars_map).unwrap_or_else(|_| "{}".into());
 
         let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(field.value) {
+        if let Ok(serde_json::Value::Object(map)) =
+            serde_json::from_str::<serde_json::Value>(field.value)
+        {
             for (i, (k, v)) in map.into_iter().enumerate() {
                 let val_str = match v {
                     serde_json::Value::Number(n) => n.to_string(),
@@ -111,10 +302,12 @@ impl FormWidget for KvList {
         }
         let next_id = rows.len() + 1;
         let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
-        let allowed_keys_json = serde_json::to_string(&allowed_keys).unwrap_or_else(|_| "[]".into());
+        let allowed_keys_json =
+            serde_json::to_string(&allowed_keys).unwrap_or_else(|_| "[]".into());
 
         let alpine_data = format!(
             r#"{{
+                {ALPINE_LENGTH_BRIDGE}
                 items: {rows_json},
                 nextId: {next_id},
                 allowedKeys: {allowed_keys_json},
@@ -351,18 +544,12 @@ impl FormWidget for KvList {
 
                         span class="text-base-content/40 font-bold shrink-0" { "=" }
 
-                        // Value Input with unit badge
-                        (PreEscaped(r#"
-                        <div class="flex items-center gap-1 shrink-0">
-                            <input type="number"
-                                   step="any"
-                                   class="input input-bordered input-sm w-28 font-mono text-xs"
-                                   x-model="item.value"
-                                   placeholder="Value"
-                                   data-kv-val-input>
-                            <span class="badge badge-ghost badge-sm font-mono text-xs">mm</span>
-                        </div>
-                        "#))
+                        div class="min-w-0 flex-1"
+                            x-init="bindLengthInput($el, item)"
+                            x-on:input="pullLengthInput($el, item)"
+                            x-on:change="pullLengthInput($el, item)" {
+                            (embed_input_length())
+                        }
 
                         // Remove button
                         (PreEscaped(r#"
@@ -455,6 +642,25 @@ pub struct ComponentMeta {
     pub free_variables: Vec<String>,
 }
 
+fn json_num_f64(v: Option<&serde_json::Value>) -> f64 {
+    match v {
+        Some(serde_json::Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+        Some(serde_json::Value::String(s)) => s.trim().parse().unwrap_or(0.0),
+        _ => 0.0,
+    }
+}
+
+fn json_i64_id(v: Option<&serde_json::Value>) -> i64 {
+    match v {
+        Some(serde_json::Value::Number(n)) => n
+            .as_i64()
+            .or_else(|| n.as_u64().map(|u| u as i64))
+            .unwrap_or(0),
+        Some(serde_json::Value::String(s)) => s.trim().parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 pub struct DraftWorkOrderMaterialLinesWidget;
 
 impl FormWidget for DraftWorkOrderMaterialLinesWidget {
@@ -466,68 +672,107 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
         } else {
             comp_str
         };
+        let component_metas: Vec<ComponentMeta> =
+            serde_json::from_str(components_json).unwrap_or_default();
         let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+        if let Ok(serde_json::Value::Array(arr)) =
+            serde_json::from_str::<serde_json::Value>(field.value)
+        {
             for (i, v) in arr.into_iter().enumerate() {
                 if let serde_json::Value::Object(obj) = v {
-                    let component_id = obj.get("component_id").and_then(|x| x.as_i64()).unwrap_or(0);
-                    let variables = obj.get("variables").cloned().unwrap_or_else(|| serde_json::json!({}));
-                    let quantity = obj.get("quantity").map(|x| match x {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => "1".to_string(),
-                    }).unwrap_or_else(|| "1".to_string());
-                    let unit_weight = obj.get("unit_weight").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let material_rate = obj.get("material_rate").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let final_cost = obj.get("final_cost").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let extra_data = obj.get("extra_data").map(|x| match x {
-                        serde_json::Value::String(s) => s.clone(),
-                        serde_json::Value::Object(_) | serde_json::Value::Array(_) => x.to_string(),
-                        _ => String::new(),
-                    }).unwrap_or_default();
+                    let component_id = json_i64_id(obj.get("component_id"));
+                    let variables = obj
+                        .get("variables")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let quantity = obj
+                        .get("quantity")
+                        .map(|x| match x {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => "1".to_string(),
+                        })
+                        .unwrap_or_else(|| "1".to_string());
+                    let unit_weight = json_num_f64(obj.get("unit_weight"));
+                    let material_rate = json_num_f64(obj.get("material_rate"));
+                    let final_cost = json_num_f64(obj.get("final_cost"));
+                    let extra_data = obj
+                        .get("extra_data")
+                        .map(|x| match x {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                                x.to_string()
+                            }
+                            _ => String::new(),
+                        })
+                        .unwrap_or_default();
 
-                    let dim_units = obj.get("extra_data")
+                    let dim_units = obj
+                        .get("extra_data")
                         .and_then(|x| match x {
                             serde_json::Value::Object(m) => {
                                 if let Some(serde_json::Value::Object(units)) = m.get("dim_units") {
                                     Some(serde_json::Value::Object(units.clone()))
-                                } else if let Some(serde_json::Value::String(u)) = m.get("dim_unit") {
+                                } else if let Some(serde_json::Value::String(u)) = m.get("dim_unit")
+                                {
                                     let mut map = serde_json::Map::new();
-                                    map.insert("default".into(), serde_json::Value::String(u.clone()));
+                                    map.insert(
+                                        "default".into(),
+                                        serde_json::Value::String(u.clone()),
+                                    );
                                     Some(serde_json::Value::Object(map))
                                 } else {
                                     None
                                 }
                             }
                             serde_json::Value::String(s) => {
-                                serde_json::from_str::<serde_json::Value>(s).ok().and_then(|j| {
-                                    if let serde_json::Value::Object(ref m) = j {
-                                        if let Some(serde_json::Value::Object(units)) = m.get("dim_units") {
-                                            Some(serde_json::Value::Object(units.clone()))
-                                        } else if let Some(serde_json::Value::String(u)) = m.get("dim_unit") {
-                                            let mut map = serde_json::Map::new();
-                                            map.insert("default".into(), serde_json::Value::String(u.clone()));
-                                            Some(serde_json::Value::Object(map))
+                                serde_json::from_str::<serde_json::Value>(s)
+                                    .ok()
+                                    .and_then(|j| {
+                                        if let serde_json::Value::Object(ref m) = j {
+                                            if let Some(serde_json::Value::Object(units)) =
+                                                m.get("dim_units")
+                                            {
+                                                Some(serde_json::Value::Object(units.clone()))
+                                            } else if let Some(serde_json::Value::String(u)) =
+                                                m.get("dim_unit")
+                                            {
+                                                let mut map = serde_json::Map::new();
+                                                map.insert(
+                                                    "default".into(),
+                                                    serde_json::Value::String(u.clone()),
+                                                );
+                                                Some(serde_json::Value::Object(map))
+                                            } else {
+                                                None
+                                            }
                                         } else {
                                             None
                                         }
-                                    } else {
-                                        None
-                                    }
-                                })
+                                    })
                             }
                             _ => None,
                         })
                         .unwrap_or_else(|| serde_json::json!({}));
 
+                    let component_label = component_metas
+                        .iter()
+                        .find(|c| c.id == component_id)
+                        .map(|c| {
+                            if c.material_name.is_empty() {
+                                c.name.clone()
+                            } else {
+                                format!("{} ({})", c.name, c.material_name)
+                            }
+                        })
+                        .unwrap_or_default();
+
                     rows.push(serde_json::json!({
                         "id": i + 1,
                         "component_id": component_id,
+                        "component_label": component_label,
                         "variables": variables,
                         "dim_units": dim_units,
-                        "mode": "dim",
-                        "target_weight": "",
-                        "target_cost": "",
                         "quantity": quantity,
                         "unit_weight": unit_weight,
                         "material_rate": material_rate,
@@ -542,6 +787,8 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
 
         let alpine_data = format!(
             r#"{{
+                {ALPINE_LENGTH_BRIDGE}
+                {ALPINE_FKEY_BRIDGE}
                 components: {components_json},
                 items: {rows_json},
                 nextId: {next_id},
@@ -559,6 +806,10 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                 }},
                 init() {{
                     this.items.forEach(it => {{
+                        if (!it.component_label) {{
+                            const c = this.getComp(it.component_id);
+                            it.component_label = c ? (c.name + (c.material_name ? ' (' + c.material_name + ')' : '')) : '';
+                        }}
                         if (!it.dim_units) it.dim_units = {{}};
                         it.dim_inputs = {{}};
                         if (it.variables) {{
@@ -573,6 +824,10 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                                     it.dim_inputs[k] = '';
                                 }}
                             }}
+                        }}
+                        if (!this.hasPositive(it.material_rate)) {{
+                            const c = this.getComp(it.component_id);
+                            if (c && c.material_rate) it.material_rate = c.material_rate;
                         }}
                         this.recalc(it);
                     }});
@@ -596,16 +851,14 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                     const it = {{
                         id: this.nextId++,
                         component_id: compId,
+                        component_label: firstComp ? (firstComp.name + (firstComp.material_name ? ' (' + firstComp.material_name + ')' : '')) : '',
                         variables: initialVars,
                         dim_inputs: initialDimInputs,
                         dim_units: initialDimUnits,
-                        mode: 'dim',
-                        target_weight: '',
-                        target_cost: '',
                         quantity: '1',
-                        unit_weight: 0,
+                        unit_weight: '',
                         material_rate: firstComp ? firstComp.material_rate : 0,
-                        final_cost: 0,
+                        final_cost: '',
                         extra_data: ''
                     }};
                     this.recalc(it);
@@ -616,7 +869,10 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                 }},
                 onCompChange(item) {{
                     const comp = this.getComp(item.component_id);
-                    if (!comp) return;
+                    if (!comp) {{
+                        if (!this.hasPositive(item.material_rate)) item.material_rate = 0;
+                        return;
+                    }}
                     item.variables = {{}};
                     item.dim_inputs = {{}};
                     item.dim_units = {{}};
@@ -627,10 +883,9 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                             item.dim_units[v] = 'mm';
                         }});
                     }}
-                    item.material_rate = comp.material_rate || 0;
-                    item.mode = 'dim';
-                    item.target_weight = '';
-                    item.target_cost = '';
+                    item.material_rate = (comp.material_rate != null && comp.material_rate !== '') ? Number(comp.material_rate) : 0;
+                    item.unit_weight = '';
+                    item.final_cost = '';
                     this.recalc(item);
                 }},
                 onDimInput(item, varName) {{
@@ -730,68 +985,40 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                     }}
                     return 0;
                 }},
+                hasPositive(val) {{
+                    const n = parseFloat(val);
+                    return !isNaN(n) && n > 0;
+                }},
+                dimsProvided(item, free) {{
+                    if (!free || free.length === 0) return true;
+                    return free.every(v => this.hasPositive(item.variables && item.variables[v]));
+                }},
                 recalc(item) {{
                     const comp = this.getComp(item.component_id);
                     if (!comp) {{
-                        item.unit_weight = 0;
-                        item.final_cost = 0;
                         return;
                     }}
-                    item.material_rate = comp.material_rate || 0;
                     const free = comp.free_variables || [];
-                    if (!item.dim_inputs) item.dim_inputs = {{}};
-                    if (!item.dim_units) item.dim_units = {{}};
-
-                    if (free.length === 1) {{
-                        const freeVar = free[0];
-                        const unit = item.dim_units[freeVar] || 'mm';
-                        const factor = this.unitFactors[unit] || 1.0;
-                        if (item.mode === 'weight' && parseFloat(item.target_weight) > 0) {{
-                            const w = parseFloat(item.target_weight);
-                            const dim_mm = this.solveDim(comp, freeVar, w);
-                            if (dim_mm > 0) {{
-                                item.variables[freeVar] = parseFloat(dim_mm.toFixed(2));
-                                item.dim_inputs[freeVar] = this.roundVal(dim_mm / factor);
-                                item.target_cost = (w * comp.material_rate).toFixed(2);
-                            }}
-                        }} else if (item.mode === 'cost' && parseFloat(item.target_cost) > 0 && comp.material_rate > 0) {{
-                            const c = parseFloat(item.target_cost);
-                            const w = c / comp.material_rate;
-                            item.target_weight = w.toFixed(3);
-                            const dim_mm = this.solveDim(comp, freeVar, w);
-                            if (dim_mm > 0) {{
-                                item.variables[freeVar] = parseFloat(dim_mm.toFixed(2));
-                                item.dim_inputs[freeVar] = this.roundVal(dim_mm / factor);
-                            }}
-                        }} else {{
-                            // mode === 'dim'
-                            const raw = item.dim_inputs[freeVar];
-                            if (raw !== '' && raw !== null && !isNaN(raw)) {{
-                                item.variables[freeVar] = this.roundVal(parseFloat(raw) * factor);
-                            }}
-                            const dimVal = parseFloat(item.variables[freeVar]) || 0;
-                            if (dimVal > 0) {{
-                                const w = this.calcWeight(comp, item.variables);
-                                item.target_weight = w > 0 ? w.toFixed(3) : '';
-                                item.target_cost = (w * comp.material_rate).toFixed(2);
-                            }}
-                        }}
-                    }} else if (free.length > 1) {{
-                        free.forEach(v => {{
-                            const unit = item.dim_units[v] || 'mm';
-                            const factor = this.unitFactors[unit] || 1.0;
-                            const raw = item.dim_inputs ? item.dim_inputs[v] : '';
-                            if (raw !== '' && raw !== null && !isNaN(raw)) {{
-                                item.variables[v] = this.roundVal(parseFloat(raw) * factor);
-                            }} else {{
-                                item.variables[v] = '';
-                            }}
-                        }});
-                    }}
-                    const weight = this.calcWeight(comp, item.variables);
-                    item.unit_weight = weight;
                     const qty = parseFloat(item.quantity) || 0;
-                    item.final_cost = qty * (comp.material_rate || 0) * weight;
+                    const rate = parseFloat(item.material_rate) || 0;
+                    const hasDims = this.dimsProvided(item, free);
+                    const hasWeight = this.hasPositive(item.unit_weight);
+                    const hasCost = this.hasPositive(item.final_cost);
+
+                    if (hasDims) {{
+                        const weight = this.calcWeight(comp, item.variables);
+                        item.unit_weight = weight > 0 ? parseFloat(weight.toFixed(4)) : '';
+                        item.final_cost = parseFloat((qty * rate * (weight || 0)).toFixed(2));
+                    }} else if (hasWeight) {{
+                        const w = parseFloat(item.unit_weight);
+                        item.unit_weight = w;
+                        item.final_cost = parseFloat((qty * rate * w).toFixed(2));
+                    }} else if (hasCost) {{
+                        item.final_cost = parseFloat(parseFloat(item.final_cost).toFixed(2));
+                    }} else {{
+                        item.unit_weight = '';
+                        item.final_cost = '';
+                    }}
                 }},
                 grandTotal() {{
                     return this.items.reduce((sum, it) => sum + (it.final_cost || 0), 0);
@@ -815,14 +1042,17 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                             if (free.length === 1 && it.dim_units && it.dim_units[free[0]]) {{
                                 extra.dim_unit = it.dim_units[free[0]];
                             }}
+                            const hasDims = this.dimsProvided(it, free);
+                            const hasWeight = this.hasPositive(it.unit_weight);
                             return {{
                                 id: it.id || null,
                                 component_id: parseInt(it.component_id, 10),
                                 variables: JSON.stringify(it.variables || {{}}),
                                 quantity: String(it.quantity || '1'),
-                                unit_weight: String((it.unit_weight || 0).toFixed(4)),
-                                material_rate: String((it.material_rate || 0).toFixed(2)),
-                                final_cost: String((it.final_cost || 0).toFixed(2)),
+                                unit_weight: String(it.unit_weight || '0'),
+                                material_rate: String((parseFloat(it.material_rate) || 0).toFixed(2)),
+                                final_cost: String(it.final_cost || '0'),
+                                target_weight: (!hasDims && hasWeight) ? it.unit_weight : null,
                                 extra_data: JSON.stringify(extra)
                             }};
                         }});
@@ -833,12 +1063,11 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
 
         html! {
             div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)"></div>"#))
                 input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
 
-                div class="flex justify-between items-center mb-2" {
-                    label class="label p-0" {
-                        span class="label-text font-bold text-base" { (field.label) }
-                    }
+                (label(field.label, html! {
+                div class="flex justify-end mb-2" {
                     (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
                     (icon("plus", "w-3 h-3"))
                     "Add Line"
@@ -870,143 +1099,45 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                             (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
                             tr class="hover border-b border-base-200 last:border-none" {
                                 (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
-                                td class="align-middle" {
-                                    (PreEscaped(r#"
-                                    <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium"
-                                            x-model="item.component_id"
-                                            @change="onCompChange(item)">
-                                        <template x-for="c in components" :key="c.id">
-                                            <option :value="c.id" x-text="c.name + ' (' + c.material_name + ')'"></option>
-                                        </template>
-                                    </select>
-                                    "#))
+                                td class="align-middle min-w-[12rem]" {
+                                    div class="min-w-0"
+                                        x-effect="bindFkeyInput($el, item, 'component')" {
+                                        (embed_input_fkey("/work-orders/components/pick", "Select component…"))
+                                    }
                                 }
                                 td class="align-middle" {
                                     (PreEscaped(r#"
-                                    <div class="flex items-center">
-                                        <template x-if="getComp(item.component_id) && (getComp(item.component_id).free_variables || []).length === 1">
-                                            <div class="flex flex-col gap-1.5 py-1">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="w-24 shrink-0"></span>
-                                                    <div class="join join-horizontal shadow-none shrink-0">
-                                                        <button type="button" class="btn btn-xs join-item h-6 min-h-0 px-2 font-semibold text-[11px]"
-                                                                :class="{ 'btn-primary': item.mode === 'dim' }"
-                                                                @click="item.mode = 'dim'; recalc(item)">Dim</button>
-                                                        <button type="button" class="btn btn-xs join-item h-6 min-h-0 px-2 font-semibold text-[11px]"
-                                                                :class="{ 'btn-primary': item.mode === 'weight' }"
-                                                                @click="item.mode = 'weight'; recalc(item)">Weight</button>
-                                                        <button type="button" class="btn btn-xs join-item h-6 min-h-0 px-2 font-semibold text-[11px]"
-                                                                :class="{ 'btn-primary': item.mode === 'cost' }"
-                                                                @click="item.mode = 'cost'; recalc(item)">Cost</button>
-                                                    </div>
-                                                </div>
-
-                                                <template x-if="item.mode === 'dim'">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0"
-                                                              x-text="getComp(item.component_id).free_variables[0] + ':'"></span>
-                                                        <div class="join join-horizontal items-center shrink-0">
-                                                            <input type="number" step="any"
-                                                                   class="input input-xs input-bordered join-item w-20 font-mono text-xs h-7 min-h-0 text-right pr-1"
-                                                                   :placeholder="getComp(item.component_id).free_variables[0]"
-                                                                   x-model="item.dim_inputs[getComp(item.component_id).free_variables[0]]"
-                                                                   @input="onDimInput(item, getComp(item.component_id).free_variables[0])">
-                                                            <select class="select select-xs select-bordered join-item font-mono text-xs h-7 min-h-0 px-2 cursor-pointer bg-base-100"
-                                                                    :value="(item.dim_units && item.dim_units[getComp(item.component_id).free_variables[0]]) || 'mm'"
-                                                                    @change="onVarUnitChange(item, getComp(item.component_id).free_variables[0], $event.target.value)">
-                                                                <option value="mm">mm</option>
-                                                                <option value="cm">cm</option>
-                                                                <option value="m">m</option>
-                                                                <option value="km">km</option>
-                                                                <option value="in">in</option>
-                                                                <option value="ft">ft</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                </template>
-
-                                                <template x-if="item.mode === 'weight'">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0">weight:</span>
-                                                        <div class="join join-horizontal items-center shrink-0">
-                                                            <input type="number" step="any"
-                                                                   class="input input-xs input-bordered join-item w-20 font-mono text-xs h-7 min-h-0 text-right pr-1"
-                                                                   placeholder="Target"
-                                                                   x-model="item.target_weight"
-                                                                   @input="recalc(item)">
-                                                            <span class="btn btn-xs join-item no-animation bg-base-200 h-7 min-h-0 px-2 font-mono text-xs opacity-70 pointer-events-none">kg</span>
-                                                        </div>
-                                                        <template x-if="item.dim_inputs && item.dim_inputs[getComp(item.component_id).free_variables[0]] > 0">
-                                                            <span class="badge badge-sm badge-ghost font-mono text-[11px] h-6 whitespace-nowrap"
-                                                                  x-text="item.dim_inputs[getComp(item.component_id).free_variables[0]] + ' ' + ((item.dim_units && item.dim_units[getComp(item.component_id).free_variables[0]]) || 'mm')"></span>
-                                                        </template>
-                                                    </div>
-                                                </template>
-
-                                                <template x-if="item.mode === 'cost'">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0">cost:</span>
-                                                        <div class="join join-horizontal items-center shrink-0">
-                                                            <input type="number" step="any"
-                                                                   class="input input-xs input-bordered join-item w-20 font-mono text-xs h-7 min-h-0 text-right pr-1"
-                                                                   placeholder="Target"
-                                                                   x-model="item.target_cost"
-                                                                   @input="recalc(item)">
-                                                            <span class="btn btn-xs join-item no-animation bg-base-200 h-7 min-h-0 px-2 font-mono text-xs opacity-70 pointer-events-none">₹</span>
-                                                        </div>
-                                                        <template x-if="item.dim_inputs && item.dim_inputs[getComp(item.component_id).free_variables[0]] > 0">
-                                                            <span class="badge badge-sm badge-ghost font-mono text-[11px] h-6 whitespace-nowrap"
-                                                                  x-text="item.dim_inputs[getComp(item.component_id).free_variables[0]] + ' ' + ((item.dim_units && item.dim_units[getComp(item.component_id).free_variables[0]]) || 'mm')"></span>
-                                                        </template>
-                                                    </div>
-                                                </template>
+                                    <div class="flex flex-col gap-1.5 py-1">
+                                        <template x-for="v in (getComp(item.component_id) && getComp(item.component_id).free_variables) || []" :key="v">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0" x-text="v + ':'"></span>
+                                    "#))
+                                    div class="min-w-0"
+                                        x-init="bindLengthInput($el, item, v)"
+                                        x-on:input="pullLengthInput($el, item, v)"
+                                        x-on:change="pullLengthInput($el, item, v)" {
+                                        (embed_input_length())
+                                    }
+                                    (PreEscaped(r#"
                                             </div>
                                         </template>
-
-                                        <template x-if="getComp(item.component_id) && (getComp(item.component_id).free_variables || []).length > 1">
-                                            <div class="flex flex-col gap-1.5 py-1">
-                                                <template x-for="v in getComp(item.component_id).free_variables" :key="v">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0" x-text="v + ':'"></span>
-                                                        <div class="join join-horizontal items-center shrink-0">
-                                                            <input type="number" step="any"
-                                                                   class="input input-xs input-bordered join-item w-20 font-mono text-xs h-7 min-h-0 text-right pr-1"
-                                                                   :placeholder="v"
-                                                                   x-model="item.dim_inputs[v]"
-                                                                   @input="onDimInput(item, v)">
-                                                            <select class="select select-xs select-bordered join-item font-mono text-xs h-7 min-h-0 px-2 cursor-pointer bg-base-100"
-                                                                    :value="(item.dim_units && item.dim_units[v]) || 'mm'"
-                                                                    @change="onVarUnitChange(item, v, $event.target.value)">
-                                                                <option value="mm">mm</option>
-                                                                <option value="cm">cm</option>
-                                                                <option value="m">m</option>
-                                                                <option value="km">km</option>
-                                                                <option value="in">in</option>
-                                                                <option value="ft">ft</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                </template>
-                                            </div>
-                                        </template>
-
-                                        <template x-if="getComp(item.component_id) && (getComp(item.component_id).free_variables || []).length === 0">
+                                        <template x-if="getComp(item.component_id) && ((getComp(item.component_id).free_variables || []).length === 0)">
                                             <span class="text-xs italic opacity-60">Fully fixed stock sizes</span>
                                         </template>
                                     </div>
                                     "#))
                                 }
-                                td class="align-middle text-right font-mono text-xs" {
-                                    (PreEscaped(r#"<span x-text="(item.unit_weight || 0).toFixed(3)"></span>"#))
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="number" min="0" step="any" x-model="item.unit_weight" @input="recalc(item)" placeholder="kg" class="input input-xs input-bordered w-20 text-right font-mono h-7 min-h-0 ml-auto block">"#))
                                 }
-                                td class="align-middle text-right font-mono text-xs opacity-80" {
-                                    (PreEscaped(r#"<span x-text="(item.material_rate || 0).toFixed(2)"></span>"#))
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="number" min="0" step="any" x-model="item.material_rate" @input="recalc(item)" placeholder="₹/kg" class="input input-xs input-bordered w-20 text-right font-mono h-7 min-h-0 ml-auto block">"#))
                                 }
                                 td class="align-middle text-center" {
                                     (PreEscaped(r#"<input type="number" min="0.001" step="any" x-model="item.quantity" @input="recalc(item)" placeholder="1" class="input input-xs input-bordered w-14 text-center font-mono h-7 min-h-0 mx-auto block" required>"#))
                                 }
-                                td class="align-middle text-right font-mono font-bold text-primary text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(item.final_cost)"></span>"#))
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="number" min="0" step="any" x-model="item.final_cost" @input="recalc(item)" placeholder="₹" class="input input-xs input-bordered w-24 text-right font-mono h-7 min-h-0 ml-auto block">"#))
                                 }
                                 td class="align-middle text-center" {
                                     (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove line" @click="removeItem(idx)">✕</button>"#))
@@ -1026,6 +1157,7 @@ impl FormWidget for DraftWorkOrderMaterialLinesWidget {
                     }
                 }
                 (PreEscaped("</template>"))
+                }))
             }
         }
     }
@@ -1037,24 +1169,40 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
     fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
         let machines_json = ctx.display_of(field.name);
         let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+        if let Ok(serde_json::Value::Array(arr)) =
+            serde_json::from_str::<serde_json::Value>(field.value)
+        {
             for (i, v) in arr.into_iter().enumerate() {
                 if let serde_json::Value::Object(obj) = v {
-                    let machine_id = obj.get("machine_id").and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
-                        _ => None,
-                    }).unwrap_or(0);
-                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => String::new(),
-                    }).unwrap_or_default();
-                    let duration = obj.get("duration").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let db_id = obj.get("id").and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        _ => None,
-                    }).unwrap_or(0);
+                    let machine_id = obj
+                        .get("machine_id")
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    let rate = obj
+                        .get("rate")
+                        .or_else(|| obj.get("rate_decimal"))
+                        .map(|x| match x {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => String::new(),
+                        })
+                        .unwrap_or_default();
+                    let duration = obj
+                        .get("duration")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let db_id = obj
+                        .get("id")
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
 
                     rows.push(serde_json::json!({
                         "id": i + 1,
@@ -1072,12 +1220,14 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
 
         let alpine_data = format!(
             r#"{{
+                {ALPINE_FKEY_BRIDGE}
                 machines: {machines_json},
                 items: {rows_json},
                 nextId: {next_id},
                 init() {{
                     this.items.forEach(it => {{
                         const m = this.getMachine(it.machine_id);
+                        if (m && (!it.machine_label)) it.machine_label = m.name;
                         if (m && (!it.rate || it.rate === '0')) it.rate = m.rate_decimal;
                         this.recalc(it);
                     }});
@@ -1091,6 +1241,7 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
                         id: this.nextId++,
                         db_id: null,
                         machine_id: first ? first.id : 0,
+                        machine_label: first ? first.name : '',
                         rate: first ? first.rate_decimal : '0',
                         duration: '',
                         total: 0
@@ -1141,12 +1292,11 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
 
         html! {
             div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)"></div>"#))
                 input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
 
-                div class="flex justify-between items-center mb-2" {
-                    label class="label p-0" {
-                        span class="label-text font-bold text-base" { (field.label) }
-                    }
+                (label(field.label, html! {
+                div class="flex justify-end mb-2" {
                     (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
                     (icon("plus", "w-3 h-3"))
                     "Add Machine Line"
@@ -1176,16 +1326,11 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
                             (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
                             tr class="hover border-b border-base-200 last:border-none" {
                                 (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
-                                td class="align-middle" {
-                                    (PreEscaped(r#"
-                                    <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium"
-                                            x-model="item.machine_id"
-                                            @change="onMachineChange(item)">
-                                        <template x-for="m in machines" :key="m.id">
-                                            <option :value="m.id" x-text="m.name"></option>
-                                        </template>
-                                    </select>
-                                    "#))
+                                td class="align-middle min-w-[12rem]" {
+                                    div class="min-w-0"
+                                        x-effect="bindFkeyInput($el, item, 'machine')" {
+                                        (embed_input_fkey("/work-orders/machines/pick", "Select machine…"))
+                                    }
                                 }
                                 td class="align-middle" {
                                     (PreEscaped(r#"<input type="number" min="0" step="any" x-model="item.rate" @input="recalc(item)" placeholder="0.00" class="input input-xs input-bordered w-full h-7 min-h-0 text-right font-mono text-xs">"#))
@@ -1214,6 +1359,7 @@ impl FormWidget for DraftWorkOrderMachineLinesWidget {
                     }
                 }
                 (PreEscaped("</template>"))
+                }))
             }
         }
     }
@@ -1239,13 +1385,13 @@ pub struct DraftWorkOrderForm {
     pub customer_id: i64,
 
     #[form(
-        label = "Draft Work Order Material Lines",
+        label = "Material Lines",
         widget = DraftWorkOrderMaterialLinesWidget,
     )]
     pub items: Option<String>,
 
     #[form(
-        label = "Draft Work Order Machine Lines",
+        label = "Machine Lines",
         widget = DraftWorkOrderMachineLinesWidget,
     )]
     pub machine_lines: Option<String>,
@@ -1421,18 +1567,16 @@ pub struct DateInput;
 
 impl FormWidget for DateInput {
     fn render(_ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
-        use maud::{html, PreEscaped};
+        use maud::{PreEscaped, html};
         let required = if field.required { " required" } else { "" };
-        html! {
-            div class="form-control mb-3" {
-                @if !field.label.is_empty() {
-                    label class="label" { span class="label-text" { (field.label) } }
-                }
-                (PreEscaped(format!(
-                    r#"<input type="date" name="{}" value="{}" class="input input-bordered w-full"{}>"#,
-                    field.name, field.value, required
-                )))
-            }
+        let input = PreEscaped(format!(
+            r#"<input type="date" name="{}" value="{}" class="input input-bordered w-full"{}>"#,
+            field.name, field.value, required
+        ));
+        if field.label.is_empty() {
+            html! { (input) }
+        } else {
+            label(field.label, html! { (input) })
         }
     }
 }
@@ -1442,32 +1586,56 @@ pub struct ProformaInvoiceMaterialLinesWidget;
 impl FormWidget for ProformaInvoiceMaterialLinesWidget {
     fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
         let materials_json: &str = ctx.display_of(field.name);
-        let materials_json = if materials_json.is_empty() { "[]" } else { materials_json };
+        let materials_json = if materials_json.is_empty() {
+            "[]"
+        } else {
+            materials_json
+        };
         let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+        if let Ok(serde_json::Value::Array(arr)) =
+            serde_json::from_str::<serde_json::Value>(field.value)
+        {
             for (i, v) in arr.into_iter().enumerate() {
                 if let serde_json::Value::Object(obj) = v {
-                    let material_id = obj.get("material_id").and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
-                        _ => None,
-                    }).unwrap_or(0);
-                    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let qty = obj.get("qty").map(|x| match x {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => "0".into(),
-                    }).unwrap_or_default();
-                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => "0".into(),
-                    }).unwrap_or_default();
+                    let material_id = obj
+                        .get("material_id")
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    let name = obj
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let qty = obj
+                        .get("qty")
+                        .map(|x| match x {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => "0".into(),
+                        })
+                        .unwrap_or_default();
+                    let rate = obj
+                        .get("rate")
+                        .or_else(|| obj.get("rate_decimal"))
+                        .map(|x| match x {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => "0".into(),
+                        })
+                        .unwrap_or_default();
                     let amount = obj.get("amount").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let db_id = obj.get("id").or_else(|| obj.get("db_id")).and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        _ => None,
-                    }).unwrap_or(0);
+                    let db_id = obj
+                        .get("id")
+                        .or_else(|| obj.get("db_id"))
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
 
                     rows.push(serde_json::json!({
                         "id": i + 1,
@@ -1535,9 +1703,11 @@ impl FormWidget for ProformaInvoiceMaterialLinesWidget {
                     this.recalc(item);
                 }},
                 recalc(item) {{
-                    const qty = parseFloat(item.qty) || 0;
+                    const qty = parseFloat(item.qty);
                     const rate = parseFloat(item.rate) || 0;
-                    item.amount = parseFloat((qty * rate).toFixed(2));
+                    if (!isNaN(qty) && qty > 0) {{
+                        item.amount = parseFloat((qty * rate).toFixed(2));
+                    }}
                 }},
                 grandTotal() {{
                     return this.items.reduce((sum, it) => sum + (it.amount || 0), 0);
@@ -1555,15 +1725,13 @@ impl FormWidget for ProformaInvoiceMaterialLinesWidget {
             }}"#
         );
 
-        use maud::{html, PreEscaped};
+        use maud::{PreEscaped, html};
         html! {
             div class="form-control mb-4 w-full" x-data=(alpine_data) {
                 input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
 
-                div class="flex justify-between items-center mb-2" {
-                    label class="label p-0" {
-                        span class="label-text font-bold text-base" { (field.label) }
-                    }
+                (label(field.label, html! {
+                div class="flex justify-end mb-2" {
                     (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
                     (PreEscaped(r#"<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>"#))
                     "Add Material Line"
@@ -1610,8 +1778,8 @@ impl FormWidget for ProformaInvoiceMaterialLinesWidget {
                                 <td class="align-middle text-right">
                                     <input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.rate" @input="recalc(item)">
                                 </td>
-                                <td class="align-middle text-right font-mono font-bold text-primary text-xs">
-                                    <span x-text="'₹ ' + (item.amount || 0).toFixed(2)"></span>
+                                <td class="align-middle text-right">
+                                    <input type="number" step="any" class="input input-xs input-bordered w-24 h-7 min-h-0 font-mono text-xs text-right" x-model="item.amount" placeholder="₹">
                                 </td>
                                 <td class="align-middle text-center">
                                     <button type="button" class="btn btn-ghost btn-square btn-sm shrink-0 text-error hover:bg-error/10" @click="removeItem(idx)" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
@@ -1630,6 +1798,7 @@ impl FormWidget for ProformaInvoiceMaterialLinesWidget {
                         (PreEscaped(r#"<span x-text="'₹ ' + grandTotal().toFixed(2)"></span>"#))
                     }
                 }
+                }))
             }
         }
     }
@@ -1640,28 +1809,53 @@ pub struct ProformaInvoiceMachineLinesWidget;
 impl FormWidget for ProformaInvoiceMachineLinesWidget {
     fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
         let machines_json: &str = ctx.display_of(field.name);
-        let machines_json = if machines_json.is_empty() { "[]" } else { machines_json };
+        let machines_json = if machines_json.is_empty() {
+            "[]"
+        } else {
+            machines_json
+        };
         let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(field.value) {
+        if let Ok(serde_json::Value::Array(arr)) =
+            serde_json::from_str::<serde_json::Value>(field.value)
+        {
             for (i, v) in arr.into_iter().enumerate() {
                 if let serde_json::Value::Object(obj) = v {
-                    let machine_id = obj.get("machine_id").and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
-                        _ => None,
-                    }).unwrap_or(0);
-                    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let rate = obj.get("rate").or_else(|| obj.get("rate_decimal")).map(|x| match x {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => "0".into(),
-                    }).unwrap_or_default();
-                    let duration = obj.get("duration").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let machine_id = obj
+                        .get("machine_id")
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    let name = obj
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let rate = obj
+                        .get("rate")
+                        .or_else(|| obj.get("rate_decimal"))
+                        .map(|x| match x {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => "0".into(),
+                        })
+                        .unwrap_or_default();
+                    let duration = obj
+                        .get("duration")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let amount = obj.get("amount").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let db_id = obj.get("id").or_else(|| obj.get("db_id")).and_then(|x| match x {
-                        serde_json::Value::Number(n) => n.as_i64(),
-                        _ => None,
-                    }).unwrap_or(0);
+                    let db_id = obj
+                        .get("id")
+                        .or_else(|| obj.get("db_id"))
+                        .and_then(|x| match x {
+                            serde_json::Value::Number(n) => n.as_i64(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
 
                     rows.push(serde_json::json!({
                         "id": i + 1,
@@ -1680,11 +1874,18 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
 
         let alpine_data = format!(
             r#"{{
+                {ALPINE_FKEY_BRIDGE}
                 machines: {machines_json},
                 items: {rows_json},
                 nextId: {next_id},
                 init() {{
-                    this.items.forEach(it => this.recalc(it));
+                    this.items.forEach(it => {{
+                        if (!it.machine_label) {{
+                            const m = this.getMachine(it.machine_id);
+                            it.machine_label = it.name || (m ? m.name : '');
+                        }}
+                        this.recalc(it);
+                    }});
                 }},
                 getMachine(id) {{
                     return this.machines.find(m => String(m.id) === String(id));
@@ -1695,9 +1896,10 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
                         id: this.nextId++,
                         db_id: null,
                         machine_id: first ? first.id : 0,
+                        machine_label: first ? first.name : '',
                         name: first ? first.name : '',
                         duration: '',
-                        rate: first ? first.rate : '0',
+                        rate: first ? first.rate_decimal : '0',
                         amount: 0,
                     }});
                 }},
@@ -1753,7 +1955,9 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
                 recalc(item) {{
                     const hours = this.parseDuration(item.duration);
                     const rate = parseFloat(item.rate) || 0;
-                    item.amount = parseFloat((rate * hours).toFixed(2));
+                    if (hours > 0) {{
+                        item.amount = parseFloat((rate * hours).toFixed(2));
+                    }}
                 }},
                 grandTotal() {{
                     return this.items.reduce((sum, it) => sum + (it.amount || 0), 0);
@@ -1771,15 +1975,14 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
             }}"#
         );
 
-        use maud::{html, PreEscaped};
+        use maud::{PreEscaped, html};
         html! {
             div class="form-control mb-4 w-full" x-data=(alpine_data) {
+                (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)"></div>"#))
                 input type="hidden" name=(field.name) x-bind:value="jsonOutput()";
 
-                div class="flex justify-between items-center mb-2" {
-                    label class="label p-0" {
-                        span class="label-text font-bold text-base" { (field.label) }
-                    }
+                (label(field.label, html! {
+                div class="flex justify-end mb-2" {
                     (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
                     (PreEscaped(r#"<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>"#))
                     "Add Machine Line"
@@ -1806,35 +2009,32 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
                             }
                         }
                         tbody {
-                            (PreEscaped(r#"
-                            <template x-for="(item, idx) in items" :key="item.id">
-                            <tr class="hover border-b border-base-200 last:border-none">
-                                <td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>
-                                <td class="align-middle">
-                                    <div class="flex items-center gap-1">
-                                        <select class="select select-bordered select-xs w-full h-7 min-h-0 text-xs font-medium" x-model="item.machine_id" @change="onMachineChange(item)">
-                                            <template x-for="m in machines" :key="m.id">
-                                                <option :value="m.id" x-text="m.name"></option>
-                                            </template>
-                                        </select>
-                                        <input type="text" class="input input-xs input-bordered w-28 h-7 min-h-0 text-xs font-medium" x-model="item.name" placeholder="Custom" @change="item.machine_id = 0">
-                                    </div>
-                                </td>
-                                <td class="align-middle text-right">
-                                    <input type="text" class="input input-xs input-bordered w-24 h-7 min-h-0 font-mono text-xs text-right" x-model="item.duration" @input="recalc(item)" placeholder="1h 30m">
-                                </td>
-                                <td class="align-middle text-right">
-                                    <input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.rate" @input="recalc(item)">
-                                </td>
-                                <td class="align-middle text-right font-mono font-bold text-primary text-xs">
-                                    <span x-text="'₹ ' + (item.amount || 0).toFixed(2)"></span>
-                                </td>
-                                <td class="align-middle text-center">
-                                    <button type="button" class="btn btn-ghost btn-square btn-sm shrink-0 text-error hover:bg-error/10" @click="removeItem(idx)" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-                                </td>
-                            </tr>
-                            </template>
-                            "#))
+                            (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
+                            tr class="hover border-b border-base-200 last:border-none" {
+                                (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
+                                td class="align-middle min-w-[12rem]" {
+                                    div class="flex items-center gap-1" {
+                                        div class="min-w-0 flex-1"
+                                            x-effect="bindFkeyInput($el, item, 'machine')" {
+                                            (embed_input_fkey("/work-orders/machines/pick", "Select machine…"))
+                                        }
+                                        (PreEscaped(r#"<input type="text" class="input input-xs input-bordered w-28 h-7 min-h-0 text-xs font-medium" x-model="item.name" placeholder="Custom" @change="item.machine_id = 0">"#))
+                                    }
+                                }
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="text" class="input input-xs input-bordered w-24 h-7 min-h-0 font-mono text-xs text-right" x-model="item.duration" @input="recalc(item)" placeholder="1h 30m">"#))
+                                }
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="number" step="any" class="input input-xs input-bordered w-20 h-7 min-h-0 font-mono text-xs text-right" x-model="item.rate" @input="recalc(item)">"#))
+                                }
+                                td class="align-middle text-right" {
+                                    (PreEscaped(r#"<input type="number" step="any" class="input input-xs input-bordered w-24 h-7 min-h-0 font-mono text-xs text-right" x-model="item.amount" placeholder="₹">"#))
+                                }
+                                td class="align-middle text-center" {
+                                    (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-square btn-sm shrink-0 text-error hover:bg-error/10" @click="removeItem(idx)" title="Remove"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>"#))
+                                }
+                            }
+                            (PreEscaped("</template>"))
                         }
                     }
                 }
@@ -1846,6 +2046,7 @@ impl FormWidget for ProformaInvoiceMachineLinesWidget {
                         (PreEscaped(r#"<span x-text="'₹ ' + grandTotal().toFixed(2)"></span>"#))
                     }
                 }
+                }))
             }
         }
     }
@@ -1929,5 +2130,3 @@ pub struct InvoiceMachineLineInput {
     #[serde(default, alias = "amount")]
     pub amount: Option<f64>,
 }
-
-

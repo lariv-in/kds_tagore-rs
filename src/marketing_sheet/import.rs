@@ -2,9 +2,9 @@
 
 use chrono::{NaiveDate, TimeZone, Utc};
 use lariv_rs::datetime::{format_date_in_tz, parse_timezone};
+use lariv_rs::plugins::contacts::entities::contact::{self, Entity as ContactEntity};
 use lariv_rs::plugins::crm::entities::{
     company::{self, Entity as CompanyEntity},
-    contact::{self, Entity as ContactEntity},
     converted_lead::{self, Entity as ConvertedLeadEntity},
     failed_lead::{self, Entity as FailedLeadEntity},
     lead::{self, Entity as LeadEntity},

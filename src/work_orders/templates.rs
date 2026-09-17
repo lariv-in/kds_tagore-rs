@@ -1,25 +1,25 @@
 use frunk::Generic;
-use maud::PreEscaped;
 use lariv_rs::{
     components::{
-        attrs::escape_attr, CodeEditorInput, button_modal_form, button_submit, code_editor_input,
-        container_column, container_row, data_table_list_refresh, delete_confirmation, detail,
-        detail_header, field_text, form, label, layout_main, layout_sidebar, modal, modal_keyed,
-        row_attr_navigate_route, row_attr_select, row_attr_select_extra, shell_scaffold,
-        table_create_button, ButtonModalForm, ButtonSubmit, DeleteConfirmation, DetailHeader,
+        ButtonModalForm, ButtonSubmit, CodeEditorInput, DeleteConfirmation, DetailHeader,
         FieldText, FormOpts, HTMX_SWAP_BODY_MODAL, HTMX_TARGET_BODY_MODAL, LayoutMain,
         LayoutSidebar, ShellChrome, ShellScaffold, SlotCapability, SlotRegistrar, SwapKey,
-        TableColumnHeader, TableRow,
+        TableColumnHeader, TableRow, attrs::escape_attr, button_modal_form, button_submit,
+        code_editor_input, container_column, container_row, data_table_list_refresh,
+        delete_confirmation, detail, detail_header, field_text, form, label, layout_main,
+        layout_sidebar, modal, modal_keyed, row_attr_navigate_route, row_attr_select,
+        row_attr_select_extra, shell_scaffold, table_create_button,
     },
     http::ProvideRequestCaps,
-    picker::{picker_create_button, RenderPickerSelect},
+    picker::{RenderPickerSelect, picker_create_button},
     template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
 };
+use maud::PreEscaped;
 use maud::{Markup, html};
 
 use crate::machinery_schedule::logic::format_job_duration;
 
-use lariv_rs::html_form::{FormCtx, HtmlForm};
+use lariv_rs::html_form::{CsrfToken, FormCtx, HtmlForm};
 
 use rust_decimal::Decimal;
 
@@ -38,11 +38,7 @@ use super::keys::*;
 use super::routes::*;
 
 fn order_number_display(s: &str) -> &str {
-    if s.trim().is_empty() {
-        "—"
-    } else {
-        s
-    }
+    if s.trim().is_empty() { "—" } else { s }
 }
 
 lariv_rs::define_register_items! {
@@ -160,28 +156,89 @@ pub struct WorkOrderListPage {
 impl WorkOrderListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "OrderNumber", label: "Order #", sort_url: None, push_url: false },
-            TableColumnHeader { key: "CustomerId", label: "Customer ID", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Lines", label: "Lines", sort_url: None, push_url: false },
-            TableColumnHeader { key: "TotalAmount", label: "Total Cost", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "OrderNumber",
+                label: "Order #",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "CustomerId",
+                label: "Customer ID",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Lines",
+                label: "Lines",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "TotalAmount",
+                label: "Total Cost",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
-        let id_labels: Vec<String> = self.orders.iter().map(|(o, _, _)| o.id.to_string()).collect();
-        let cust_labels: Vec<String> = self.orders.iter().map(|(o, _, _)| o.customer_id.to_string()).collect();
-        let lines_labels: Vec<String> = self.orders.iter().map(|(_, count, _)| count.to_string()).collect();
-        let total_labels: Vec<String> = self.orders.iter().map(|(_, _, total)| format!("₹ {:.2}", total)).collect();
+        let id_labels: Vec<String> = self
+            .orders
+            .iter()
+            .map(|(o, _, _)| o.id.to_string())
+            .collect();
+        let cust_labels: Vec<String> = self
+            .orders
+            .iter()
+            .map(|(o, _, _)| o.customer_id.to_string())
+            .collect();
+        let lines_labels: Vec<String> = self
+            .orders
+            .iter()
+            .map(|(_, count, _)| count.to_string())
+            .collect();
+        let total_labels: Vec<String> = self
+            .orders
+            .iter()
+            .map(|(_, _, total)| format!("₹ {:.2}", total))
+            .collect();
 
-        let rows: Vec<TableRow> = self.orders.iter().enumerate().map(|(i, (o, _, _))| TableRow {
-            attrs: row_attr_navigate_route(WorkOrderDetailRouteTag::new(o.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: order_number_display(&o.order_number), classes: "font-semibold" }),
-                field_text(FieldText { value: &cust_labels[i], classes: "" }),
-                field_text(FieldText { value: &lines_labels[i], classes: "" }),
-                field_text(FieldText { value: &total_labels[i], classes: "font-mono font-semibold" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .orders
+            .iter()
+            .enumerate()
+            .map(|(i, (o, _, _))| TableRow {
+                attrs: row_attr_navigate_route(WorkOrderDetailRouteTag::new(o.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: order_number_display(&o.order_number),
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &cust_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &lines_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &total_labels[i],
+                        classes: "font-mono font-semibold",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<WorkOrderTableKey, WorkOrderCreateModalKey>(
@@ -203,7 +260,11 @@ impl WorkOrderListPage {
 
 impl RenderAppPane for WorkOrderListPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("orders"), work_orders_list_crumbs(), self.render_table())
+        scaffold_pane(
+            wo_menu("orders"),
+            work_orders_list_crumbs(),
+            self.render_table(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(work_orders_list_crumbs(), self.render_table())
@@ -212,7 +273,13 @@ impl RenderAppPane for WorkOrderListPage {
 
 impl RenderTemplate for WorkOrderListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Draft Work Orders", chrome, wo_menu("orders"), work_orders_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Draft Work Orders",
+            chrome,
+            wo_menu("orders"),
+            work_orders_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -274,7 +341,7 @@ impl WorkOrderDetailPage {
 
                     div class="mt-8" {
                         div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Draft Work Order Material Lines" }
+                            h4 class="font-bold text-lg" { "Material Lines" }
                         }
 
                         @if self.lines.is_empty() {
@@ -315,7 +382,7 @@ impl WorkOrderDetailPage {
 
                     div class="mt-8" {
                         div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Draft Work Order Machine Lines" }
+                            h4 class="font-bold text-lg" { "Machine Lines" }
                         }
 
                         @if self.machine_lines.is_empty() {
@@ -362,10 +429,23 @@ impl WorkOrderDetailPage {
 
 impl RenderAppPane for WorkOrderDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("orders"), work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
+        scaffold_pane(
+            wo_menu("orders"),
+            work_order_crumbs(
+                order_number_display(&self.order.order_number),
+                self.order.id,
+            ),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
+        scaffold_main(
+            work_order_crumbs(
+                order_number_display(&self.order.order_number),
+                self.order.id,
+            ),
+            self.body(),
+        )
     }
 }
 
@@ -376,7 +456,16 @@ impl RenderTemplate for WorkOrderDetailPage {
         } else {
             format!("Order {} — Draft Work Orders", self.order.order_number)
         };
-        app_scaffold(&page_title, chrome, wo_menu("orders"), work_order_crumbs(order_number_display(&self.order.order_number), self.order.id), self.body())
+        app_scaffold(
+            &page_title,
+            chrome,
+            wo_menu("orders"),
+            work_order_crumbs(
+                order_number_display(&self.order.order_number),
+                self.order.id,
+            ),
+            self.body(),
+        )
     }
 }
 
@@ -395,10 +484,21 @@ pub struct WorkOrderCreateModalPage {
 
 impl RenderTemplate for WorkOrderCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let cust_id_str = self.customer_id.map(|id| id.to_string()).unwrap_or_default();
-        let items_val = if self.items_json.is_empty() { "[]" } else { &self.items_json };
-        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
-        let ctx = FormCtx::form::<DraftWorkOrderForm>()
+        let cust_id_str = self
+            .customer_id
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let items_val = if self.items_json.is_empty() {
+            "[]"
+        } else {
+            &self.items_json
+        };
+        let machine_lines_val = if self.machine_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.machine_lines_json
+        };
+        let ctx = FormCtx::form::<DraftWorkOrderForm>(CsrfToken::current())
             .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
             .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
             .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
@@ -417,7 +517,7 @@ impl RenderTemplate for WorkOrderCreateModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderCreateModalKey>(
                         &WorkOrderCreatePostRouteTag.url(),
                     ),
@@ -452,9 +552,17 @@ pub struct WorkOrderEditModalPage {
 impl RenderTemplate for WorkOrderEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let cust_id_str = self.customer_id.to_string();
-        let items_val = if self.items_json.is_empty() { "[]" } else { &self.items_json };
-        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
-        let ctx = FormCtx::form::<DraftWorkOrderForm>()
+        let items_val = if self.items_json.is_empty() {
+            "[]"
+        } else {
+            &self.items_json
+        };
+        let machine_lines_val = if self.machine_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.machine_lines_json
+        };
+        let ctx = FormCtx::form::<DraftWorkOrderForm>(CsrfToken::current())
             .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
             .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
             .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
@@ -474,7 +582,7 @@ impl RenderTemplate for WorkOrderEditModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderEditModalKey>(
                         &WorkOrderEditPostRouteTag::new(self.id).url(),
                     ),
@@ -520,13 +628,27 @@ impl RenderTemplate for WorkOrderLineEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let wo_id_str = self.draft_work_order_id.to_string();
         let comp_id_str = self.component_id.to_string();
-        let qty_str = if self.quantity.is_empty() { "1" } else { &self.quantity };
-        let vars_str = if self.variables.is_empty() { "{}" } else { &self.variables };
-        let ctx = FormCtx::form::<DraftWorkOrderLineForm>()
+        let qty_str = if self.quantity.is_empty() {
+            "1"
+        } else {
+            &self.quantity
+        };
+        let vars_str = if self.variables.is_empty() {
+            "{}"
+        } else {
+            &self.variables
+        };
+        let ctx = FormCtx::form::<DraftWorkOrderLineForm>(CsrfToken::current())
             .value(DraftWorkOrderLineFormField::DraftWorkOrderId, &wo_id_str)
-            .display(DraftWorkOrderLineFormField::DraftWorkOrderId, &self.draft_work_order_label)
+            .display(
+                DraftWorkOrderLineFormField::DraftWorkOrderId,
+                &self.draft_work_order_label,
+            )
             .value(DraftWorkOrderLineFormField::ComponentId, &comp_id_str)
-            .display(DraftWorkOrderLineFormField::ComponentId, &self.component_label)
+            .display(
+                DraftWorkOrderLineFormField::ComponentId,
+                &self.component_label,
+            )
             .value(DraftWorkOrderLineFormField::Variables, vars_str)
             .value(DraftWorkOrderLineFormField::Quantity, qty_str)
             .value(DraftWorkOrderLineFormField::ExtraData, &self.extra_data);
@@ -534,13 +656,13 @@ impl RenderTemplate for WorkOrderLineEditModalPage {
         modal_keyed::<DraftWorkOrderLineEditModalKey>(
             &self.form_name,
             html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Draft Work Order Material Line" }
+                h3 class="font-bold text-lg mb-4" { "Edit Material Line" }
                 @if !self.error.is_empty() {
                     div class="alert alert-error text-sm mb-4 shadow-sm" {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderLineEditModalKey>(
                         &WorkOrderLineEditPostRouteTag::new(self.id).url(),
                     ),
@@ -575,43 +697,56 @@ impl RenderTemplate for WorkOrderMachineLineEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let wo_id_str = self.draft_work_order_id.to_string();
         let machine_id_str = self.machine_id.to_string();
-        let ctx = FormCtx::form::<DraftWorkOrderMachineLineForm>()
-            .value(DraftWorkOrderMachineLineFormField::DraftWorkOrderId, &wo_id_str)
-            .display(DraftWorkOrderMachineLineFormField::DraftWorkOrderId, &self.draft_work_order_label)
-            .value(DraftWorkOrderMachineLineFormField::MachineId, &machine_id_str)
-            .display(DraftWorkOrderMachineLineFormField::MachineId, &self.machine_label)
+        let ctx = FormCtx::form::<DraftWorkOrderMachineLineForm>(CsrfToken::current())
+            .value(
+                DraftWorkOrderMachineLineFormField::DraftWorkOrderId,
+                &wo_id_str,
+            )
+            .display(
+                DraftWorkOrderMachineLineFormField::DraftWorkOrderId,
+                &self.draft_work_order_label,
+            )
+            .value(
+                DraftWorkOrderMachineLineFormField::MachineId,
+                &machine_id_str,
+            )
+            .display(
+                DraftWorkOrderMachineLineFormField::MachineId,
+                &self.machine_label,
+            )
             .value(DraftWorkOrderMachineLineFormField::Rate, &self.rate)
             .value(DraftWorkOrderMachineLineFormField::Duration, &self.duration);
 
         let rate_input = "input[name=Rate], input[name=rate], input[name=RATE]";
         let alpine_wrap = format!(
-            r#"<div x-data="{{ onMachineSelect(d) {{ if (d && d.rate !== undefined) {{ try {{ const i = this.$el.querySelector('{rate_input}'); if (i) i.value = String(d.rate) }} catch (e) {{}} }} }} }}" @fk-select.window="onMachineSelect($event.detail)">"#);
+            r#"<div x-data="{{ onMachineSelect(d) {{ if (d && d.rate !== undefined) {{ try {{ const i = this.$el.querySelector('{rate_input}'); if (i) i.value = String(d.rate) }} catch (e) {{}} }} }} }}" @fk-select.window="onMachineSelect($event.detail)">"#
+        );
 
         modal_keyed::<DraftWorkOrderMachineLineEditModalKey>(
             &self.form_name,
             html! {
-                (PreEscaped(alpine_wrap))
-                    h3 class="font-bold text-lg mb-4" { "Edit Draft Work Order Machine Line" }
-                    @if !self.error.is_empty() {
-                        div class="alert alert-error text-sm mb-4 shadow-sm" {
-                            span { (self.error) }
-                        }
+            (PreEscaped(alpine_wrap))
+                h3 class="font-bold text-lg mb-4" { "Edit Machine Line" }
+                @if !self.error.is_empty() {
+                    div class="alert alert-error text-sm mb-4 shadow-sm" {
+                        span { (self.error) }
                     }
-                    (form(FormOpts {
-                        attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderMachineLineEditModalKey>(
-                            &WorkOrderMachineLineEditPostRouteTag::new(self.id).url(),
-                        ),
-                        form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                        inputs: html! {
-                            (DraftWorkOrderMachineLineForm::render_inputs(&ctx))
-                        },
-                        actions: html! {
-                            (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                        },
-                        ..Default::default()
-                    }))
-                    (PreEscaped("</div>"))
-                },
+                }
+                (form(&CsrfToken::current(), FormOpts {
+                    attrs: lariv_rs::components::swap::form_hx_post_url::<DraftWorkOrderMachineLineEditModalKey>(
+                        &WorkOrderMachineLineEditPostRouteTag::new(self.id).url(),
+                    ),
+                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                    inputs: html! {
+                        (DraftWorkOrderMachineLineForm::render_inputs(&ctx))
+                    },
+                    actions: html! {
+                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
+                    },
+                    ..Default::default()
+                }))
+                (PreEscaped("</div>"))
+            },
         )
     }
 }
@@ -631,19 +766,44 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
             self.target_input.as_str()
         };
         let headers = [
-            TableColumnHeader { key: "Name", label: "Machine", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Rate", label: "Rate (₹/hr)", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Name",
+                label: "Machine",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Rate",
+                label: "Rate (₹/hr)",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let rows: Vec<TableRow> = self.machines.iter().map(|(m, rate_str)| {
-            let rate_num = m.rate_decimal.to_string();
-            TableRow {
-                attrs: row_attr_select_extra(target, &m.id.to_string(), &m.name, &[("rate", rate_num.as_str())]),
-                cells: vec![
-                    field_text(FieldText { value: &m.name, classes: "font-semibold" }),
-                    field_text(FieldText { value: rate_str, classes: "font-mono" }),
-                ],
-            }
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .machines
+            .iter()
+            .map(|(m, rate_str)| {
+                let rate_num = m.rate_decimal.to_string();
+                TableRow {
+                    attrs: row_attr_select_extra(
+                        target,
+                        &m.id.to_string(),
+                        &m.name,
+                        &[("rate", rate_num.as_str())],
+                    ),
+                    cells: vec![
+                        field_text(FieldText {
+                            value: &m.name,
+                            classes: "font-semibold",
+                        }),
+                        field_text(FieldText {
+                            value: rate_str,
+                            classes: "font-mono",
+                        }),
+                    ],
+                }
+            })
+            .collect();
 
         let actions = html! {};
 
@@ -679,18 +839,40 @@ impl RenderPickerSelect<WorkOrderSelectTableKey, WorkOrderSelectModalKey> for Wo
             self.target_input.as_str()
         };
         let headers = [
-            TableColumnHeader { key: "OrderNumber", label: "Order #", sort_url: None, push_url: false },
-            TableColumnHeader { key: "CustomerId", label: "Customer ID", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "OrderNumber",
+                label: "Order #",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "CustomerId",
+                label: "Customer ID",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let rows: Vec<TableRow> = self.orders.iter().map(|o| {
-            TableRow {
-                attrs: row_attr_select(target, &o.id.to_string(), order_number_display(&o.order_number)),
+        let rows: Vec<TableRow> = self
+            .orders
+            .iter()
+            .map(|o| TableRow {
+                attrs: row_attr_select(
+                    target,
+                    &o.id.to_string(),
+                    order_number_display(&o.order_number),
+                ),
                 cells: vec![
-                    field_text(FieldText { value: order_number_display(&o.order_number), classes: "font-semibold" }),
-                    field_text(FieldText { value: &o.customer_id.to_string(), classes: "font-mono" }),
+                    field_text(FieldText {
+                        value: order_number_display(&o.order_number),
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &o.customer_id.to_string(),
+                        classes: "font-mono",
+                    }),
                 ],
-            }
-        }).collect();
+            })
+            .collect();
 
         let actions = html! {};
 
@@ -723,7 +905,7 @@ pub type DraftWorkOrderMachineLineEditModalPage = WorkOrderMachineLineEditModalP
 
 #[derive(Clone, Generic)]
 pub struct ComponentSelectPage {
-    pub components: Vec<(component::Model, String, String)>,
+    pub components: Vec<(component::Model, String, String, f64)>,
     pub target_input: String,
     pub path_and_query: String,
 }
@@ -736,20 +918,54 @@ impl RenderPickerSelect<ComponentSelectTableKey, ComponentSelectModalKey> for Co
             self.target_input.as_str()
         };
         let headers = [
-            TableColumnHeader { key: "Name", label: "Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Shape", label: "Shape", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Material", label: "Material", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Name",
+                label: "Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Shape",
+                label: "Shape",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Material",
+                label: "Material",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let rows: Vec<TableRow> = self.components.iter().map(|(c, s_name, m_name)| {
-            TableRow {
-                attrs: row_attr_select(target, &c.id.to_string(), &c.name),
-                cells: vec![
-                    field_text(FieldText { value: &c.name, classes: "font-semibold" }),
-                    field_text(FieldText { value: s_name, classes: "" }),
-                    field_text(FieldText { value: m_name, classes: "" }),
-                ],
-            }
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .components
+            .iter()
+            .map(|(c, s_name, m_name, rate)| {
+                let rate_s = format!("{rate}");
+                TableRow {
+                    attrs: row_attr_select_extra(
+                        target,
+                        &c.id.to_string(),
+                        &c.name,
+                        &[("material_rate", rate_s.as_str())],
+                    ),
+                    cells: vec![
+                        field_text(FieldText {
+                            value: &c.name,
+                            classes: "font-semibold",
+                        }),
+                        field_text(FieldText {
+                            value: s_name,
+                            classes: "",
+                        }),
+                        field_text(FieldText {
+                            value: m_name,
+                            classes: "",
+                        }),
+                    ],
+                }
+            })
+            .collect();
 
         let actions = html! {};
 
@@ -776,32 +992,93 @@ impl RenderTemplate for ComponentSelectPage {
 
 #[derive(Clone, Generic)]
 pub struct ComponentListPage {
-    pub components: Vec<(component::Model, Option<shape::Model>, Option<material::Model>)>,
+    pub components: Vec<(
+        component::Model,
+        Option<shape::Model>,
+        Option<material::Model>,
+    )>,
     pub path_and_query: String,
 }
 
 impl ComponentListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Name", label: "Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Shape", label: "Shape", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Material", label: "Material", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: "Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Shape",
+                label: "Shape",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Material",
+                label: "Material",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
-        let id_labels: Vec<String> = self.components.iter().map(|(c, _, _)| c.id.to_string()).collect();
-        let shape_labels: Vec<String> = self.components.iter().map(|(_, s, _)| s.as_ref().map(|x| x.name.clone()).unwrap_or_else(|| "-".into())).collect();
-        let mat_labels: Vec<String> = self.components.iter().map(|(_, _, m)| m.as_ref().map(|x| x.name.clone()).unwrap_or_else(|| "-".into())).collect();
+        let id_labels: Vec<String> = self
+            .components
+            .iter()
+            .map(|(c, _, _)| c.id.to_string())
+            .collect();
+        let shape_labels: Vec<String> = self
+            .components
+            .iter()
+            .map(|(_, s, _)| {
+                s.as_ref()
+                    .map(|x| x.name.clone())
+                    .unwrap_or_else(|| "-".into())
+            })
+            .collect();
+        let mat_labels: Vec<String> = self
+            .components
+            .iter()
+            .map(|(_, _, m)| {
+                m.as_ref()
+                    .map(|x| x.name.clone())
+                    .unwrap_or_else(|| "-".into())
+            })
+            .collect();
 
-        let rows: Vec<TableRow> = self.components.iter().enumerate().map(|(i, (c, _, _))| TableRow {
-            attrs: row_attr_navigate_route(ComponentDetailRouteTag::new(c.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &c.name, classes: "font-semibold" }),
-                field_text(FieldText { value: &shape_labels[i], classes: "" }),
-                field_text(FieldText { value: &mat_labels[i], classes: "" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .components
+            .iter()
+            .enumerate()
+            .map(|(i, (c, _, _))| TableRow {
+                attrs: row_attr_navigate_route(ComponentDetailRouteTag::new(c.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &c.name,
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &shape_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &mat_labels[i],
+                        classes: "",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<ComponentTableKey, ComponentCreateModalKey>(
@@ -823,7 +1100,11 @@ impl ComponentListPage {
 
 impl RenderAppPane for ComponentListPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("components"), components_list_crumbs(), self.render_table())
+        scaffold_pane(
+            wo_menu("components"),
+            components_list_crumbs(),
+            self.render_table(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(components_list_crumbs(), self.render_table())
@@ -832,7 +1113,13 @@ impl RenderAppPane for ComponentListPage {
 
 impl RenderTemplate for ComponentListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Components — Work Orders", chrome, wo_menu("components"), components_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Components — Work Orders",
+            chrome,
+            wo_menu("components"),
+            components_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -871,16 +1158,36 @@ impl ComponentDetailPage {
             }))
         };
 
-        let shape_name = self.shape.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "-".into());
-        let mat_name = self.material.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| "-".into());
-        let density_str = self.material.as_ref().map(|m| format!("{} kg/m³", m.density)).unwrap_or_else(|| "-".into());
-        let rate_str = self.latest_rate.as_ref().map(|r| format!("₹ {:.2} / kg", r.rate())).unwrap_or_else(|| "No rate recorded".into());
+        let shape_name = self
+            .shape
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| "-".into());
+        let mat_name = self
+            .material
+            .as_ref()
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| "-".into());
+        let density_str = self
+            .material
+            .as_ref()
+            .map(|m| format!("{} kg/m³", m.density))
+            .unwrap_or_else(|| "-".into());
+        let rate_str = self
+            .latest_rate
+            .as_ref()
+            .map(|r| format!("₹ {:.2} / kg", r.rate()))
+            .unwrap_or_else(|| "No rate recorded".into());
 
         let fixed_vars = self.component.fixed_variables_map();
         let fixed_vars_str = if fixed_vars.is_empty() {
             "None".to_string()
         } else {
-            fixed_vars.iter().map(|(k, v)| format!("{}: {} mm", k, v)).collect::<Vec<_>>().join(", ")
+            fixed_vars
+                .iter()
+                .map(|(k, v)| format!("{}: {} mm", k, v))
+                .collect::<Vec<_>>()
+                .join(", ")
         };
 
         let free_vars_str = if let Some(s) = &self.shape {
@@ -924,16 +1231,29 @@ impl ComponentDetailPage {
 
 impl RenderAppPane for ComponentDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("components"), component_crumbs(&self.component.name, self.component.id), self.body())
+        scaffold_pane(
+            wo_menu("components"),
+            component_crumbs(&self.component.name, self.component.id),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(component_crumbs(&self.component.name, self.component.id), self.body())
+        scaffold_main(
+            component_crumbs(&self.component.name, self.component.id),
+            self.body(),
+        )
     }
 }
 
 impl RenderTemplate for ComponentDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("{} — Components", self.component.name), chrome, wo_menu("components"), component_crumbs(&self.component.name, self.component.id), self.body())
+        app_scaffold(
+            &format!("{} — Components", self.component.name),
+            chrome,
+            wo_menu("components"),
+            component_crumbs(&self.component.name, self.component.id),
+            self.body(),
+        )
     }
 }
 
@@ -954,7 +1274,10 @@ pub struct ComponentCreateModalPage {
 impl RenderTemplate for ComponentCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let shape_id_str = self.shape_id.map(|id| id.to_string()).unwrap_or_default();
-        let material_id_str = self.material_id.map(|id| id.to_string()).unwrap_or_default();
+        let material_id_str = self
+            .material_id
+            .map(|id| id.to_string())
+            .unwrap_or_default();
         let shape_choices: Vec<(String, String)> = self
             .all_shapes
             .iter()
@@ -965,7 +1288,7 @@ impl RenderTemplate for ComponentCreateModalPage {
                 )
             })
             .collect();
-        let ctx = FormCtx::form::<ComponentForm>()
+        let ctx = FormCtx::form::<ComponentForm>(CsrfToken::current())
             .value(ComponentFormField::Name, &self.name)
             .value(ComponentFormField::ShapeId, &shape_id_str)
             .display(ComponentFormField::ShapeId, &self.shape_name)
@@ -984,7 +1307,7 @@ impl RenderTemplate for ComponentCreateModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<ComponentCreateModalKey>(
                         &ComponentCreatePostRouteTag.url(),
                     ),
@@ -1031,7 +1354,7 @@ impl RenderTemplate for ComponentEditModalPage {
                 )
             })
             .collect();
-        let ctx = FormCtx::form::<ComponentForm>()
+        let ctx = FormCtx::form::<ComponentForm>(CsrfToken::current())
             .value(ComponentFormField::Name, &self.name)
             .value(ComponentFormField::ShapeId, &shape_id_str)
             .display(ComponentFormField::ShapeId, &self.shape_name)
@@ -1050,7 +1373,7 @@ impl RenderTemplate for ComponentEditModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<ComponentEditModalKey>(
                         &ComponentEditPostRouteTag::new(self.id).url(),
                     ),
@@ -1081,31 +1404,73 @@ pub struct ShapeListPage {
 impl ShapeListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Name", label: "Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Type", label: "Type", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Variables", label: "Variables", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: "Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Type",
+                label: "Type",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Variables",
+                label: "Variables",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
         let id_labels: Vec<String> = self.shapes.iter().map(|s| s.id.to_string()).collect();
-        let var_labels: Vec<String> = self.shapes.iter().map(|s| s.variable_names_vec().join(", ")).collect();
-        let type_cells: Vec<Markup> = self.shapes.iter().map(|s| {
-            if s.is_standard() {
-                html! { span class="badge badge-primary badge-sm" { "Standard Stock" } }
-            } else {
-                html! { span class="badge badge-ghost badge-sm" { "Custom CAD" } }
-            }
-        }).collect();
+        let var_labels: Vec<String> = self
+            .shapes
+            .iter()
+            .map(|s| s.variable_names_vec().join(", "))
+            .collect();
+        let type_cells: Vec<Markup> = self
+            .shapes
+            .iter()
+            .map(|s| {
+                if s.is_standard() {
+                    html! { span class="badge badge-primary badge-sm" { "Standard Stock" } }
+                } else {
+                    html! { span class="badge badge-ghost badge-sm" { "Custom CAD" } }
+                }
+            })
+            .collect();
 
-        let rows: Vec<TableRow> = self.shapes.iter().enumerate().map(|(i, s)| TableRow {
-            attrs: row_attr_navigate_route(ShapeDetailRouteTag::new(s.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &s.name, classes: "font-semibold" }),
-                type_cells[i].clone(),
-                field_text(FieldText { value: &var_labels[i], classes: "font-mono text-xs" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .shapes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| TableRow {
+                attrs: row_attr_navigate_route(ShapeDetailRouteTag::new(s.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &s.name,
+                        classes: "font-semibold",
+                    }),
+                    type_cells[i].clone(),
+                    field_text(FieldText {
+                        value: &var_labels[i],
+                        classes: "font-mono text-xs",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<ShapeTableKey, ShapeCreateModalKey>(
@@ -1136,7 +1501,13 @@ impl RenderAppPane for ShapeListPage {
 
 impl RenderTemplate for ShapeListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Shapes — Work Orders", chrome, wo_menu("shapes"), shapes_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Shapes — Work Orders",
+            chrome,
+            wo_menu("shapes"),
+            shapes_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -1195,7 +1566,11 @@ impl ShapeDetailPage {
 
 impl RenderAppPane for ShapeDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("shapes"), shape_crumbs(&self.shape.name, self.shape.id), self.body())
+        scaffold_pane(
+            wo_menu("shapes"),
+            shape_crumbs(&self.shape.name, self.shape.id),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(shape_crumbs(&self.shape.name, self.shape.id), self.body())
@@ -1204,7 +1579,13 @@ impl RenderAppPane for ShapeDetailPage {
 
 impl RenderTemplate for ShapeDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("{} — Shapes", self.shape.name), chrome, wo_menu("shapes"), shape_crumbs(&self.shape.name, self.shape.id), self.body())
+        app_scaffold(
+            &format!("{} — Shapes", self.shape.name),
+            chrome,
+            wo_menu("shapes"),
+            shape_crumbs(&self.shape.name, self.shape.id),
+            self.body(),
+        )
     }
 }
 
@@ -1219,7 +1600,7 @@ pub struct ShapeCreateModalPage {
 
 impl RenderTemplate for ShapeCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let ctx = FormCtx::form::<ShapeForm>()
+        let ctx = FormCtx::form::<ShapeForm>(CsrfToken::current())
             .value(ShapeFormField::Name, &self.name)
             .list(ShapeFormField::Variables, &self.variables)
             .value(ShapeFormField::OpenscadCode, &self.openscad_code);
@@ -1242,7 +1623,7 @@ impl RenderTemplate for ShapeCreateModalPage {
                         button type="button" class="btn btn-ghost btn-xs" onclick="setShapePreset('', [], '')" { "Clear (Custom CAD)" }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<ShapeCreateModalKey>(
                         &ShapeCreatePostRouteTag.url(),
                     ),
@@ -1300,7 +1681,7 @@ pub struct ShapeEditModalPage {
 
 impl RenderTemplate for ShapeEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let ctx = FormCtx::form::<ShapeForm>()
+        let ctx = FormCtx::form::<ShapeForm>(CsrfToken::current())
             .value(ShapeFormField::Name, &self.name)
             .list(ShapeFormField::Variables, &self.variables)
             .value(ShapeFormField::OpenscadCode, &self.openscad_code);
@@ -1309,7 +1690,7 @@ impl RenderTemplate for ShapeEditModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit Shape" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<ShapeEditModalKey>(
                         &ShapeEditPostRouteTag::new(self.id).url(),
                     ),
@@ -1340,24 +1721,61 @@ impl RenderPickerSelect<ShapeSelectTableKey, ShapeSelectModalKey> for ShapeSelec
             self.target_input.as_str()
         };
         let headers = [
-            TableColumnHeader { key: "Name", label: "Shape Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Type", label: "Type", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Variables", label: "Dimensions / Variables", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Name",
+                label: "Shape Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Type",
+                label: "Type",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Variables",
+                label: "Dimensions / Variables",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let rows: Vec<TableRow> = self.shapes.iter().map(|s| {
-            let type_str = if s.is_standard() { "Standard Stock" } else { "Custom CAD" };
-            let vars = s.variable_names_vec();
-            let vars_str = vars.join(", ");
-            let vars_json = serde_json::to_string(&vars).unwrap_or_else(|_| "[]".into());
-            TableRow {
-                attrs: row_attr_select_extra(target, &s.id.to_string(), &s.name, &[("variables", &vars_json)]),
-                cells: vec![
-                    field_text(FieldText { value: &s.name, classes: "font-semibold" }),
-                    field_text(FieldText { value: type_str, classes: "text-xs opacity-80" }),
-                    field_text(FieldText { value: &vars_str, classes: "font-mono text-xs opacity-70" }),
-                ],
-            }
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .shapes
+            .iter()
+            .map(|s| {
+                let type_str = if s.is_standard() {
+                    "Standard Stock"
+                } else {
+                    "Custom CAD"
+                };
+                let vars = s.variable_names_vec();
+                let vars_str = vars.join(", ");
+                let vars_json = serde_json::to_string(&vars).unwrap_or_else(|_| "[]".into());
+                TableRow {
+                    attrs: row_attr_select_extra(
+                        target,
+                        &s.id.to_string(),
+                        &s.name,
+                        &[("variables", &vars_json)],
+                    ),
+                    cells: vec![
+                        field_text(FieldText {
+                            value: &s.name,
+                            classes: "font-semibold",
+                        }),
+                        field_text(FieldText {
+                            value: type_str,
+                            classes: "text-xs opacity-80",
+                        }),
+                        field_text(FieldText {
+                            value: &vars_str,
+                            classes: "font-mono text-xs opacity-70",
+                        }),
+                    ],
+                }
+            })
+            .collect();
 
         let actions = html! {
             (picker_create_button::<ShapeCreateModalKey>(
@@ -1397,25 +1815,78 @@ pub struct MaterialListPage {
 impl MaterialListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Name", label: "Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Density", label: "Density (kg/m³)", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Rate", label: "Latest Rate", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: "Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Density",
+                label: "Density (kg/m³)",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Rate",
+                label: "Latest Rate",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
-        let id_labels: Vec<String> = self.materials.iter().map(|(m, _)| m.id.to_string()).collect();
-        let density_labels: Vec<String> = self.materials.iter().map(|(m, _)| format!("{:.1}", m.density)).collect();
-        let rate_labels: Vec<String> = self.materials.iter().map(|(_, r)| r.as_ref().map(|x| format!("₹ {:.2} / kg", x.rate())).unwrap_or_else(|| "-".into())).collect();
+        let id_labels: Vec<String> = self
+            .materials
+            .iter()
+            .map(|(m, _)| m.id.to_string())
+            .collect();
+        let density_labels: Vec<String> = self
+            .materials
+            .iter()
+            .map(|(m, _)| format!("{:.1}", m.density))
+            .collect();
+        let rate_labels: Vec<String> = self
+            .materials
+            .iter()
+            .map(|(_, r)| {
+                r.as_ref()
+                    .map(|x| format!("₹ {:.2} / kg", x.rate()))
+                    .unwrap_or_else(|| "-".into())
+            })
+            .collect();
 
-        let rows: Vec<TableRow> = self.materials.iter().enumerate().map(|(i, (m, _))| TableRow {
-            attrs: row_attr_navigate_route(MaterialDetailRouteTag::new(m.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &m.name, classes: "font-semibold" }),
-                field_text(FieldText { value: &density_labels[i], classes: "" }),
-                field_text(FieldText { value: &rate_labels[i], classes: "" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .materials
+            .iter()
+            .enumerate()
+            .map(|(i, (m, _))| TableRow {
+                attrs: row_attr_navigate_route(MaterialDetailRouteTag::new(m.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.name,
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &density_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &rate_labels[i],
+                        classes: "",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<MaterialTableKey, MaterialCreateModalKey>(
@@ -1437,7 +1908,11 @@ impl MaterialListPage {
 
 impl RenderAppPane for MaterialListPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("materials"), materials_list_crumbs(), self.render_table())
+        scaffold_pane(
+            wo_menu("materials"),
+            materials_list_crumbs(),
+            self.render_table(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(materials_list_crumbs(), self.render_table())
@@ -1446,7 +1921,13 @@ impl RenderAppPane for MaterialListPage {
 
 impl RenderTemplate for MaterialListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Materials — Work Orders", chrome, wo_menu("materials"), materials_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Materials — Work Orders",
+            chrome,
+            wo_menu("materials"),
+            materials_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -1525,16 +2006,29 @@ impl MaterialDetailPage {
 
 impl RenderAppPane for MaterialDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("materials"), material_crumbs(&self.material.name, self.material.id), self.body())
+        scaffold_pane(
+            wo_menu("materials"),
+            material_crumbs(&self.material.name, self.material.id),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(material_crumbs(&self.material.name, self.material.id), self.body())
+        scaffold_main(
+            material_crumbs(&self.material.name, self.material.id),
+            self.body(),
+        )
     }
 }
 
 impl RenderTemplate for MaterialDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("{} — Materials", self.material.name), chrome, wo_menu("materials"), material_crumbs(&self.material.name, self.material.id), self.body())
+        app_scaffold(
+            &format!("{} — Materials", self.material.name),
+            chrome,
+            wo_menu("materials"),
+            material_crumbs(&self.material.name, self.material.id),
+            self.body(),
+        )
     }
 }
 
@@ -1550,20 +2044,18 @@ impl RenderTemplate for MaterialCreateModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New Material" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<MaterialCreateModalKey>(
                         &MaterialCreatePostRouteTag.url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Material Name" } }
+                        (label("Material Name", html! {
                             input type="text" name="name" class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Density (kg/m³, e.g. 7850 for Steel)" } }
+                        }))
+                        (label("Density (kg/m³, e.g. 7850 for Steel)", html! {
                             input type="number" step="0.01" name="density" class="input input-bordered w-full" required;
-                        }
+                        }))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Create Material", ..Default::default() }))
@@ -1590,20 +2082,18 @@ impl RenderTemplate for MaterialEditModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit Material" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<MaterialEditModalKey>(
                         &MaterialEditPostRouteTag::new(self.id).url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Material Name" } }
+                        (label("Material Name", html! {
                             input type="text" name="name" value=(self.name) class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Density (kg/m³, e.g. 7850 for Steel)" } }
+                        }))
+                        (label("Density (kg/m³, e.g. 7850 for Steel)", html! {
                             input type="number" step="any" name="density" value=(self.density) class="input input-bordered w-full" required;
-                        }
+                        }))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
@@ -1630,19 +2120,39 @@ impl RenderPickerSelect<MaterialSelectTableKey, MaterialSelectModalKey> for Mate
             self.target_input.as_str()
         };
         let headers = [
-            TableColumnHeader { key: "Name", label: "Material Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Density", label: "Density (kg/m³)", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Name",
+                label: "Material Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Density",
+                label: "Density (kg/m³)",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let rows: Vec<TableRow> = self.materials.iter().map(|m| {
-            let density_str = format!("{:.1} kg/m³", m.density);
-            TableRow {
-                attrs: row_attr_select(target, &m.id.to_string(), &m.name),
-                cells: vec![
-                    field_text(FieldText { value: &m.name, classes: "font-semibold" }),
-                    field_text(FieldText { value: &density_str, classes: "font-mono text-xs" }),
-                ],
-            }
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .materials
+            .iter()
+            .map(|m| {
+                let density_str = format!("{:.1} kg/m³", m.density);
+                TableRow {
+                    attrs: row_attr_select(target, &m.id.to_string(), &m.name),
+                    cells: vec![
+                        field_text(FieldText {
+                            value: &m.name,
+                            classes: "font-semibold",
+                        }),
+                        field_text(FieldText {
+                            value: &density_str,
+                            classes: "font-mono text-xs",
+                        }),
+                    ],
+                }
+            })
+            .collect();
 
         let actions = html! {
             (picker_create_button::<MaterialCreateModalKey>(
@@ -1682,26 +2192,79 @@ pub struct MaterialRateListPage {
 impl MaterialRateListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Material", label: "Material", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Rate", label: "Rate (₹ / kg)", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Date", label: "Effective Datetime", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Material",
+                label: "Material",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Rate",
+                label: "Rate (₹ / kg)",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Date",
+                label: "Effective Datetime",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
         let id_labels: Vec<String> = self.rates.iter().map(|(r, _)| r.id.to_string()).collect();
-        let mat_labels: Vec<String> = self.rates.iter().map(|(_, m)| m.as_ref().map(|x| x.name.clone()).unwrap_or_else(|| "-".into())).collect();
-        let rate_labels: Vec<String> = self.rates.iter().map(|(r, _)| format!("₹ {:.2}", r.rate())).collect();
-        let dt_labels: Vec<String> = self.rates.iter().map(|(r, _)| r.datetime.format("%Y-%m-%d %H:%M").to_string()).collect();
+        let mat_labels: Vec<String> = self
+            .rates
+            .iter()
+            .map(|(_, m)| {
+                m.as_ref()
+                    .map(|x| x.name.clone())
+                    .unwrap_or_else(|| "-".into())
+            })
+            .collect();
+        let rate_labels: Vec<String> = self
+            .rates
+            .iter()
+            .map(|(r, _)| format!("₹ {:.2}", r.rate()))
+            .collect();
+        let dt_labels: Vec<String> = self
+            .rates
+            .iter()
+            .map(|(r, _)| r.datetime.format("%Y-%m-%d %H:%M").to_string())
+            .collect();
 
-        let rows: Vec<TableRow> = self.rates.iter().enumerate().map(|(i, _)| TableRow {
-            attrs: lariv_rs::components::HtmlAttrs::new(),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &mat_labels[i], classes: "font-semibold" }),
-                field_text(FieldText { value: &rate_labels[i], classes: "" }),
-                field_text(FieldText { value: &dt_labels[i], classes: "" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .rates
+            .iter()
+            .enumerate()
+            .map(|(i, _)| TableRow {
+                attrs: lariv_rs::components::HtmlAttrs::new(),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &mat_labels[i],
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &rate_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &dt_labels[i],
+                        classes: "",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<MaterialRateTableKey, MaterialRateCreateModalKey>(
@@ -1732,7 +2295,13 @@ impl RenderAppPane for MaterialRateListPage {
 
 impl RenderTemplate for MaterialRateListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Material Rates — Work Orders", chrome, wo_menu("rates"), rates_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Material Rates — Work Orders",
+            chrome,
+            wo_menu("rates"),
+            rates_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -1749,24 +2318,22 @@ impl RenderTemplate for MaterialRateCreateModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Add Material Rate" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<MaterialRateCreateModalKey>(
                         &MaterialRateCreatePostRouteTag.url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Material" } }
+                        (label("Material", html! {
                             select name="material_id" class="select select-bordered w-full" required {
                                 @for m in &self.materials {
                                     option value=(m.id) { (m.name) }
                                 }
                             }
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Rate (INR / kg)" } }
+                        }))
+                        (label("Rate (INR / kg)", html! {
                             input type="number" step="0.01" name="rate" class="input input-bordered w-full" required;
-                        }
+                        }))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Add Rate", ..Default::default() }))
@@ -1791,25 +2358,58 @@ pub struct MachineListPage {
 impl MachineListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Name", label: "Name", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Rate", label: "Hourly Rate", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Name",
+                label: "Name",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Rate",
+                label: "Hourly Rate",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
         let id_labels: Vec<String> = self.machines.iter().map(|m| m.id.to_string()).collect();
-        let rate_labels: Vec<String> = self.machines.iter().map(|m| {
-            let (r, p) = m.rate();
-            format!("₹ {}.{:02} / hr", r, p)
-        }).collect();
+        let rate_labels: Vec<String> = self
+            .machines
+            .iter()
+            .map(|m| {
+                let (r, p) = m.rate();
+                format!("₹ {}.{:02} / hr", r, p)
+            })
+            .collect();
 
-        let rows: Vec<TableRow> = self.machines.iter().enumerate().map(|(i, m)| TableRow {
-            attrs: row_attr_navigate_route(MachineDetailRouteTag::new(m.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &m.name, classes: "font-semibold" }),
-                field_text(FieldText { value: &rate_labels[i], classes: "" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .machines
+            .iter()
+            .enumerate()
+            .map(|(i, m)| TableRow {
+                attrs: row_attr_navigate_route(MachineDetailRouteTag::new(m.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.name,
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &rate_labels[i],
+                        classes: "",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<MachineTableKey, MachineCreateModalKey>(
@@ -1831,7 +2431,11 @@ impl MachineListPage {
 
 impl RenderAppPane for MachineListPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("machines"), machines_list_crumbs(), self.render_table())
+        scaffold_pane(
+            wo_menu("machines"),
+            machines_list_crumbs(),
+            self.render_table(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(machines_list_crumbs(), self.render_table())
@@ -1840,7 +2444,13 @@ impl RenderAppPane for MachineListPage {
 
 impl RenderTemplate for MachineListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Machines — Work Orders", chrome, wo_menu("machines"), machines_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Machines — Work Orders",
+            chrome,
+            wo_menu("machines"),
+            machines_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -1895,16 +2505,29 @@ impl MachineDetailPage {
 
 impl RenderAppPane for MachineDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("machines"), machine_crumbs(&self.machine.name, self.machine.id), self.body())
+        scaffold_pane(
+            wo_menu("machines"),
+            machine_crumbs(&self.machine.name, self.machine.id),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(machine_crumbs(&self.machine.name, self.machine.id), self.body())
+        scaffold_main(
+            machine_crumbs(&self.machine.name, self.machine.id),
+            self.body(),
+        )
     }
 }
 
 impl RenderTemplate for MachineDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("{} — Machines", self.machine.name), chrome, wo_menu("machines"), machine_crumbs(&self.machine.name, self.machine.id), self.body())
+        app_scaffold(
+            &format!("{} — Machines", self.machine.name),
+            chrome,
+            wo_menu("machines"),
+            machine_crumbs(&self.machine.name, self.machine.id),
+            self.body(),
+        )
     }
 }
 
@@ -1920,20 +2543,18 @@ impl RenderTemplate for MachineCreateModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New Machine" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<MachineCreateModalKey>(
                         &MachineCreatePostRouteTag.url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Machine Name" } }
+                        (label("Machine Name", html! {
                             input type="text" name="name" class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Hourly Rate (INR)" } }
+                        }))
+                        (label("Hourly Rate (INR)", html! {
                             input type="number" step="0.01" name="rate" class="input input-bordered w-full" required;
-                        }
+                        }))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Create Machine", ..Default::default() }))
@@ -1960,20 +2581,18 @@ impl RenderTemplate for MachineEditModalPage {
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit Machine" }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<MachineEditModalKey>(
                         &MachineEditPostRouteTag::new(self.id).url(),
                     ),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: html! {
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Machine Name" } }
+                        (label("Machine Name", html! {
                             input type="text" name="name" value=(self.name) class="input input-bordered w-full" required;
-                        }
-                        div class="form-control mb-3" {
-                            label class="label" { span class="label-text" { "Hourly Rate (INR / hr)" } }
+                        }))
+                        (label("Hourly Rate (INR / hr)", html! {
                             input type="number" step="0.01" name="rate" value=(format!("{:.2}", self.rate)) class="input input-bordered w-full" required;
-                        }
+                        }))
                     },
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
@@ -2000,30 +2619,103 @@ pub struct InvoiceListPage {
 impl InvoiceListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
-            TableColumnHeader { key: "Id", label: "Id", sort_url: None, push_url: false },
-            TableColumnHeader { key: "InvoiceNumber", label: "Invoice #", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Date", label: "Date", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Customer", label: "Customer", sort_url: None, push_url: false },
-            TableColumnHeader { key: "WorkOrder", label: "Work Order", sort_url: None, push_url: false },
-            TableColumnHeader { key: "Total", label: "Total", sort_url: None, push_url: false },
+            TableColumnHeader {
+                key: "Id",
+                label: "Id",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "InvoiceNumber",
+                label: "Invoice #",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Date",
+                label: "Date",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Customer",
+                label: "Customer",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "WorkOrder",
+                label: "Work Order",
+                sort_url: None,
+                push_url: false,
+            },
+            TableColumnHeader {
+                key: "Total",
+                label: "Total",
+                sort_url: None,
+                push_url: false,
+            },
         ];
 
         let id_labels: Vec<String> = self.invoices.iter().map(|inv| inv.id.to_string()).collect();
-        let date_labels: Vec<String> = self.invoices.iter().map(|inv| inv.date.to_string()).collect();
-        let wo_labels: Vec<String> = self.invoices.iter().map(|inv| inv.work_order_id.map(|w| format!("#{w}")).unwrap_or_else(|| "-".into())).collect();
-        let total_labels: Vec<String> = self.grand_totals.iter().map(|t| format!("₹ {:.2}", t)).collect();
+        let date_labels: Vec<String> = self
+            .invoices
+            .iter()
+            .map(|inv| inv.date.to_string())
+            .collect();
+        let wo_labels: Vec<String> = self
+            .invoices
+            .iter()
+            .map(|inv| {
+                inv.work_order_id
+                    .map(|w| format!("#{w}"))
+                    .unwrap_or_else(|| "-".into())
+            })
+            .collect();
+        let total_labels: Vec<String> = self
+            .grand_totals
+            .iter()
+            .map(|t| format!("₹ {:.2}", t))
+            .collect();
 
-        let rows: Vec<TableRow> = self.invoices.iter().enumerate().map(|(i, inv)| TableRow {
-            attrs: row_attr_navigate_route(InvoiceDetailRouteTag::new(inv.id)),
-            cells: vec![
-                field_text(FieldText { value: &id_labels[i], classes: "" }),
-                field_text(FieldText { value: &inv.invoice_number, classes: "font-semibold" }),
-                field_text(FieldText { value: &date_labels[i], classes: "" }),
-                field_text(FieldText { value: self.customer_names.get(i).map(String::as_str).unwrap_or_default(), classes: "" }),
-                field_text(FieldText { value: &wo_labels[i], classes: "" }),
-                field_text(FieldText { value: &total_labels[i], classes: "font-semibold" }),
-            ],
-        }).collect();
+        let rows: Vec<TableRow> = self
+            .invoices
+            .iter()
+            .enumerate()
+            .map(|(i, inv)| TableRow {
+                attrs: row_attr_navigate_route(InvoiceDetailRouteTag::new(inv.id)),
+                cells: vec![
+                    field_text(FieldText {
+                        value: &id_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &inv.invoice_number,
+                        classes: "font-semibold",
+                    }),
+                    field_text(FieldText {
+                        value: &date_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: self
+                            .customer_names
+                            .get(i)
+                            .map(String::as_str)
+                            .unwrap_or_default(),
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &wo_labels[i],
+                        classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &total_labels[i],
+                        classes: "font-semibold",
+                    }),
+                ],
+            })
+            .collect();
 
         let actions = html! {
             (table_create_button::<InvoiceTableKey, InvoiceCreateModalKey>(
@@ -2045,7 +2737,11 @@ impl InvoiceListPage {
 
 impl RenderAppPane for InvoiceListPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("invoices"), invoices_list_crumbs(), self.render_table())
+        scaffold_pane(
+            wo_menu("invoices"),
+            invoices_list_crumbs(),
+            self.render_table(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(invoices_list_crumbs(), self.render_table())
@@ -2054,7 +2750,13 @@ impl RenderAppPane for InvoiceListPage {
 
 impl RenderTemplate for InvoiceListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold("Proforma Invoices — Work Orders", chrome, wo_menu("invoices"), invoices_list_crumbs(), self.render_table())
+        app_scaffold(
+            "Proforma Invoices — Work Orders",
+            chrome,
+            wo_menu("invoices"),
+            invoices_list_crumbs(),
+            self.render_table(),
+        )
     }
 }
 
@@ -2102,7 +2804,10 @@ impl InvoiceDetailPage {
         let date_str = self.invoice.date.to_string();
         let cust_str = self.customer_name.clone();
         let wo_str = if self.work_order_number.is_empty() {
-            self.invoice.work_order_id.map(|w| format!("#{w}")).unwrap_or_else(|| "None".into())
+            self.invoice
+                .work_order_id
+                .map(|w| format!("#{w}"))
+                .unwrap_or_else(|| "None".into())
         } else {
             self.work_order_number.clone()
         };
@@ -2193,16 +2898,29 @@ impl InvoiceDetailPage {
 
 impl RenderAppPane for InvoiceDetailPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("invoices"), invoice_crumbs(&self.invoice.invoice_number, self.invoice.id), self.body())
+        scaffold_pane(
+            wo_menu("invoices"),
+            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
-        scaffold_main(invoice_crumbs(&self.invoice.invoice_number, self.invoice.id), self.body())
+        scaffold_main(
+            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
+            self.body(),
+        )
     }
 }
 
 impl RenderTemplate for InvoiceDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(&format!("{} — Invoices", self.invoice.invoice_number), chrome, wo_menu("invoices"), invoice_crumbs(&self.invoice.invoice_number, self.invoice.id), self.body())
+        app_scaffold(
+            &format!("{} — Invoices", self.invoice.invoice_number),
+            chrome,
+            wo_menu("invoices"),
+            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
+            self.body(),
+        )
     }
 }
 
@@ -2221,9 +2939,17 @@ pub struct InvoiceCreateModalPage {
 
 impl RenderTemplate for InvoiceCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let material_lines_val = if self.material_lines_json.is_empty() { "[]" } else { &self.material_lines_json };
-        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
-        let ctx = FormCtx::form::<InvoiceForm>()
+        let material_lines_val = if self.material_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.material_lines_json
+        };
+        let machine_lines_val = if self.machine_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.machine_lines_json
+        };
+        let ctx = FormCtx::form::<InvoiceForm>(CsrfToken::current())
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, "")
             .display(InvoiceFormField::CustomerId, &self.customer_name)
@@ -2244,7 +2970,7 @@ impl RenderTemplate for InvoiceCreateModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<InvoiceCreateModalKey>(
                         &InvoiceCreatePostRouteTag.url(),
                     ),
@@ -2282,10 +3008,21 @@ pub struct InvoiceEditModalPage {
 impl RenderTemplate for InvoiceEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let cust_id_str = self.customer_id.to_string();
-        let wo_id_str = self.work_order_id.map(|w| w.to_string()).unwrap_or_default();
-        let material_lines_val = if self.material_lines_json.is_empty() { "[]" } else { &self.material_lines_json };
-        let machine_lines_val = if self.machine_lines_json.is_empty() { "[]" } else { &self.machine_lines_json };
-        let ctx = FormCtx::form::<InvoiceForm>()
+        let wo_id_str = self
+            .work_order_id
+            .map(|w| w.to_string())
+            .unwrap_or_default();
+        let material_lines_val = if self.material_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.material_lines_json
+        };
+        let machine_lines_val = if self.machine_lines_json.is_empty() {
+            "[]"
+        } else {
+            &self.machine_lines_json
+        };
+        let ctx = FormCtx::form::<InvoiceForm>(CsrfToken::current())
             .value(InvoiceFormField::InvoiceNumber, &self.invoice_number)
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
@@ -2308,7 +3045,7 @@ impl RenderTemplate for InvoiceEditModalPage {
                         span { (self.error) }
                     }
                 }
-                (form(FormOpts {
+                (form(&CsrfToken::current(), FormOpts {
                     attrs: lariv_rs::components::swap::form_hx_post_url::<InvoiceEditModalKey>(
                         &InvoiceEditPostRouteTag::new(self.id).url(),
                     ),
@@ -2378,7 +3115,7 @@ pub struct WorkOrdersPreferencesPage {
 }
 
 fn pdf_template_editor(
-    label: &str,
+    title: &str,
     field_id: &str,
     value: &str,
     preview_post_url: &str,
@@ -2387,11 +3124,8 @@ fn pdf_template_editor(
 ) -> Markup {
     html! {
         div class="form-control mb-8" {
-            label class="label" {
-                span class="label-text font-bold text-base" { (label) }
-            }
             (code_editor_input(CodeEditorInput {
-                label: "",
+                label: title,
                 name: field_id,
                 value,
                 id: field_id,
@@ -2425,44 +3159,47 @@ fn pdf_template_editor(
 
 impl WorkOrdersPreferencesPage {
     fn body(&self) -> Markup {
-        form(lariv_rs::components::FormOpts {
-                attrs: lariv_rs::components::form_hx_post_main_url(&WorkOrdersPrefsPostRouteTag.url()),
-                title: "Work Orders PDF Preferences",
-                subtitle: "Configure the PDF templates used for draft work orders and proforma invoices. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
-                form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                inputs: html! {
-                    (pdf_template_editor(
-                        "Draft Work Order PDF Template",
-                        "draft_work_order_pdf_template",
-                        &self.draft_work_order_pdf_template,
-                        &WorkOrderPdfPreviewPostRouteTag.url(),
-                        crate::work_orders::pdf_templates::DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
-                        18,
-                    ))
-                    (pdf_template_editor(
-                        "Proforma Invoice PDF Template",
-                        "proforma_invoice_pdf_template",
-                        &self.proforma_invoice_pdf_template,
-                        &InvoicePdfPreviewPostRouteTag.url(),
-                        crate::work_orders::pdf_templates::DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE,
-                        18,
-                    ))
-                },
-                actions: html! {
-                    (button_submit(ButtonSubmit {
-                        label: "Save Preferences",
-                        ..Default::default()
-                    }))
-                },
-                ..Default::default()
+        form(&CsrfToken::current(), lariv_rs::components::FormOpts {
+            attrs: lariv_rs::components::form_hx_post_main_url(&WorkOrdersPrefsPostRouteTag.url()),
+            title: "Work Orders PDF Preferences",
+            subtitle: "Configure the PDF templates used for draft work orders and proforma invoices. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
+            form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+            inputs: html! {
+                (pdf_template_editor(
+                    "Draft Work Order PDF Template",
+                    "draft_work_order_pdf_template",
+                    &self.draft_work_order_pdf_template,
+                    &WorkOrderPdfPreviewPostRouteTag.url(),
+                    crate::work_orders::pdf_templates::DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
+                    18,
+                ))
+                (pdf_template_editor(
+                    "Proforma Invoice PDF Template",
+                    "proforma_invoice_pdf_template",
+                    &self.proforma_invoice_pdf_template,
+                    &InvoicePdfPreviewPostRouteTag.url(),
+                    crate::work_orders::pdf_templates::DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE,
+                    18,
+                ))
             },
-        )
+            actions: html! {
+                (button_submit(ButtonSubmit {
+                    label: "Save Preferences",
+                    ..Default::default()
+                }))
+            },
+            ..Default::default()
+        })
     }
 }
 
 impl RenderAppPane for WorkOrdersPreferencesPage {
     fn render_pane(&self) -> lariv_rs::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("preferences"), work_orders_prefs_crumbs(), self.body())
+        scaffold_pane(
+            wo_menu("preferences"),
+            work_orders_prefs_crumbs(),
+            self.body(),
+        )
     }
     fn render_main(&self) -> lariv_rs::components::MainContentHtml {
         scaffold_main(work_orders_prefs_crumbs(), self.body())

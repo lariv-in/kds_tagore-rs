@@ -1,16 +1,14 @@
-use std::collections::HashMap;
 use chrono::Utc;
-use rust_decimal::Decimal;
 use kds_tagore_rs::machinery_schedule::duration::JobDuration;
 use kds_tagore_rs::work_orders::{
     entities::{
         component, machine, material, proforma_invoice, proforma_invoice_machine_line,
         proforma_invoice_material_line, shape,
     },
-    geometry::{
-        calculate_openscad_volume, calculate_stl_volume, PrimitiveKind,
-    },
+    geometry::{PrimitiveKind, calculate_openscad_volume, calculate_stl_volume},
 };
+use rust_decimal::Decimal;
+use std::collections::HashMap;
 
 #[test]
 fn test_stl_volume_with_stl_io() {
@@ -103,7 +101,11 @@ endfacet
 endsolid cube"#;
 
     let volume = calculate_stl_volume(cube_stl.as_bytes()).expect("calculate_stl_volume");
-    assert!((volume - 1.0).abs() < 1e-5, "Expected 1.0 m³, got {}", volume);
+    assert!(
+        (volume - 1.0).abs() < 1e-5,
+        "Expected 1.0 m³, got {}",
+        volume
+    );
 }
 
 #[tokio::test]
@@ -114,9 +116,15 @@ async fn test_openscad_execution_and_volume() {
     vars.insert("y".into(), 200.0); // 200mm
     vars.insert("z".into(), 300.0); // 300mm
 
-    let volume = calculate_openscad_volume(code, &vars).await.expect("calculate_openscad_volume");
+    let volume = calculate_openscad_volume(code, &vars)
+        .await
+        .expect("calculate_openscad_volume");
     // 100 * 200 * 300 mm3 = 6,000,000 mm3 = 0.006 m3
-    assert!((volume - 0.006).abs() < 1e-6, "Expected volume 0.006 m³, got {}", volume);
+    assert!(
+        (volume - 0.006).abs() < 1e-6,
+        "Expected volume 0.006 m³, got {}",
+        volume
+    );
 }
 
 #[test]
@@ -132,12 +140,16 @@ fn test_shape_get_volume_method() {
 
     let mut vars = HashMap::new();
     vars.insert("length".into(), 150.0); // 150mm
-    vars.insert("width".into(), 200.0);  // 200mm
+    vars.insert("width".into(), 200.0); // 200mm
     vars.insert("thickness".into(), 300.0); // 300mm
 
     let vol = s.get_volume(vars);
     // 150 * 200 * 300 mm3 = 9,000,000 mm3 = 0.009 m3
-    assert!((vol - 0.009).abs() < 1e-6, "Expected volume 0.009 m³, got {}", vol);
+    assert!(
+        (vol - 0.009).abs() < 1e-6,
+        "Expected volume 0.009 m³, got {}",
+        vol
+    );
 }
 
 #[test]
@@ -160,13 +172,17 @@ fn test_component_get_weight_from_models() {
     };
 
     let mut vars = HashMap::new();
-    vars.insert("length".into(), 1000.0);   // 1000mm = 1m
-    vars.insert("width".into(), 1000.0);    // 1000mm = 1m
-    vars.insert("thickness".into(), 10.0);  // 10mm thickness
+    vars.insert("length".into(), 1000.0); // 1000mm = 1m
+    vars.insert("width".into(), 1000.0); // 1000mm = 1m
+    vars.insert("thickness".into(), 10.0); // 10mm thickness
 
     let weight = component::Model::get_weight_from_models(&s, &m, vars);
     // Vol = 1000 * 1000 * 10 mm3 = 0.01 m3, Weight = 0.01 * 7850 = 78.5 kg
-    assert!((weight - 78.5).abs() < 1e-3, "Expected 78.5 kg, got {}", weight);
+    assert!(
+        (weight - 78.5).abs() < 1e-3,
+        "Expected 78.5 kg, got {}",
+        weight
+    );
 }
 
 #[test]
@@ -238,7 +254,10 @@ fn test_invoice_material_line_qty_and_total() {
     assert_eq!(g_full, 500);
 
     // Line total: 2.500 * 420.50 = 1051.25
-    assert_eq!(line.line_total(), Decimal::from_str_exact("1051.25").unwrap());
+    assert_eq!(
+        line.line_total(),
+        Decimal::from_str_exact("1051.25").unwrap()
+    );
 }
 
 #[test]
@@ -296,7 +315,7 @@ fn test_invoice_grand_total() {
 fn test_analytical_primitives() {
     let mut vars = HashMap::new();
     vars.insert("diameter".into(), 100.0); // 100mm diameter
-    vars.insert("length".into(), 1000.0);  // 1000mm length (1m)
+    vars.insert("length".into(), 1000.0); // 1000mm length (1m)
 
     let vol = PrimitiveKind::Cylinder.calculate_volume(&vars).unwrap();
     let expected = std::f64::consts::PI * 0.05 * 0.05 * 1.0;
@@ -305,8 +324,8 @@ fn test_analytical_primitives() {
 
 #[tokio::test]
 async fn test_work_orders_migration_on_sqlite() {
-    use sea_orm_migration::MigratorTrait;
     use kds_tagore_rs::work_orders::migrations::Migrator;
+    use sea_orm_migration::MigratorTrait;
 
     let db = sea_orm::Database::connect("sqlite::memory:")
         .await
@@ -317,13 +336,9 @@ async fn test_work_orders_migration_on_sqlite() {
 #[tokio::test]
 async fn test_work_orders_list_handler_with_capabilities() {
     use axum::http::Uri;
-    use kds_tagore_rs::work_orders::{
-        handlers, migrations::Migrator, state::WorkOrdersState,
-    };
+    use kds_tagore_rs::work_orders::{handlers, migrations::Migrator, state::WorkOrdersState};
     use lariv_rs::{
-        components::SharedChromeFolder,
-        http::Cap,
-        plugins::users::middleware::OptionalAuth,
+        components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth,
         web::Htmx,
     };
     use sea_orm_migration::MigratorTrait;
@@ -347,7 +362,8 @@ async fn test_work_orders_list_handler_with_capabilities() {
         OptionalAuth(None),
         Htmx::default(),
         Uri::from_static("/work-orders/"),
-    ).await;
+    )
+    .await;
 
     let html_str = markup.into_string();
     assert!(html_str.contains("Work Orders"));
@@ -356,13 +372,9 @@ async fn test_work_orders_list_handler_with_capabilities() {
 #[tokio::test]
 async fn test_standard_shapes_seeded_and_visible_in_ui() {
     use axum::http::Uri;
-    use kds_tagore_rs::work_orders::{
-        handlers, migrations::Migrator, state::WorkOrdersState,
-    };
+    use kds_tagore_rs::work_orders::{handlers, migrations::Migrator, state::WorkOrdersState};
     use lariv_rs::{
-        components::SharedChromeFolder,
-        http::Cap,
-        plugins::users::middleware::OptionalAuth,
+        components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth,
         web::Htmx,
     };
     use sea_orm_migration::MigratorTrait;
@@ -388,24 +400,47 @@ async fn test_standard_shapes_seeded_and_visible_in_ui() {
         OptionalAuth(None),
         Htmx::default(),
         Uri::from_static("/work-orders/shapes"),
-    ).await;
+    )
+    .await;
 
     let html_str = markup.into_string();
-    assert!(html_str.contains("Box / Plate"), "HTML must contain Box / Plate");
-    assert!(html_str.contains("Cylinder / Round Bar"), "HTML must contain Cylinder");
-    assert!(html_str.contains("Standard Stock"), "HTML must contain Standard Stock badge");
+    assert!(
+        html_str.contains("Box / Plate"),
+        "HTML must contain Box / Plate"
+    );
+    assert!(
+        html_str.contains("Cylinder / Round Bar"),
+        "HTML must contain Cylinder"
+    );
+    assert!(
+        html_str.contains("Standard Stock"),
+        "HTML must contain Standard Stock badge"
+    );
 
     // 2. Check shape create modal contains preset toolbar
     let modal_markup = handlers::shape_create_get(
         Cap(chrome),
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-    ).await;
+    )
+    .await;
     let modal_html = modal_markup.into_string();
-    assert!(modal_html.contains("Standard Presets"), "Modal must contain presets header");
-    assert!(modal_html.contains("Box / Plate"), "Modal must contain preset button");
-    assert!(modal_html.contains("data-list-row-input"), "Modal must contain string list input");
-    assert!(!modal_html.contains("comma-separated"), "Modal must not contain csv tooltip/label");
+    assert!(
+        modal_html.contains("Standard Presets"),
+        "Modal must contain presets header"
+    );
+    assert!(
+        modal_html.contains("Box / Plate"),
+        "Modal must contain preset button"
+    );
+    assert!(
+        modal_html.contains("data-list-row-input"),
+        "Modal must contain string list input"
+    );
+    assert!(
+        !modal_html.contains("comma-separated"),
+        "Modal must not contain csv tooltip/label"
+    );
 }
 
 #[tokio::test]
@@ -441,11 +476,13 @@ async fn test_shape_create_post_with_string_list() {
         Htmx::default(),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         HtmlFormBody(ShapeForm {
+            csrf: Default::default(),
             name: "Custom Pentagon Bar".into(),
             variables: vec!["side".into(), "length".into()],
             openscad_code: "cylinder(r=side, h=length, $fn=5);".into(),
         }),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let saved = shape::Entity::find()
@@ -472,15 +509,21 @@ async fn test_shape_analytical_volume_calculation() {
         variable_names: serde_json::json!(["diameter", "length"]),
     };
 
-    assert!(cylinder.is_standard(), "Cylinder must be recognized as standard shape");
+    assert!(
+        cylinder.is_standard(),
+        "Cylinder must be recognized as standard shape"
+    );
 
     let mut vars = HashMap::new();
     vars.insert("diameter".into(), 100.0); // 100 mm
-    vars.insert("length".into(), 1000.0);  // 1000 mm = 1 m
+    vars.insert("length".into(), 1000.0); // 1000 mm = 1 m
 
     let volume = cylinder.get_volume(vars);
     let expected = std::f64::consts::PI * 0.05 * 0.05 * 1.0;
-    assert!((volume - expected).abs() < 1e-6, "Volume must match analytical formula");
+    assert!(
+        (volume - expected).abs() < 1e-6,
+        "Volume must match analytical formula"
+    );
 }
 
 #[test]
@@ -553,9 +596,15 @@ fn test_solve_final_dimension_from_weight_analytical() {
         density: 7850.0,
     };
 
-    let (free_name, solved_dim) = c.solve_final_variable_from_weight(&s, &m, 0.0686875).expect("solve dimension");
+    let (free_name, solved_dim) = c
+        .solve_final_variable_from_weight(&s, &m, 0.0686875)
+        .expect("solve dimension");
     assert_eq!(free_name, "length");
-    assert!((solved_dim - 1000.0).abs() < 1e-3, "Expected length 1000 mm, got {}", solved_dim);
+    assert!(
+        (solved_dim - 1000.0).abs() < 1e-3,
+        "Expected length 1000 mm, got {}",
+        solved_dim
+    );
 }
 
 #[test]
@@ -601,14 +650,19 @@ fn test_solve_final_dimension_from_cost() {
     };
 
     // Weight 0.0686875 kg * 85 INR/kg = 5.8384375 INR
-    let (free_name, solved_dim) = c.solve_final_variable_from_cost(&s, &m, r.rate(), 5.8384375).expect("solve dimension from cost");
+    let (free_name, solved_dim) = c
+        .solve_final_variable_from_cost(&s, &m, r.rate(), 5.8384375)
+        .expect("solve dimension from cost");
     assert_eq!(free_name, "length");
-    assert!((solved_dim - 1000.0).abs() < 1e-3, "Expected length 1000 mm, got {}", solved_dim);
+    assert!(
+        (solved_dim - 1000.0).abs() < 1e-3,
+        "Expected length 1000 mm, got {}",
+        solved_dim
+    );
 }
 
 #[tokio::test]
 async fn test_work_order_and_lines_creation_and_total_calculation() {
-    use std::str::FromStr;
     use kds_tagore_rs::work_orders::{
         entities::{work_order, work_order_line},
         handlers::{self, WorkOrderCreateForm},
@@ -618,8 +672,11 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
     use lariv_rs::{components::SharedChromeFolder, http::Cap};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
     use sea_orm_migration::MigratorTrait;
+    use std::str::FromStr;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrator up");
 
     let state = WorkOrdersState::new(db.clone());
@@ -632,7 +689,9 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
     let chrome: SharedChromeFolder = std::sync::Arc::new(DummyFolder);
 
     // Ensure seeds exist for shapes, materials, rates, and components
-    kds_tagore_rs::work_orders::seed::ensure_standard_seeds(&db).await.expect("seeds");
+    kds_tagore_rs::work_orders::seed::ensure_standard_seeds(&db)
+        .await
+        .expect("seeds");
     let comps = kds_tagore_rs::work_orders::entities::component::Entity::find()
         .order_by_asc(kds_tagore_rs::work_orders::entities::component::Column::Id)
         .all(&db)
@@ -647,20 +706,36 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
         Cap(chrome.clone()),
         lariv_rs::plugins::users::middleware::OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-    ).await;
+    )
+    .await;
     let create_modal_html = create_modal_res.into_string();
-    assert!(create_modal_html.contains("Draft Work Order"), "Work Order form must render Draft Work Order");
-    assert!(create_modal_html.contains("Add Line"), "Work Order form must have Add Line button");
-    assert!(create_modal_html.contains("Dimensions / Variables"), "Work Order items table must have Dimensions column");
-    assert!(create_modal_html.contains("Final Cost"), "Work Order items table must have Final Cost column");
+    assert!(
+        create_modal_html.contains("Draft Work Order"),
+        "Work Order form must render Draft Work Order"
+    );
+    assert!(
+        create_modal_html.contains("Add Line"),
+        "Work Order form must have Add Line button"
+    );
+    assert!(
+        create_modal_html.contains("Dimensions / Variables"),
+        "Work Order items table must have Dimensions column"
+    );
+    assert!(
+        create_modal_html.contains("Final Cost"),
+        "Work Order items table must have Final Cost column"
+    );
 
     // 1. Create a Work Order with Order Number, Customer ID, and inline items
     // comp1 is MS Flat Bar 2.5x3.5mm with 1 free variable "length"
     // comp2 is SS 304 Round Rod Ø20mm with 1 free variable "length"
-    let inline_items_json = format!(r#"[
+    let inline_items_json = format!(
+        r#"[
         {{"component_id": {}, "variables": {{"length": 1000}}, "quantity": "10", "extra_data": {{"finish": "zinc"}}}},
         {{"component_id": {}, "mode": "weight", "target_weight": 2.49, "quantity": "4", "extra_data": {{"lot": "A-1"}}}}
-    ]"#, comp1.id, comp2.id);
+    ]"#,
+        comp1.id, comp2.id
+    );
 
     let form = WorkOrderCreateForm {
         order_number: "WO-TEST-001".into(),
@@ -676,7 +751,8 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
         lariv_rs::web::Htmx::default(),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Form(form),
-    ).await;
+    )
+    .await;
 
     let (parts, _body) = axum::response::IntoResponse::into_response(res).into_parts();
     assert_eq!(parts.status, axum::http::StatusCode::SEE_OTHER);
@@ -735,9 +811,13 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
             target_input: Some("component_id".into()),
             name: Some("Flat Bar".into()),
         }),
-    ).await;
+    )
+    .await;
     let comp_picker_html = comp_picker_res.into_string();
-    assert!(comp_picker_html.contains("MS Flat Bar"), "Component picker must return matching component");
+    assert!(
+        comp_picker_html.contains("MS Flat Bar"),
+        "Component picker must return matching component"
+    );
 
     // Verify the 2 inline lines exist
     let lines_after = work_order_line::Entity::find()
@@ -754,21 +834,33 @@ async fn test_work_order_and_lines_creation_and_total_calculation() {
         lariv_rs::plugins::users::middleware::OptionalAuth(None),
         lariv_rs::web::Htmx::default(),
         axum::extract::Path(created_order.id),
-    ).await;
-    let body = axum::body::to_bytes(detail_res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(detail_res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("WO-TEST-001"), "Detail page must show order number");
-    assert!(html.contains("MS Flat Bar"), "Detail page must list component name");
-    assert!(html.contains("SS 304 Round Rod"), "Detail page must list component name 2");
+    assert!(
+        html.contains("WO-TEST-001"),
+        "Detail page must show order number"
+    );
+    assert!(
+        html.contains("MS Flat Bar"),
+        "Detail page must list component name"
+    );
+    assert!(
+        html.contains("SS 304 Round Rod"),
+        "Detail page must list component name 2"
+    );
 }
-
 
 #[tokio::test]
 async fn test_all_entities_edit_get_and_post() {
-    use std::str::FromStr;
     use axum::response::IntoResponse;
     use kds_tagore_rs::work_orders::{
-        entities::{component, machine, material, proforma_invoice, shape, work_order, work_order_line},
+        entities::{
+            component, machine, material, proforma_invoice, shape, work_order, work_order_line,
+        },
         handlers::{
             self, ComponentEditForm, InvoiceFormData, MachineEditForm, MaterialEditForm,
             ShapeEditForm, WorkOrderEditForm,
@@ -783,8 +875,11 @@ async fn test_all_entities_edit_get_and_post() {
     };
     use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
     use sea_orm_migration::MigratorTrait;
+    use std::str::FromStr;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrator up");
     ensure_standard_seeds(&db).await.expect("seed");
 
@@ -811,14 +906,29 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(box_shape.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit Shape"), "Modal HTML must contain 'Edit Shape'");
-    assert!(html.contains("Box / Plate"), "Modal HTML must contain existing name");
-    assert!(html.contains("data-list-row-input"), "Modal HTML must contain string list input");
-    assert!(!html.contains("comma-separated"), "Modal HTML must not contain csv tooltip/label");
+    assert!(
+        html.contains("Edit Shape"),
+        "Modal HTML must contain 'Edit Shape'"
+    );
+    assert!(
+        html.contains("Box / Plate"),
+        "Modal HTML must contain existing name"
+    );
+    assert!(
+        html.contains("data-list-row-input"),
+        "Modal HTML must contain string list input"
+    );
+    assert!(
+        !html.contains("comma-separated"),
+        "Modal HTML must not contain csv tooltip/label"
+    );
 
     let res = handlers::shape_edit_post(
         Cap(state.clone()),
@@ -828,11 +938,14 @@ async fn test_all_entities_edit_get_and_post() {
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(box_shape.id),
         HtmlFormBody(ShapeEditForm {
+            csrf: Default::default(),
             name: "Box / Plate Modified".into(),
             openscad_code: "cube([length, width, thickness]);".into(),
             variables: vec!["length".into(), "width".into(), "thickness".into()],
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let updated_shape = shape::Entity::find_by_id(box_shape.id)
@@ -841,7 +954,10 @@ async fn test_all_entities_edit_get_and_post() {
         .expect("query shape")
         .expect("shape exists");
     assert_eq!(updated_shape.name, "Box / Plate Modified");
-    assert_eq!(updated_shape.variable_names_vec(), vec!["length", "width", "thickness"]);
+    assert_eq!(
+        updated_shape.variable_names_vec(),
+        vec!["length", "width", "thickness"]
+    );
 
     // 2. Material Edit GET & POST
     let ms_mat = material::Entity::find()
@@ -857,12 +973,21 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(ms_mat.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit Material"), "Modal HTML must contain 'Edit Material'");
-    assert!(html.contains("Mild Steel"), "Modal HTML must contain existing material name");
+    assert!(
+        html.contains("Edit Material"),
+        "Modal HTML must contain 'Edit Material'"
+    );
+    assert!(
+        html.contains("Mild Steel"),
+        "Modal HTML must contain existing material name"
+    );
 
     let res = handlers::material_edit_post(
         Cap(state.clone()),
@@ -875,7 +1000,9 @@ async fn test_all_entities_edit_get_and_post() {
             name: "Mild Steel IS2062".into(),
             density: 7850.0,
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let updated_mat = material::Entity::find_by_id(ms_mat.id)
@@ -901,12 +1028,21 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(mach.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit Machine"), "Modal HTML must contain 'Edit Machine'");
-    assert!(html.contains("CNC Milling 3-Axis"), "Modal HTML must contain machine name");
+    assert!(
+        html.contains("Edit Machine"),
+        "Modal HTML must contain 'Edit Machine'"
+    );
+    assert!(
+        html.contains("CNC Milling 3-Axis"),
+        "Modal HTML must contain machine name"
+    );
 
     let res = handlers::machine_edit_post(
         Cap(state.clone()),
@@ -919,7 +1055,9 @@ async fn test_all_entities_edit_get_and_post() {
             name: "CNC Milling 5-Axis".into(),
             rate: 1500.0,
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let updated_mach = machine::Entity::find_by_id(mach.id)
@@ -928,7 +1066,10 @@ async fn test_all_entities_edit_get_and_post() {
         .expect("query mach")
         .expect("mach exists");
     assert_eq!(updated_mach.name, "CNC Milling 5-Axis");
-    assert_eq!(updated_mach.rate_decimal, rust_decimal::Decimal::new(1500, 0));
+    assert_eq!(
+        updated_mach.rate_decimal,
+        rust_decimal::Decimal::new(1500, 0)
+    );
 
     // 4. Component Edit GET & POST
     let bar_comp = component::Entity::find()
@@ -944,19 +1085,48 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(bar_comp.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit Component"), "Modal HTML must contain 'Edit Component'");
-    assert!(html.contains("2.5x3.5mm"), "Modal HTML must contain component name");
-    assert!(html.contains("/work-orders/shapes/pick"), "Shape must be an fkey picker");
-    assert!(html.contains("/work-orders/materials/pick"), "Material must be an fkey picker");
-    assert!(html.contains("data-kv-key-input"), "Fixed dimensions must use KV list key input");
-    assert!(!html.contains("<select name=\"shape_id\""), "Shape must not be a dropdown");
-    assert!(!html.contains("<select name=\"material_id\""), "Material must not be a dropdown");
-    assert!(!html.contains("<textarea name=\"fixed_variables\""), "Fixed dimensions must not be a raw textarea");
-    let pos = html.find("allowedKeys").expect("allowedKeys must exist in edit page");
+    assert!(
+        html.contains("Edit Component"),
+        "Modal HTML must contain 'Edit Component'"
+    );
+    assert!(
+        html.contains("2.5x3.5mm"),
+        "Modal HTML must contain component name"
+    );
+    assert!(
+        html.contains("/work-orders/shapes/pick"),
+        "Shape must be an fkey picker"
+    );
+    assert!(
+        html.contains("/work-orders/materials/pick"),
+        "Material must be an fkey picker"
+    );
+    assert!(
+        html.contains("data-kv-key-input"),
+        "Fixed dimensions must use KV list key input"
+    );
+    assert!(
+        !html.contains("<select name=\"shape_id\""),
+        "Shape must not be a dropdown"
+    );
+    assert!(
+        !html.contains("<select name=\"material_id\""),
+        "Material must not be a dropdown"
+    );
+    assert!(
+        !html.contains("<textarea name=\"fixed_variables\""),
+        "Fixed dimensions must not be a raw textarea"
+    );
+    let pos = html
+        .find("allowedKeys")
+        .expect("allowedKeys must exist in edit page");
     let allowed_keys_snippet = &html[pos..pos + 80];
     assert!(
         allowed_keys_snippet.contains("length")
@@ -966,7 +1136,8 @@ async fn test_all_entities_edit_get_and_post() {
         allowed_keys_snippet
     );
     assert!(
-        !allowed_keys_snippet.contains("diameter") && !allowed_keys_snippet.contains("across_flats"),
+        !allowed_keys_snippet.contains("diameter")
+            && !allowed_keys_snippet.contains("across_flats"),
         "Box allowedKeys must not contain diameter or across_flats, got: {}",
         allowed_keys_snippet
     );
@@ -979,12 +1150,15 @@ async fn test_all_entities_edit_get_and_post() {
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(bar_comp.id),
         HtmlFormBody(ComponentEditForm {
+            csrf: Default::default(),
             name: "MS Flat Bar 3.0x4.0mm".into(),
             shape_id: bar_comp.shape_id,
             material_id: bar_comp.material_id,
             fixed_variables: Some(r#"{"width": 3.0, "thickness": 4.0}"#.into()),
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let updated_comp = component::Entity::find_by_id(bar_comp.id)
@@ -1013,13 +1187,25 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(order.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Draft Work Order"), "Modal HTML must contain 'Draft Work Order'");
-    assert!(html.contains("WO-EDIT-001"), "Modal HTML must contain order number");
-    assert!(html.contains("Draft Work Order Material Lines"), "Modal HTML must contain Draft Work Order Material Lines");
+    assert!(
+        html.contains("Draft Work Order"),
+        "Modal HTML must contain 'Draft Work Order'"
+    );
+    assert!(
+        html.contains("WO-EDIT-001"),
+        "Modal HTML must contain order number"
+    );
+    assert!(
+        html.contains("Material Lines"),
+        "Modal HTML must contain Draft Work Order Material Lines"
+    );
 
     let res = handlers::work_order_edit_post(
         Cap(state.clone()),
@@ -1074,12 +1260,21 @@ async fn test_all_entities_edit_get_and_post() {
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         axum::extract::Path(invoice.id),
-    ).await;
+    )
+    .await;
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit Proforma Invoice"), "Modal HTML must contain 'Edit Proforma Invoice'");
-    assert!(html.contains("PI-EDIT-100"), "Modal HTML must contain invoice number");
+    assert!(
+        html.contains("Edit Proforma Invoice"),
+        "Modal HTML must contain 'Edit Proforma Invoice'"
+    );
+    assert!(
+        html.contains("PI-EDIT-100"),
+        "Modal HTML must contain invoice number"
+    );
 
     let res = handlers::invoice_edit_post(
         Cap(state.clone()),
@@ -1096,7 +1291,9 @@ async fn test_all_entities_edit_get_and_post() {
             material_lines: None,
             machine_lines: None,
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let updated_invoice = proforma_invoice::Entity::find_by_id(invoice.id)
@@ -1105,7 +1302,10 @@ async fn test_all_entities_edit_get_and_post() {
         .expect("query invoice")
         .expect("invoice exists");
     assert_eq!(updated_invoice.invoice_number, "PI-EDIT-100-FINAL");
-    assert_eq!(updated_invoice.date, chrono::NaiveDate::from_ymd_opt(2026, 9, 15).unwrap());
+    assert_eq!(
+        updated_invoice.date,
+        chrono::NaiveDate::from_ymd_opt(2026, 9, 15).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -1117,11 +1317,16 @@ async fn test_detail_pages_have_edit_button() {
         seed::ensure_standard_seeds,
         state::WorkOrdersState,
     };
-    use lariv_rs::{components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth, web::Htmx};
+    use lariv_rs::{
+        components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth,
+        web::Htmx,
+    };
     use sea_orm::{ActiveModelTrait, Set};
     use sea_orm_migration::MigratorTrait;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrator up");
     ensure_standard_seeds(&db).await.expect("seed");
 
@@ -1141,11 +1346,17 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(1),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("Edit"), "Shape detail must have Edit button");
-    assert!(html.contains("/work-orders/shapes/1/edit"), "Shape detail must link to edit URL");
+    assert!(
+        html.contains("/work-orders/shapes/1/edit"),
+        "Shape detail must link to edit URL"
+    );
 
     // Material Detail
     let res = handlers::material_detail(
@@ -1154,11 +1365,20 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(1),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit"), "Material detail must have Edit button");
-    assert!(html.contains("/work-orders/materials/1/edit"), "Material detail must link to edit URL");
+    assert!(
+        html.contains("Edit"),
+        "Material detail must have Edit button"
+    );
+    assert!(
+        html.contains("/work-orders/materials/1/edit"),
+        "Material detail must link to edit URL"
+    );
 
     // Machine Detail
     let new_mach = machine::ActiveModel {
@@ -1175,11 +1395,20 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(mach.id),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit"), "Machine detail must have Edit button");
-    assert!(html.contains(&format!("/work-orders/machines/{}/edit", mach.id)), "Machine detail must link to edit URL");
+    assert!(
+        html.contains("Edit"),
+        "Machine detail must have Edit button"
+    );
+    assert!(
+        html.contains(&format!("/work-orders/machines/{}/edit", mach.id)),
+        "Machine detail must link to edit URL"
+    );
 
     // Component Detail
     let res = handlers::component_detail(
@@ -1188,11 +1417,20 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(1),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit"), "Component detail must have Edit button");
-    assert!(html.contains("/work-orders/components/1/edit"), "Component detail must link to edit URL");
+    assert!(
+        html.contains("Edit"),
+        "Component detail must have Edit button"
+    );
+    assert!(
+        html.contains("/work-orders/components/1/edit"),
+        "Component detail must link to edit URL"
+    );
 
     // Work Order Detail
     let new_order = work_order::ActiveModel {
@@ -1209,11 +1447,20 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(order.id),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit"), "Work order detail must have Edit button");
-    assert!(html.contains(&format!("/work-orders/orders/{}/edit", order.id)), "Work order detail must link to edit URL");
+    assert!(
+        html.contains("Edit"),
+        "Work order detail must have Edit button"
+    );
+    assert!(
+        html.contains(&format!("/work-orders/orders/{}/edit", order.id)),
+        "Work order detail must link to edit URL"
+    );
 
     // Proforma Invoice Detail
     let new_inv = proforma_invoice::ActiveModel {
@@ -1232,11 +1479,20 @@ async fn test_detail_pages_have_edit_button() {
         OptionalAuth(None),
         Htmx::default(),
         axum::extract::Path(inv.id),
-    ).await;
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.expect("read body");
+    )
+    .await;
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Edit"), "Invoice detail must have Edit button");
-    assert!(html.contains(&format!("/work-orders/invoices/{}/edit", inv.id)), "Invoice detail must link to edit URL");
+    assert!(
+        html.contains("Edit"),
+        "Invoice detail must have Edit button"
+    );
+    assert!(
+        html.contains(&format!("/work-orders/invoices/{}/edit", inv.id)),
+        "Invoice detail must link to edit URL"
+    );
 }
 
 #[tokio::test]
@@ -1256,7 +1512,9 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use sea_orm_migration::MigratorTrait;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrations up");
     ensure_standard_seeds(&db).await.expect("seeds ok");
 
@@ -1275,21 +1533,61 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
         Cap(chrome.clone()),
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-    ).await;
+    )
+    .await;
     let html = res.into_string();
-    assert!(html.contains("New Component"), "Must contain 'New Component'");
-    assert!(html.contains("/work-orders/shapes/pick"), "Shape must have FK picker route");
-    assert!(html.contains("/work-orders/materials/pick"), "Material must have FK picker route");
-    assert!(html.contains("data-kv-key-input"), "Must contain KV list key input with searchable dropdown");
-    assert!(html.contains("data-kv-val-input"), "Must contain KV list value input");
-    assert!(html.contains("data-kv-add-btn"), "Must contain Add Fixed Dimension button");
-    assert!(!html.contains("<select name=\"shape_id\""), "Shape must not be a dropdown");
-    assert!(!html.contains("<select name=\"material_id\""), "Material must not be a dropdown");
-    assert!(!html.contains("<textarea name=\"fixed_variables\""), "Fixed dimensions must not be a raw textarea");
-    assert!(!html.contains("Custom:"), "Must not allow custom variable names in UI");
-    assert!(html.contains("allowedKeys"), "Must contain allowedKeys in Alpine data");
-    assert!(html.contains("usedKeys"), "Must filter by usedKeys in Alpine data");
-    assert!(html.contains("availableKeys"), "Must compute availableKeys excluding already specified options");
+    assert!(
+        html.contains("New Component"),
+        "Must contain 'New Component'"
+    );
+    assert!(
+        html.contains("/work-orders/shapes/pick"),
+        "Shape must have FK picker route"
+    );
+    assert!(
+        html.contains("/work-orders/materials/pick"),
+        "Material must have FK picker route"
+    );
+    assert!(
+        html.contains("data-kv-key-input"),
+        "Must contain KV list key input with searchable dropdown"
+    );
+    assert!(
+        html.contains("bindLengthInput") && html.contains(r#"aria-label="Length unit""#),
+        "Must contain KV list value input as a length widget"
+    );
+    assert!(
+        html.contains("data-kv-add-btn"),
+        "Must contain Add Fixed Dimension button"
+    );
+    assert!(
+        !html.contains("<select name=\"shape_id\""),
+        "Shape must not be a dropdown"
+    );
+    assert!(
+        !html.contains("<select name=\"material_id\""),
+        "Material must not be a dropdown"
+    );
+    assert!(
+        !html.contains("<textarea name=\"fixed_variables\""),
+        "Fixed dimensions must not be a raw textarea"
+    );
+    assert!(
+        !html.contains("Custom:"),
+        "Must not allow custom variable names in UI"
+    );
+    assert!(
+        html.contains("allowedKeys"),
+        "Must contain allowedKeys in Alpine data"
+    );
+    assert!(
+        html.contains("usedKeys"),
+        "Must filter by usedKeys in Alpine data"
+    );
+    assert!(
+        html.contains("availableKeys"),
+        "Must compute availableKeys excluding already specified options"
+    );
 
     // 2. Verify shape_select picker route
     let res = handlers::shape_select(
@@ -1300,10 +1598,17 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
             target_input: Some("shape_id".into()),
             name: Some("Box".into()),
         }),
-    ).await;
+    )
+    .await;
     let shape_picker_html = res.into_string();
-    assert!(shape_picker_html.contains("Box / Plate"), "Shape picker must return matching shape");
-    assert!(shape_picker_html.contains("data-table-container"), "Shape picker must render table container");
+    assert!(
+        shape_picker_html.contains("Box / Plate"),
+        "Shape picker must return matching shape"
+    );
+    assert!(
+        shape_picker_html.contains("data-table-container"),
+        "Shape picker must render table container"
+    );
 
     // 3. Verify material_select picker route
     let res = handlers::material_select(
@@ -1314,14 +1619,31 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
             target_input: Some("material_id".into()),
             name: Some("Steel".into()),
         }),
-    ).await;
+    )
+    .await;
     let mat_picker_html = res.into_string();
-    assert!(mat_picker_html.contains("Mild Steel"), "Material picker must return matching material");
-    assert!(mat_picker_html.contains("data-table-container"), "Material picker must render table container");
+    assert!(
+        mat_picker_html.contains("Mild Steel"),
+        "Material picker must return matching material"
+    );
+    assert!(
+        mat_picker_html.contains("data-table-container"),
+        "Material picker must render table container"
+    );
 
     // 4. Verify component_create_post with valid standard KV dimensions
-    let box_shape = shape::Entity::find().filter(shape::Column::Name.contains("Box")).one(&db).await.unwrap().unwrap();
-    let ms_mat = material::Entity::find().filter(material::Column::Name.contains("Mild Steel")).one(&db).await.unwrap().unwrap();
+    let box_shape = shape::Entity::find()
+        .filter(shape::Column::Name.contains("Box"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let ms_mat = material::Entity::find()
+        .filter(material::Column::Name.contains("Mild Steel"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
 
     let res = handlers::component_create_post(
         Cap(state.clone()),
@@ -1330,12 +1652,15 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
         Htmx::default(),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         HtmlFormBody(ComponentCreateForm {
+            csrf: Default::default(),
             name: "MS Plate 10x20mm".into(),
             shape_id: box_shape.id,
             material_id: ms_mat.id,
             fixed_variables: Some(r#"{"width": 10.0, "thickness": 20.0}"#.into()),
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::SEE_OTHER);
 
     let created_comp = component::Entity::find()
@@ -1358,14 +1683,23 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
         Htmx::default(),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
         HtmlFormBody(ComponentCreateForm {
+            csrf: Default::default(),
             name: "Invalid Comp With Custom Var".into(),
             shape_id: box_shape.id,
             material_id: ms_mat.id,
             fixed_variables: Some(r#"{"custom_var": 15.0}"#.into()),
         }),
-    ).await.into_response();
-    assert_eq!(res.status(), axum::http::StatusCode::OK, "Form should re-render modal with error on custom variable");
-    let err_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    )
+    .await
+    .into_response();
+    assert_eq!(
+        res.status(),
+        axum::http::StatusCode::OK,
+        "Form should re-render modal with error on custom variable"
+    );
+    let err_bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let err_html = String::from_utf8_lossy(&err_bytes);
     assert!(
         err_html.contains("not valid for shape") && err_html.contains("custom_var"),
@@ -1378,13 +1712,16 @@ async fn test_component_form_fkey_and_kv_list_and_pickers() {
         .one(&db)
         .await
         .unwrap();
-    assert!(not_created.is_none(), "Component with custom variable must not be created");
+    assert!(
+        not_created.is_none(),
+        "Component with custom variable must not be created"
+    );
 }
 
 #[tokio::test]
 async fn test_form_validation_and_pascal_case_deserialization() {
-    use axum::extract::FromRequest;
     use axum::extract::Form;
+    use axum::extract::FromRequest;
     use axum::response::IntoResponse;
     use kds_tagore_rs::work_orders::{
         entities::work_order,
@@ -1394,8 +1731,8 @@ async fn test_form_validation_and_pascal_case_deserialization() {
         state::WorkOrdersState,
     };
     use lariv_rs::{
-        components::SharedChromeFolder, http::Cap,
-        plugins::users::middleware::OptionalAuth, web::Htmx,
+        components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth,
+        web::Htmx,
     };
     use sea_orm::ColumnTrait;
     use sea_orm::EntityTrait;
@@ -1405,25 +1742,39 @@ async fn test_form_validation_and_pascal_case_deserialization() {
     // 1. Verify PascalCase deserialization matches what HTML form submits
     let wo_req = axum::http::Request::builder()
         .method("POST")
-        .header(axum::http::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(axum::body::Body::from("OrderNumber=WO-Pascal-1&CustomerID=10&Items=%5B%5D"))
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(axum::body::Body::from(
+            "OrderNumber=WO-Pascal-1&CustomerID=10&Items=%5B%5D",
+        ))
         .unwrap();
-    let Form(wo_form): Form<WorkOrderCreateForm> = Form::from_request(wo_req, &()).await.expect("deserialize PascalCase WorkOrderCreateForm");
+    let Form(wo_form): Form<WorkOrderCreateForm> = Form::from_request(wo_req, &())
+        .await
+        .expect("deserialize PascalCase WorkOrderCreateForm");
     assert_eq!(wo_form.order_number, "WO-Pascal-1");
     assert_eq!(wo_form.customer_id, 10);
 
     // Empty fields deserialized safely without 422
     let req_empty = axum::http::Request::builder()
         .method("POST")
-        .header(axum::http::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
         .body(axum::body::Body::from("OrderNumber=&CustomerID="))
         .unwrap();
-    let Form(empty_wo): Form<WorkOrderCreateForm> = Form::from_request(req_empty, &()).await.expect("deserialize empty form fields");
+    let Form(empty_wo): Form<WorkOrderCreateForm> = Form::from_request(req_empty, &())
+        .await
+        .expect("deserialize empty form fields");
     assert_eq!(empty_wo.order_number, "");
     assert_eq!(empty_wo.customer_id, 0);
 
     // 2. Test server validation and error banner rendering
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrations up");
     ensure_standard_seeds(&db).await.expect("seeds ok");
 
@@ -1449,15 +1800,24 @@ async fn test_form_validation_and_pascal_case_deserialization() {
             items: None,
             machine_lines: None,
         }),
-    ).await.into_response();
-    assert!(res.status().is_redirection(), "Empty order number should create and redirect, got {}", res.status());
+    )
+    .await
+    .into_response();
+    assert!(
+        res.status().is_redirection(),
+        "Empty order number should create and redirect, got {}",
+        res.status()
+    );
 
     let created = work_order::Entity::find()
         .filter(work_order::Column::OrderNumber.eq(""))
         .one(&db)
         .await
         .unwrap();
-    assert!(created.is_some(), "Order with empty order number should be created");
+    assert!(
+        created.is_some(),
+        "Order with empty order number should be created"
+    );
     assert_eq!(created.expect("order exists").order_number, "");
 
     // Missing/0 Customer ID should re-render modal with alert-error
@@ -1473,9 +1833,16 @@ async fn test_form_validation_and_pascal_case_deserialization() {
             items: None,
             machine_lines: None,
         }),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
+    let html = String::from_utf8_lossy(
+        &axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap(),
+    )
+    .into_owned();
     assert!(html.contains("alert-error"));
     assert!(html.contains("Please select a customer."));
 }
@@ -1484,20 +1851,18 @@ async fn test_form_validation_and_pascal_case_deserialization() {
 async fn test_length_units_in_dim_option() {
     use axum::response::IntoResponse;
     use kds_tagore_rs::work_orders::{
-        entities::draft_work_order_line,
-        handlers,
-        migrations::Migrator,
-        seed::ensure_standard_seeds,
-        state::WorkOrdersState,
+        entities::draft_work_order_line, handlers, migrations::Migrator,
+        seed::ensure_standard_seeds, state::WorkOrdersState,
     };
     use lariv_rs::{
-        components::SharedChromeFolder, http::Cap,
-        plugins::users::middleware::OptionalAuth,
+        components::SharedChromeFolder, http::Cap, plugins::users::middleware::OptionalAuth,
     };
     use rust_decimal::Decimal;
     use sea_orm_migration::MigratorTrait;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrations up");
     ensure_standard_seeds(&db).await.expect("seeds ok");
 
@@ -1516,19 +1881,26 @@ async fn test_length_units_in_dim_option() {
         Cap(chrome.clone()),
         OptionalAuth(None),
         axum::extract::Query(lariv_rs::web::ModalFormQuery::default()),
-    ).await.into_response();
+    )
+    .await
+    .into_response();
 
     assert_eq!(res.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let html = String::from_utf8_lossy(&body);
 
     for unit in ["mm", "cm", "m", "km", "in", "ft"] {
         assert!(
-            html.contains(&format!("<option value=\"{unit}\">{unit}</option>")),
+            html.contains(&format!(r#"<option value="{unit}""#)),
             "Form must contain length unit option for '{unit}'"
         );
     }
-    assert!(html.contains("unitFactors"), "Form script must define unitFactors for conversions");
+    assert!(
+        html.contains("unitFactors"),
+        "Form script must define unitFactors for conversions"
+    );
 
     // 2. Test format_variables_display on draft_work_order_line Model
     let line_mm = draft_work_order_line::Model {
@@ -1590,29 +1962,43 @@ async fn test_length_units_in_dim_option() {
         final_cost: Decimal::from(100),
         extra_data: serde_json::json!({ "dim_units": { "length": "ft", "width": "mm" } }),
     };
-    assert_eq!(line_multi.format_variables_display(), "length: 1 ft (304.8 mm), width: 50 mm");
+    assert_eq!(
+        line_multi.format_variables_display(),
+        "length: 1 ft (304.8 mm), width: 50 mm"
+    );
 }
 
 #[tokio::test]
 async fn test_draft_work_order_material_lines_rename() {
     use kds_tagore_rs::work_orders::{
-        entities::{draft_work_order_material_line, draft_work_order_line, work_order_line},
+        entities::{draft_work_order_line, draft_work_order_material_line, work_order_line},
         migrations::Migrator,
     };
     use sea_orm::EntityTrait;
     use sea_orm_migration::MigratorTrait;
 
-    let db = sea_orm::Database::connect("sqlite::memory:").await.expect("sqlite db");
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("sqlite db");
     Migrator::up(&db, None).await.expect("migrations up");
 
     // draft_work_order_material_lines table is queryable
-    let material_lines = draft_work_order_material_line::Entity::find().all(&db).await.expect("find material lines");
+    let material_lines = draft_work_order_material_line::Entity::find()
+        .all(&db)
+        .await
+        .expect("find material lines");
     assert_eq!(material_lines.len(), 0);
 
     // backward compatibility aliases work
-    let legacy_lines = draft_work_order_line::Entity::find().all(&db).await.expect("find draft lines alias");
+    let legacy_lines = draft_work_order_line::Entity::find()
+        .all(&db)
+        .await
+        .expect("find draft lines alias");
     assert_eq!(legacy_lines.len(), 0);
 
-    let wo_lines = work_order_line::Entity::find().all(&db).await.expect("find wo lines alias");
+    let wo_lines = work_order_line::Entity::find()
+        .all(&db)
+        .await
+        .expect("find wo lines alias");
     assert_eq!(wo_lines.len(), 0);
 }
