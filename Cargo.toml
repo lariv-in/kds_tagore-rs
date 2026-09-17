@@ -10,7 +10,7 @@ path = "src/main.rs"
 [dependencies]
 lariv-rs = { version = "0.1.0",
 	# path = "../../lariv-rs",
-	git = "https://github.com/lariv-in/lariv-rs", rev = "ee361399d15cdeaab6d89d334a1fb69bf76fda68",
+	git = "https://github.com/lariv-in/lariv-rs", rev = "563a7c557ae003a65444566c817d3e5791999fd4",
 	default-features = false, features = [
 		"plugin-users",
 		"plugin-dashboard",

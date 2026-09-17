@@ -2,9 +2,11 @@
 
 use chrono::{NaiveDate, TimeZone, Utc};
 use lariv_rs::datetime::{format_date_in_tz, parse_timezone};
-use lariv_rs::plugins::contacts::entities::contact::{self, Entity as ContactEntity};
-use lariv_rs::plugins::crm::entities::{
+use lariv_rs::plugins::contacts::entities::{
     company::{self, Entity as CompanyEntity},
+    contact::{self, Entity as ContactEntity},
+};
+use lariv_rs::plugins::crm::entities::{
     converted_lead::{self, Entity as ConvertedLeadEntity},
     failed_lead::{self, Entity as FailedLeadEntity},
     lead::{self, Entity as LeadEntity},
@@ -192,7 +194,7 @@ async fn upsert_contact(
         id: Default::default(),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
-        company_id: Set(company_id),
+        company_id: Set(Some(company_id)),
         name: Set(name.to_string()),
         email: Set(None),
         phone: Set(nonempty_opt(phone)),
@@ -406,8 +408,8 @@ pub async fn export_rows(db: &DatabaseConnection, tz: &str) -> Result<Vec<SheetR
             .one(db)
             .await
             .map_err(|e| e.to_string())?;
-        let company = match contact.as_ref() {
-            Some(c) => CompanyEntity::find_by_id(c.company_id)
+        let company = match contact.as_ref().and_then(|c| c.company_id) {
+            Some(id) => CompanyEntity::find_by_id(id)
                 .one(db)
                 .await
                 .map_err(|e| e.to_string())?,
