@@ -5,18 +5,21 @@ use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms,
-    users, website,
+    llm_assistant, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
 #[lariv_rs::main(
     stack_size = 64 * 1024 * 1024,
-    thread_name = "kds-tagore-server"
+    thread_name = "kds-tagore-server",
+    flavor = "multi_thread",
 )]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::from_default_env().add_directive("info".parse().expect("directive")),
+            EnvFilter::from_default_env()
+                .add_directive("info".parse().expect("directive"))
+                .add_directive("llm_assistant::imap=info".parse().expect("directive")),
         )
         .init();
 
@@ -24,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let app = users::install(app);
     let app = forms::install(app);
     let app = filesystem::install(app);
+    let app = llm_assistant::install(app);
     let app = machinery_schedule::install(app);
     let app = work_orders::install(app);
     let app = finance_accounts::install(app);
