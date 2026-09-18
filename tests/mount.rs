@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use kds_tagore_rs::{machinery_schedule, marketing_sheet, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
-    contacts, crm, dashboard, filesystem, forms, llm_assistant, users, website,
+    contacts, crm, dashboard, filesystem, forms, hr, llm_assistant, users, website,
 };
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
@@ -48,6 +48,7 @@ fn kds_tagore_stack_mounts() {
                 let app = work_orders::install(app);
                 let app = contacts::install(app);
                 let app = crm::install(app);
+                let app = hr::install(app);
                 let app = marketing_sheet::install(app);
                 let app = dashboard::install(app);
                 let app = website::install(app);
