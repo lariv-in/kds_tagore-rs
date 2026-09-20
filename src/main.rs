@@ -5,7 +5,7 @@ use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, users, website,
+    llm_assistant, meets, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
     let app = website_seed::install(app);
+    let app = meets::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

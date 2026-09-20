@@ -9,8 +9,8 @@ path = "src/main.rs"
 
 [dependencies]
 lariv-rs = { version = "0.1.0",
-	# path = "../../lariv-rs",
-	git = "https://github.com/lariv-in/lariv-rs", rev = "8d8927e66ccf99a4658cd8a3371bed2e16b7275f",
+	path = "../../lariv-rs",
+	# git = "https://github.com/lariv-in/lariv-rs", rev = "8d8927e66ccf99a4658cd8a3371bed2e16b7275f",
 	default-features = false, features = [
 		"plugin-users",
 		"plugin-dashboard",
@@ -21,6 +21,7 @@ lariv-rs = { version = "0.1.0",
 		"plugin-forms",
 		"plugin-hr",
 		"plugin-llm-assistant",
+		"plugin-meets",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1", features = ["backtrace"] }
