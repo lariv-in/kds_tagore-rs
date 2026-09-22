@@ -11,24 +11,24 @@ impl MigrationTrait for Migration {
         let backend = db.get_database_backend();
 
         if backend == DbBackend::Postgres {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "DROP VIEW IF EXISTS draft_work_proposal_lines CASCADE;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "DROP VIEW IF EXISTS work_order_lines CASCADE;".to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "ALTER TABLE IF EXISTS draft_work_order_lines RENAME TO draft_work_order_material_lines;".to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_material_lines (
@@ -48,48 +48,54 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE OR REPLACE VIEW draft_work_order_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE OR REPLACE VIEW draft_work_proposal_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE OR REPLACE VIEW work_order_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             ))
             .await?;
         } else if backend == DbBackend::Sqlite {
-            let _ = db.execute(Statement::from_string(
-                backend,
-                "DROP VIEW IF EXISTS draft_work_proposal_lines;".to_string(),
-            )).await;
-            let _ = db.execute(Statement::from_string(
-                backend,
-                "DROP VIEW IF EXISTS draft_work_order_lines;".to_string(),
-            )).await;
-            let _ = db.execute(Statement::from_string(
-                backend,
-                "DROP VIEW IF EXISTS work_order_lines;".to_string(),
-            )).await;
+            let _ = db
+                .execute_raw(Statement::from_string(
+                    backend,
+                    "DROP VIEW IF EXISTS draft_work_proposal_lines;".to_string(),
+                ))
+                .await;
+            let _ = db
+                .execute_raw(Statement::from_string(
+                    backend,
+                    "DROP VIEW IF EXISTS draft_work_order_lines;".to_string(),
+                ))
+                .await;
+            let _ = db
+                .execute_raw(Statement::from_string(
+                    backend,
+                    "DROP VIEW IF EXISTS work_order_lines;".to_string(),
+                ))
+                .await;
 
-            let has_old = db.query_one(Statement::from_string(
+            let has_old = db.query_one_raw(Statement::from_string(
                 backend,
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_work_order_lines'".to_string(),
             )).await?.is_some();
 
             if has_old {
-                let _ = db.execute(Statement::from_string(
+                let _ = db.execute_raw(Statement::from_string(
                     backend,
                     "ALTER TABLE draft_work_order_lines RENAME TO draft_work_order_material_lines;".to_string(),
                 )).await;
             }
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_material_lines (
@@ -109,15 +115,15 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            let _ = db.execute(Statement::from_string(
+            let _ = db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE VIEW IF NOT EXISTS draft_work_order_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             )).await;
-            let _ = db.execute(Statement::from_string(
+            let _ = db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE VIEW IF NOT EXISTS draft_work_proposal_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             )).await;
-            let _ = db.execute(Statement::from_string(
+            let _ = db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE VIEW IF NOT EXISTS work_order_lines AS SELECT * FROM draft_work_order_material_lines;".to_string(),
             )).await;
@@ -131,22 +137,22 @@ impl MigrationTrait for Migration {
         let backend = db.get_database_backend();
 
         if backend == DbBackend::Postgres {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "DROP VIEW IF EXISTS work_order_lines CASCADE;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "DROP VIEW IF EXISTS draft_work_proposal_lines CASCADE;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "DROP VIEW IF EXISTS draft_work_order_lines CASCADE;".to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "ALTER TABLE IF EXISTS draft_work_order_material_lines RENAME TO draft_work_order_lines;".to_string(),
             ))

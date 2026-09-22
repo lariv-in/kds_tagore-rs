@@ -1,21 +1,24 @@
-//! Work Orders plugin — Parametric component modeling, OpenSCAD volume & weight calculations,
-//! material rates, machines, and proforma invoices.
+//! KDS Quotations plugin — Rune formula costing, draft work orders, and quotations.
 
 pub mod apps;
+pub mod cascade;
 pub mod create_modals;
 pub mod crumbs;
 pub mod entities;
 pub mod forms;
-pub mod geometry;
 pub mod handlers;
 pub mod keys;
+pub mod line_vars;
 pub mod migrations;
 pub mod pdf;
 pub mod pdf_templates;
 pub mod preferences;
+pub mod quotation_number;
 pub mod routes;
 pub mod seed;
+pub mod source_docs;
 pub mod state;
+pub mod tax_assoc;
 pub mod templates;
 
 use frunk::{HCons, hlist::HList};
@@ -36,16 +39,13 @@ use state::WorkOrdersState;
 /// Plugin identity tag.
 pub struct WorkOrdersTag;
 
-define_passthrough_cap!(
-    WorkOrdersStateCap,
-    WorkOrdersTag,
-    WorkOrdersState
-);
+define_passthrough_cap!(WorkOrdersStateCap, WorkOrdersTag, WorkOrdersState);
 
 define_plugin_install! {
     plugin: WorkOrdersTag;
-    /// Register Work Orders migrations, routes, templates, and dashboard tile.
+    /// Register KDS Quotations migrations, routes, templates, and dashboard tile.
     steps: [
+        cap_hook(crate::machinery_schedule::JobSourceDocTag, crate::machinery_schedule::JobSourceDocCap, source_docs::Hook),
         apps(apps::Hook),
         migrations(migrations::Hook),
         templates(templates::Hook),

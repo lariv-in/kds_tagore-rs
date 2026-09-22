@@ -147,7 +147,10 @@ fn hub_sort_desc(sort: Option<&str>, key: &str) -> Option<bool> {
         return None;
     }
     let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.first().is_none_or(|col| !col.eq_ignore_ascii_case(key)) {
+    if parts
+        .first()
+        .is_none_or(|col| !col.eq_ignore_ascii_case(key))
+    {
         return None;
     }
     Some(parts.get(1).is_some_and(|d| d.eq_ignore_ascii_case("DESC")))

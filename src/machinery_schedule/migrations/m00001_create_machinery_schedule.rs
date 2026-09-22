@@ -102,7 +102,11 @@ impl MigrationTrait for Migration {
                             .small_integer()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(MachineryJobs::Order).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(MachineryJobs::Order)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(MachineryJobs::Remarks).text().not_null())
                     .to_owned(),
             )

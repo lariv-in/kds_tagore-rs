@@ -1,11 +1,11 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 
 use kds_tagore_rs::{machinery_schedule, marketing_sheet, website_seed, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, meets, users, website,
+    llm_assistant, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -29,16 +29,19 @@ async fn main() -> anyhow::Result<()> {
     let app = filesystem::install(app);
     let app = llm_assistant::install(app);
     let app = machinery_schedule::install(app);
-    let app = work_orders::install(app);
     let app = finance_accounts::install(app);
     let app = customer::install(app);
     let app = contacts::install(app);
+    // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.
+    let app = tasks::install(app);
     let app = crm::install(app);
     let app = hr::install(app);
     let app = marketing_sheet::install(app);
     let app = finance_customer::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
+    // After finance_taxes: work-order line-tax tables reference `taxes`.
+    let app = work_orders::install(app);
     let app = finance_products::install(app);
     let app = finance_invoices::install(app);
     let app = finance_indian::install(app);
@@ -46,7 +49,6 @@ async fn main() -> anyhow::Result<()> {
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
     let app = website_seed::install(app);
-    let app = meets::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

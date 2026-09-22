@@ -143,7 +143,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(WorkOrderMaterials::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderMaterials::UpdatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderMaterials::Name).text().not_null())
-                    .col(ColumnDef::new(WorkOrderMaterials::Density).double().not_null())
+                    .col(
+                        ColumnDef::new(WorkOrderMaterials::Density)
+                            .double()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -161,8 +165,14 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(WorkOrderMaterialRates::CreatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(WorkOrderMaterialRates::UpdatedAt).timestamp_with_time_zone())
+                    .col(
+                        ColumnDef::new(WorkOrderMaterialRates::CreatedAt)
+                            .timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkOrderMaterialRates::UpdatedAt)
+                            .timestamp_with_time_zone(),
+                    )
                     .col(
                         ColumnDef::new(WorkOrderMaterialRates::MaterialId)
                             .big_integer()
@@ -181,7 +191,10 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_work_order_rates_material")
-                            .from(WorkOrderMaterialRates::Table, WorkOrderMaterialRates::MaterialId)
+                            .from(
+                                WorkOrderMaterialRates::Table,
+                                WorkOrderMaterialRates::MaterialId,
+                            )
                             .to(WorkOrderMaterials::Table, WorkOrderMaterials::Id)
                             .on_delete(ForeignKeyAction::Cascade),
                     )
@@ -205,8 +218,16 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(WorkOrderShapes::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderShapes::UpdatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderShapes::Name).text().not_null())
-                    .col(ColumnDef::new(WorkOrderShapes::OpenscadCode).text().not_null())
-                    .col(ColumnDef::new(WorkOrderShapes::VariableNames).json().not_null())
+                    .col(
+                        ColumnDef::new(WorkOrderShapes::OpenscadCode)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkOrderShapes::VariableNames)
+                            .json()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -227,8 +248,16 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(WorkOrderComponents::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderComponents::UpdatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrderComponents::Name).text().not_null())
-                    .col(ColumnDef::new(WorkOrderComponents::ShapeId).big_integer().not_null())
-                    .col(ColumnDef::new(WorkOrderComponents::MaterialId).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(WorkOrderComponents::ShapeId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkOrderComponents::MaterialId)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_work_order_components_shape")
@@ -288,8 +317,17 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(WorkOrders::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrders::UpdatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(WorkOrders::OrderNumber).text().not_null())
-                    .col(ColumnDef::new(WorkOrders::CustomerId).big_integer().not_null())
-                    .col(ColumnDef::new(WorkOrders::Status).text().not_null().default("Draft"))
+                    .col(
+                        ColumnDef::new(WorkOrders::CustomerId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkOrders::Status)
+                            .text()
+                            .not_null()
+                            .default("Draft"),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -309,18 +347,59 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(DraftWorkOrderLines::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(DraftWorkOrderLines::UpdatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(DraftWorkOrderLines::DraftWorkOrderId).big_integer().not_null())
-                    .col(ColumnDef::new(DraftWorkOrderLines::ComponentId).big_integer().not_null())
-                    .col(ColumnDef::new(DraftWorkOrderLines::Variables).json().not_null().default("{}"))
-                    .col(ColumnDef::new(DraftWorkOrderLines::Quantity).decimal_len(16, 4).not_null().default(1))
-                    .col(ColumnDef::new(DraftWorkOrderLines::UnitWeight).decimal_len(16, 4).not_null().default(0))
-                    .col(ColumnDef::new(DraftWorkOrderLines::MaterialRate).decimal_len(16, 4).not_null().default(0))
-                    .col(ColumnDef::new(DraftWorkOrderLines::FinalCost).decimal_len(16, 4).not_null().default(0))
-                    .col(ColumnDef::new(DraftWorkOrderLines::ExtraData).json().not_null().default("{}"))
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::DraftWorkOrderId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::ComponentId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::Variables)
+                            .json()
+                            .not_null()
+                            .default("{}"),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::Quantity)
+                            .decimal_len(16, 4)
+                            .not_null()
+                            .default(1),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::UnitWeight)
+                            .decimal_len(16, 4)
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::MaterialRate)
+                            .decimal_len(16, 4)
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::FinalCost)
+                            .decimal_len(16, 4)
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(DraftWorkOrderLines::ExtraData)
+                            .json()
+                            .not_null()
+                            .default("{}"),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_draft_work_order_lines_draft_order")
-                            .from(DraftWorkOrderLines::Table, DraftWorkOrderLines::DraftWorkOrderId)
+                            .from(
+                                DraftWorkOrderLines::Table,
+                                DraftWorkOrderLines::DraftWorkOrderId,
+                            )
                             .to(DraftWorkOrders::Table, DraftWorkOrders::Id)
                             .on_delete(ForeignKeyAction::Cascade),
                     )
@@ -351,9 +430,21 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(KdsProformaInvoices::CreatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(KdsProformaInvoices::UpdatedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(KdsProformaInvoices::Date).date().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoices::CustomerId).big_integer().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoices::InvoiceNumber).text().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoices::WorkOrderId).big_integer().null())
+                    .col(
+                        ColumnDef::new(KdsProformaInvoices::CustomerId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoices::InvoiceNumber)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoices::WorkOrderId)
+                            .big_integer()
+                            .null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_kds_proforma_invoices_work_order")
@@ -378,12 +469,34 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::CreatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::UpdatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::InvoiceId).big_integer().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::MachineId).big_integer().null())
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::Name).text().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoiceMachineLines::TimeUsed).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::CreatedAt)
+                            .timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::UpdatedAt)
+                            .timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::InvoiceId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::MachineId)
+                            .big_integer()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::Name)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMachineLines::TimeUsed)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(KdsProformaInvoiceMachineLines::RateDecimal)
                             .decimal_len(16, 4)
@@ -416,11 +529,29 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(KdsProformaInvoiceMaterialLines::CreatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(KdsProformaInvoiceMaterialLines::UpdatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(KdsProformaInvoiceMaterialLines::InvoiceId).big_integer().not_null())
-                    .col(ColumnDef::new(KdsProformaInvoiceMaterialLines::MaterialId).big_integer().null())
-                    .col(ColumnDef::new(KdsProformaInvoiceMaterialLines::Name).text().not_null())
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMaterialLines::CreatedAt)
+                            .timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMaterialLines::UpdatedAt)
+                            .timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMaterialLines::InvoiceId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMaterialLines::MaterialId)
+                            .big_integer()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(KdsProformaInvoiceMaterialLines::Name)
+                            .text()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(KdsProformaInvoiceMaterialLines::RateDecimal)
                             .decimal_len(16, 4)
@@ -450,10 +581,18 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(KdsProformaInvoiceMaterialLines::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(KdsProformaInvoiceMaterialLines::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
-            .drop_table(Table::drop().table(KdsProformaInvoiceMachineLines::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(KdsProformaInvoiceMachineLines::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
             .drop_table(Table::drop().table(KdsProformaInvoices::Table).to_owned())
@@ -474,7 +613,11 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(WorkOrderShapes::Table).to_owned())
             .await?;
         manager
-            .drop_table(Table::drop().table(WorkOrderMaterialRates::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(WorkOrderMaterialRates::Table)
+                    .to_owned(),
+            )
             .await?;
         manager
             .drop_table(Table::drop().table(WorkOrderMaterials::Table).to_owned())

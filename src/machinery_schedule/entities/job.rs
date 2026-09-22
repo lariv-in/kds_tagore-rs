@@ -16,6 +16,10 @@ pub struct Model {
     pub progress: i16,
     pub order: i64,
     pub remarks: String,
+    /// Registry key for the originating document (empty when the job has none).
+    pub source_doc_type: String,
+    /// Instance id of the originating document (`0` when the job has none).
+    pub source_doc_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

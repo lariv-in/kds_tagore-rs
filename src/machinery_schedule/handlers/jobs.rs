@@ -5,7 +5,9 @@ use axum::{
 };
 use chrono::Utc;
 use lariv_rs::{
-    components::{DEFAULT_PAGE_SIZE, ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
+    components::{
+        DEFAULT_PAGE_SIZE, ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx, SwapKey,
+    },
     html_form::HtmlFormBody,
     http::{Cap, RouteQueryBuilder},
     plugins::{
@@ -26,7 +28,9 @@ use sea_orm::{
 use crate::machinery_schedule::{
     crumbs::jobs_tab_url,
     entities::{
-        completed_job, job::{self, Entity as JobEntity}, job_machine,
+        completed_job,
+        job::{self, Entity as JobEntity},
+        job_machine,
         machine::{self, Entity as MachineEntity},
     },
     forms::JobForm,
@@ -34,20 +38,24 @@ use crate::machinery_schedule::{
         BulkIdsForm, BulkIdsQuery, ModalNameQuery, bulk_delete_message, parse_bulk_ids,
         path_and_query,
     },
-    keys::{JobBulkDeleteModalKey, JobCreateModalKey, JobDeleteModalKey, JobEditModalKey, JobHubTableKey},
+    job_source_doc::{JobSourceDocRegistry, resolve_job_source_doc},
+    keys::{
+        JobBulkDeleteModalKey, JobCreateModalKey, JobDeleteModalKey, JobEditModalKey,
+        JobHubTableKey,
+    },
     logic::{
-        clamp_progress, complete_job_if_needed, completed_job_id_for_job, delete_open_job,
-        duplicate_job, err_if_job_completed, format_job_duration, load_job_file_ids,
-        load_job_machine_ids, move_open_job_order, next_order_after_move, open_job_orders,
-        parse_job_duration, parse_job_progress, sync_job_files, sync_job_machines, OrderMove,
+        OrderMove, clamp_progress, complete_job_if_needed, completed_job_id_for_job,
+        delete_open_job, duplicate_job, err_if_job_completed, format_job_duration,
+        load_job_file_ids, load_job_machine_ids, move_open_job_order, next_order_after_move,
+        open_job_orders, parse_job_duration, parse_job_progress, sync_job_files, sync_job_machines,
     },
     routes::{
-        CompletedJobDetailRouteTag, JobBulkDeletePostRouteTag, JobDefaultRouteTag, JobDetailRouteTag,
+        CompletedJobDetailRouteTag, JobBulkDeletePostRouteTag, JobDefaultRouteTag,
+        JobDetailRouteTag,
     },
     scope::{
         apply_completed_job_hub_sort, apply_name_filter, apply_open_job_hub_sort, find_job_scoped,
-        find_open_job,
-        scope_superuser, sql_job_not_completed,
+        find_open_job, scope_superuser, sql_job_not_completed,
     },
     state::MachineryScheduleState,
     templates::{
@@ -76,8 +84,8 @@ fn normalize_tab(tab: Option<&str>) -> &'static str {
 }
 
 fn hub_list_path(q: &HubQuery) -> String {
-    let mut builder = RouteQueryBuilder::new(JobDefaultRouteTag)
-        .query("tab", normalize_tab(q.tab.as_deref()));
+    let mut builder =
+        RouteQueryBuilder::new(JobDefaultRouteTag).query("tab", normalize_tab(q.tab.as_deref()));
     if let Some(name) = q.name.as_deref().filter(|s| !s.is_empty()) {
         builder = builder.query("Name", name);
     }
@@ -342,6 +350,7 @@ async fn job_detail_links(
 
 pub async fn detail(
     Cap(state): Cap<MachineryScheduleState>,
+    Cap(source_docs): Cap<JobSourceDocRegistry>,
     Cap(chrome): Cap<SharedChromeFolder>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
@@ -354,6 +363,13 @@ pub async fn detail(
         return Redirect::to(&CompletedJobDetailRouteTag::new(completed_id).url()).into_response();
     }
     let (machines, files) = job_detail_links(&state.db, job.id).await;
+    let source_doc = resolve_job_source_doc(
+        &state.db,
+        &source_docs,
+        &job.source_doc_type,
+        job.source_doc_id,
+    )
+    .await;
     let page = JobDetailPage {
         id: job.id,
         name: job.name,
@@ -363,6 +379,9 @@ pub async fn detail(
         remarks: job.remarks,
         machines,
         files,
+        source_doc_type: source_doc.type_label,
+        source_doc_name: source_doc.instance_name,
+        source_doc_url: source_doc.detail_url,
         can_edit: ctx.user.is_superuser,
         error: String::new(),
     };
@@ -451,6 +470,8 @@ pub async fn create_post(
         progress: Set(progress),
         order: Set(form.order),
         remarks: Set(form.remarks.trim().to_string()),
+        source_doc_type: Set(String::new()),
+        source_doc_id: Set(0),
     })
     .insert(&txn)
     .await
@@ -688,7 +709,11 @@ fn job_bulk_delete_page(ids: &[i64], error: String) -> ConfirmBulkDeletePage {
         } else {
             bulk_delete_message("jobs", ids.len())
         },
-        ids: ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(","),
+        ids: ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
         post_url: JobBulkDeletePostRouteTag.url(),
         error: if ids.is_empty() && error.is_empty() {
             "No jobs selected.".into()

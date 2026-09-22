@@ -9,22 +9,22 @@ path = "src/main.rs"
 
 [dependencies]
 lariv-rs = { version = "0.1.0",
-	path = "../../lariv-rs",
-	# git = "https://github.com/lariv-in/lariv-rs", rev = "8d8927e66ccf99a4658cd8a3371bed2e16b7275f",
+	# path = "../../lariv-rs",
+	git = "https://github.com/lariv-in/lariv-rs", rev = "32b62748444c9b81e0dcb4e414a52d4c3f32a33d",
 	default-features = false, features = [
 		"plugin-users",
 		"plugin-dashboard",
 		"plugin-filesystem",
 		"plugin-website",
 		"plugin-crm",
+		"plugin-tasks",
 		"plugin-finance",
 		"plugin-forms",
 		"plugin-hr",
 		"plugin-llm-assistant",
-		"plugin-meets",
 ] }
 tokio = { version = "1", features = ["full"] }
-anyhow = { version = "1", features = ["backtrace"] }
+anyhow = "1"
 async-trait = "0.1"
 frunk = { version = "0.5.0", features = ["serde", "std"] }
 frunk_core = "0.5.0"
@@ -36,24 +36,24 @@ maud = { version = "0.27", features = ["axum"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rust_decimal = { version = "1", features = ["serde-with-str", "maths"] }
-sea-orm = { version = "1.1", features = [
-	"runtime-tokio-rustls",
+sea-orm = { version = "2.0", features = [
 	"sqlx-postgres",
 	"sqlx-sqlite",
+	"runtime-tokio-rustls",
 	"macros",
 	"with-chrono",
+	"with-json",
 	"with-rust_decimal",
 ] }
-sea-orm-migration = { version = "1.1", features = [
+sea-orm-migration = { version = "2.0", features = [
 	"sqlx-postgres",
 	"sqlx-sqlite",
 	"runtime-tokio-rustls",
-	"with-rust_decimal",
 ] }
-calamine = "0.26"
-rust_xlsxwriter = "0.79"
-stl_io = "0.11"
+calamine = "0.36"
+rust_xlsxwriter = "0.99"
 uuid = { version = "1", features = ["v4"] }
+rune = "0.14"
 thiserror = "2"
 minijinja = { version = "2", features = ["loader"] }
 num2words = "1"

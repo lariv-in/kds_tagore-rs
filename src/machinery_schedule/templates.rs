@@ -2,18 +2,19 @@ use frunk::Generic;
 use lariv_rs::{
     components::{
         ButtonClear, ButtonLink, ButtonModalForm, ButtonSubmit, DeleteConfirmation, DetailHeader,
-        FieldDuration, FieldManyToMany, FieldText, FormOpts, HTMX_SWAP_BODY_MODAL,
+        FieldDuration, FieldLink, FieldManyToMany, FieldText, FormOpts, HTMX_SWAP_BODY_MODAL,
         HTMX_TARGET_BODY_MODAL, HtmlAttrs, LayoutMain, LayoutSidebar, ManyToManyItem, ObjectList,
         PaginationPage, ShellChrome, ShellScaffold, SidebarMenu, SidebarMenuItem, SlotCapability,
         SlotRegistrar, SwapKey, TableButtonFilter, TableColumnHeader, TablePagination, TableRow,
         button_clear, button_link, button_modal_form, button_submit, column_sort_url,
         container_column, container_error, container_row, data_table_list_refresh,
-        delete_confirmation, detail, detail_header, field_duration, field_many_to_many, field_text,
-        form, form_hx_get_picker_route, form_hx_get_route, form_hx_post_selector, form_hx_post_url,
-        icon, label, layout_main, layout_sidebar, modal, modal_keyed, pagination_pages,
-        row_attr_navigate, row_attr_navigate_route, row_attr_select, row_attr_select_multi,
-        shell_scaffold, sidebar_menu, sidebar_menu_item_pane, sort_indicator, table_button_filter,
-        table_create_button, table_pagination, table_pagination_picker,
+        delete_confirmation, detail, detail_header, field_duration, field_link, field_many_to_many,
+        field_text, form, form_hx_get_picker_route, form_hx_get_route, form_hx_post_selector,
+        form_hx_post_url, icon, label, layout_main, layout_sidebar, modal, modal_keyed,
+        pagination_pages, row_attr_navigate, row_attr_navigate_route, row_attr_select_extra,
+        row_attr_select_multi, shell_scaffold, sidebar_menu, sidebar_menu_item_pane,
+        sort_indicator, table_button_filter, table_create_button, table_pagination,
+        table_pagination_picker,
     },
     html_form::{CsrfToken, FormCtx, HtmlForm},
     http::{ProvideRequestCaps, RouteQueryBuilder, RouteUrl},
@@ -40,11 +41,11 @@ use super::keys::{
 use super::routes::{
     CompletedJobBulkDeleteGetRouteTag, CompletedJobBulkNewJobPostRouteTag,
     CompletedJobDeleteGetRouteTag, CompletedJobNewJobPostRouteTag, JobBulkDeleteGetRouteTag,
-    JobBulkDuplicatePostRouteTag,     JobCreatePostRouteTag, JobDefaultRouteTag, JobDeleteGetRouteTag,
+    JobBulkDuplicatePostRouteTag, JobCreatePostRouteTag, JobDefaultRouteTag, JobDeleteGetRouteTag,
     JobDetailRouteTag, JobDuplicatePostRouteTag, JobEditGetRouteTag, JobEditPostRouteTag,
-    JobMoveDownPostRouteTag, JobMoveUpPostRouteTag,
-    MachineCreatePostRouteTag, MachineDefaultRouteTag, MachineDeleteGetRouteTag,
-    MachineDetailRouteTag, MachineEditGetRouteTag, MachineEditPostRouteTag, MachineFkSelectRouteTag,
+    JobMoveDownPostRouteTag, JobMoveUpPostRouteTag, MachineCreatePostRouteTag,
+    MachineDefaultRouteTag, MachineDeleteGetRouteTag, MachineDetailRouteTag,
+    MachineEditGetRouteTag, MachineEditPostRouteTag, MachineFkSelectRouteTag,
 };
 
 fn app_scaffold(
@@ -433,7 +434,12 @@ impl JobHubPage {
                     "btn-ghost text-error",
                     "requestBulkDelete",
                 ));
-                items.push_str(&bulk_menu_item(sel, "New Job", "btn-ghost", "requestBulkNewJob"));
+                items.push_str(&bulk_menu_item(
+                    sel,
+                    "New Job",
+                    "btn-ghost",
+                    "requestBulkNewJob",
+                ));
             }
             _ => {
                 items.push_str(&bulk_menu_item(
@@ -557,7 +563,12 @@ impl JobHubPage {
             .iter()
             .map(|j| format!("{}%", j.progress))
             .collect();
-        let order_labels: Vec<String> = self.jobs.items.iter().map(|j| j.order.to_string()).collect();
+        let order_labels: Vec<String> = self
+            .jobs
+            .items
+            .iter()
+            .map(|j| j.order.to_string())
+            .collect();
         let machine_labels: Vec<String> = self
             .jobs
             .items
@@ -740,6 +751,9 @@ fn job_fields(
     remarks: &str,
     machines: &[(i64, String)],
     files: &[(i64, String)],
+    source_doc_type: &str,
+    source_doc_name: &str,
+    source_doc_url: &str,
 ) -> Markup {
     let machine_hrefs: Vec<String> = machines
         .iter()
@@ -753,6 +767,21 @@ fn job_fields(
     let file_items = related_items(files, &file_hrefs);
     let order_label = order.to_string();
     html! {
+        @if !source_doc_name.is_empty() && source_doc_name != "—" {
+            (label("Source document type", field_text(FieldText { value: source_doc_type, classes: "" })))
+            (label(
+                "Source document",
+                if source_doc_url.is_empty() {
+                    field_text(FieldText { value: source_doc_name, classes: "" })
+                } else {
+                    field_link(FieldLink {
+                        href: source_doc_url,
+                        label: source_doc_name,
+                        classes: "",
+                    })
+                },
+            ))
+        }
         (label("Duration", field_duration(FieldDuration {
             value: duration,
             classes: "",
@@ -787,6 +816,9 @@ pub struct JobDetailPage {
     pub remarks: String,
     pub machines: Vec<(i64, String)>,
     pub files: Vec<(i64, String)>,
+    pub source_doc_type: String,
+    pub source_doc_name: String,
+    pub source_doc_url: String,
     pub can_edit: bool,
     pub error: String,
 }
@@ -830,6 +862,9 @@ impl JobDetailPage {
                         &self.remarks,
                         &self.machines,
                         &self.files,
+                        &self.source_doc_type,
+                        &self.source_doc_name,
+                        &self.source_doc_url,
                     ))
                 }))
             }))
@@ -923,6 +958,9 @@ pub struct CompletedJobDetailPage {
     pub completed_at: String,
     pub machines: Vec<(i64, String)>,
     pub files: Vec<(i64, String)>,
+    pub source_doc_type: String,
+    pub source_doc_name: String,
+    pub source_doc_url: String,
     pub can_edit: bool,
 }
 
@@ -965,6 +1003,9 @@ impl CompletedJobDetailPage {
                         &self.remarks,
                         &self.machines,
                         &self.files,
+                        &self.source_doc_type,
+                        &self.source_doc_name,
+                        &self.source_doc_url,
                     ))
                 }))
             }))
@@ -1113,6 +1154,9 @@ impl RenderTemplate for JobEditModalPage {
 pub struct MachineRow {
     pub id: i64,
     pub name: String,
+    pub formula_label: String,
+    pub variables_json: String,
+    pub cost_formula: String,
 }
 
 #[derive(Generic)]
@@ -1143,8 +1187,19 @@ impl MachineListPage {
                 sort_url: Some(&name_sort),
                 push_url: true,
             },
+            TableColumnHeader {
+                key: "Formula",
+                label: "Formula",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let id_labels: Vec<String> = self.machines.items.iter().map(|m| m.id.to_string()).collect();
+        let id_labels: Vec<String> = self
+            .machines
+            .items
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect();
         let rows: Vec<TableRow> = self
             .machines
             .items
@@ -1160,6 +1215,10 @@ impl MachineListPage {
                     field_text(FieldText {
                         value: &m.name,
                         classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.formula_label,
+                        classes: "font-mono text-xs",
                     }),
                 ],
             })
@@ -1245,6 +1304,8 @@ pub struct MachineJobRow {
 pub struct MachineDetailPage {
     pub id: i64,
     pub name: String,
+    pub formula_label: String,
+    pub variables_label: String,
     pub can_edit: bool,
     pub jobs: Vec<MachineJobRow>,
     pub free_on: String,
@@ -1366,6 +1427,14 @@ impl MachineDetailPage {
                         title: &self.name,
                         actions,
                     }))
+                    (label("Formula", field_text(FieldText {
+                        value: &self.formula_label,
+                        classes: "font-mono font-semibold",
+                    })))
+                    (label("Variables", field_text(FieldText {
+                        value: if self.variables_label.is_empty() { "—" } else { &self.variables_label },
+                        classes: "font-mono text-sm",
+                    })))
                     (label("Free on", field_text(FieldText {
                         value: &self.free_on,
                         classes: "",
@@ -1410,6 +1479,8 @@ pub struct MachineCreateModalPage {
     pub refresh_table: String,
     pub target_input: String,
     pub name: String,
+    pub cost_formula: String,
+    pub variables: Vec<String>,
     pub error: String,
 }
 
@@ -1428,7 +1499,10 @@ impl RenderTemplate for MachineCreateModalPage {
                     )),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: MachineForm::render_inputs(
-                        &FormCtx::form::<MachineForm>(CsrfToken::current()).value(MachineFormField::Name, &self.name),
+                        &FormCtx::form::<MachineForm>(CsrfToken::current())
+                            .value(MachineFormField::Name, &self.name)
+                            .value(MachineFormField::CostFormula, &self.cost_formula)
+                            .list(MachineFormField::Variables, &self.variables),
                     ),
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Create machine", ..Default::default() }))
@@ -1445,6 +1519,8 @@ pub struct MachineEditModalPage {
     pub id: i64,
     pub form_name: String,
     pub name: String,
+    pub cost_formula: String,
+    pub variables: Vec<String>,
     pub error: String,
 }
 
@@ -1462,7 +1538,10 @@ impl RenderTemplate for MachineEditModalPage {
                     )),
                     form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                     inputs: MachineForm::render_inputs(
-                        &FormCtx::form::<MachineForm>(CsrfToken::current()).value(MachineFormField::Name, &self.name),
+                        &FormCtx::form::<MachineForm>(CsrfToken::current())
+                            .value(MachineFormField::Name, &self.name)
+                            .value(MachineFormField::CostFormula, &self.cost_formula)
+                            .list(MachineFormField::Variables, &self.variables),
                     ),
                     actions: html! {
                         (button_submit(ButtonSubmit { label: "Save", ..Default::default() }))
@@ -1514,8 +1593,19 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                 sort_url: Some(&name_sort),
                 push_url: false,
             },
+            TableColumnHeader {
+                key: "Formula",
+                label: "Formula",
+                sort_url: None,
+                push_url: false,
+            },
         ];
-        let id_labels: Vec<String> = self.machines.items.iter().map(|m| m.id.to_string()).collect();
+        let id_labels: Vec<String> = self
+            .machines
+            .items
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect();
         let rows: Vec<TableRow> = self
             .machines
             .items
@@ -1525,7 +1615,15 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                 attrs: if self.multi {
                     row_attr_select_multi(&self.target_input, &m.id.to_string(), &m.name)
                 } else {
-                    row_attr_select(&self.target_input, &m.id.to_string(), &m.name)
+                    row_attr_select_extra(
+                        &self.target_input,
+                        &m.id.to_string(),
+                        &m.name,
+                        &[
+                            ("variables", m.variables_json.as_str()),
+                            ("cost_formula", m.cost_formula.as_str()),
+                        ],
+                    )
                 },
                 cells: vec![
                     field_text(FieldText {
@@ -1535,6 +1633,10 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                     field_text(FieldText {
                         value: &m.name,
                         classes: "",
+                    }),
+                    field_text(FieldText {
+                        value: &m.formula_label,
+                        classes: "font-mono",
                     }),
                 ],
             })

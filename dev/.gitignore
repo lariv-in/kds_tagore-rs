@@ -1,0 +1,3 @@
+certs/
+lariv.sock
+# moq-auth.jwk lives under certs/ (gitignored with the directory)

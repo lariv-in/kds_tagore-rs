@@ -10,7 +10,7 @@ use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, users, website,
+    llm_assistant, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -49,16 +49,17 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = filesystem::install(app);
                 let app = llm_assistant::install(app);
                 let app = machinery_schedule::install(app);
-                let app = work_orders::install(app);
                 let app = finance_accounts::install(app);
                 let app = customer::install(app);
                 let app = contacts::install(app);
+                let app = tasks::install(app);
                 let app = crm::install(app);
                 let app = hr::install(app);
                 let app = marketing_sheet::install(app);
                 let app = finance_customer::install(app);
                 let app = finance_creditnotes::install(app);
                 let app = finance_taxes::install(app);
+                let app = work_orders::install(app);
                 let app = finance_products::install(app);
                 let app = finance_invoices::install(app);
                 let app = finance_indian::install(app);
@@ -77,12 +78,35 @@ fn kds_tagore_registers_forms_app_tile() {
                     keys.iter().any(|k| *k == "p_forms"),
                     "expected Forms tile in apps catalog, got: {keys:?}"
                 );
+                assert!(
+                    keys.iter().any(|k| *k == "p_tasks"),
+                    "expected Tasks tile in apps catalog, got: {keys:?}"
+                );
 
                 let visible = catalog.visible_apps("superuser", true, true);
                 let visible_keys: Vec<_> = visible.iter().map(|t| t.key.as_str()).collect();
                 assert!(
                     visible_keys.iter().any(|k| *k == "p_forms"),
                     "expected Forms tile visible to superuser, got: {visible_keys:?}"
+                );
+                assert!(
+                    visible_keys.iter().any(|k| *k == "p_tasks"),
+                    "expected Tasks tile visible to superuser, got: {visible_keys:?}"
+                );
+                assert!(
+                    keys.iter().any(|k| *k == "kds_tagore-quotations"),
+                    "expected KDS Quotations tile in apps catalog, got: {keys:?}"
+                );
+                let quotations = catalog
+                    .apps()
+                    .iter()
+                    .find(|t| t.key == "kds_tagore-quotations")
+                    .expect("KDS Quotations tile");
+                assert_eq!(quotations.verbose_name, "KDS Quotations");
+                assert_eq!(
+                    quotations.href.trim_end_matches('/'),
+                    "/work-orders",
+                    "KDS Quotations tile should open the quotation list"
                 );
             });
         })

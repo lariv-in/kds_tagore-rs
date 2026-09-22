@@ -153,10 +153,7 @@ pub async fn import_post(
     }
 }
 
-pub async fn export_post(
-    Cap(crm): Cap<CrmState>,
-    RequireStaff(ctx): RequireStaff,
-) -> Response {
+pub async fn export_post(Cap(crm): Cap<CrmState>, RequireStaff(ctx): RequireStaff) -> Response {
     if !ctx.user.is_superuser {
         return RedirectForbidden.into_response();
     }

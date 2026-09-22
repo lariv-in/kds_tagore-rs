@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
         let backend = db.get_database_backend();
 
         if backend == DbBackend::Postgres {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_machine_lines (
@@ -27,13 +27,13 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE INDEX IF NOT EXISTS idx_draft_work_order_machine_lines_wo ON draft_work_order_machine_lines (draft_work_order_id);".to_string(),
             ))
             .await?;
         } else if backend == DbBackend::Sqlite {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_machine_lines (
@@ -49,7 +49,7 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE INDEX IF NOT EXISTS idx_draft_work_order_machine_lines_wo ON draft_work_order_machine_lines (draft_work_order_id);".to_string(),
             ))
@@ -63,7 +63,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         let backend = db.get_database_backend();
 
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "DROP TABLE IF EXISTS draft_work_order_machine_lines;".to_string(),
         ))

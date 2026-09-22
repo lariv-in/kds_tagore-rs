@@ -3,6 +3,8 @@ use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::machinery_schedule::duration::JobDuration;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "draft_work_orders")]
 pub struct Model {
@@ -12,6 +14,8 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
     pub order_number: String,
     pub customer_id: i64,
+    pub quotation_id: Option<i64>,
+    pub duration: JobDuration,
 }
 
 impl Model {
@@ -26,7 +30,11 @@ impl Model {
         lines: &[super::draft_work_order_material_line::Model],
         machine_lines: &[super::draft_work_order_machine_line::Model],
     ) -> Decimal {
-        self.total_amount(lines) + machine_lines.iter().map(|l| l.line_total()).sum::<Decimal>()
+        self.total_amount(lines)
+            + machine_lines
+                .iter()
+                .map(|l| l.line_total())
+                .sum::<Decimal>()
     }
 }
 
@@ -43,8 +51,13 @@ pub enum Relation {
     Lines,
     #[sea_orm(has_many = "super::draft_work_order_machine_line::Entity")]
     MachineLines,
-    #[sea_orm(has_many = "super::proforma_invoice::Entity")]
-    ProformaInvoices,
+    #[sea_orm(
+        belongs_to = "super::quotation::Entity",
+        from = "Column::QuotationId",
+        to = "super::quotation::Column::Id",
+        on_delete = "SetNull"
+    )]
+    Quotation,
 }
 
 impl Related<lariv_rs::plugins::customer::entities::customer::Entity> for Entity {
@@ -65,9 +78,9 @@ impl Related<super::draft_work_order_machine_line::Entity> for Entity {
     }
 }
 
-impl Related<super::proforma_invoice::Entity> for Entity {
+impl Related<super::quotation::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ProformaInvoices.def()
+        Relation::Quotation.def()
     }
 }
 

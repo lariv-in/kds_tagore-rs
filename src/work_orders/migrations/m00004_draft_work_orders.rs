@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
         let backend = db.get_database_backend();
 
         if backend == DbBackend::Postgres {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 DO $$
@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_orders (
@@ -35,29 +35,30 @@ impl MigrationTrait for Migration {
                     order_number text NOT NULL,
                     customer_id bigint NOT NULL
                 );
-                "#.to_string(),
+                "#
+                .to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS component_id;".to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS quantity;".to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "ALTER TABLE draft_work_orders DROP COLUMN IF EXISTS variables;".to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_lines (
@@ -77,20 +78,21 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
-                "CREATE OR REPLACE VIEW draft_work_proposals AS SELECT * FROM draft_work_orders;".to_string(),
+                "CREATE OR REPLACE VIEW draft_work_proposals AS SELECT * FROM draft_work_orders;"
+                    .to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "CREATE OR REPLACE VIEW draft_work_proposal_lines AS SELECT * FROM draft_work_order_lines;".to_string(),
             ))
             .await?;
         } else {
             // SQLite or other backends
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_orders (
@@ -100,11 +102,12 @@ impl MigrationTrait for Migration {
                     order_number TEXT NOT NULL,
                     customer_id INTEGER NOT NULL
                 );
-                "#.to_string(),
+                "#
+                .to_string(),
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE TABLE IF NOT EXISTS draft_work_order_lines (
@@ -124,14 +127,15 @@ impl MigrationTrait for Migration {
             ))
             .await?;
 
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE VIEW IF NOT EXISTS draft_work_proposals AS SELECT * FROM draft_work_orders;
-                "#.to_string(),
+                "#
+                .to_string(),
             ))
             .await?;
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 r#"
                 CREATE VIEW IF NOT EXISTS draft_work_proposal_lines AS SELECT * FROM draft_work_order_lines;
@@ -146,22 +150,22 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         let backend = db.get_database_backend();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "DROP VIEW IF EXISTS draft_work_proposal_lines;".to_string(),
         ))
         .await?;
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "DROP VIEW IF EXISTS draft_work_proposals;".to_string(),
         ))
         .await?;
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "DROP TABLE IF EXISTS draft_work_order_lines;".to_string(),
         ))
         .await?;
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "DROP TABLE IF EXISTS draft_work_orders;".to_string(),
         ))

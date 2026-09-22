@@ -7,6 +7,7 @@ pub mod duration;
 pub mod entities;
 pub mod forms;
 pub mod handlers;
+pub mod job_source_doc;
 pub mod keys;
 pub mod logic;
 pub mod migrations;
@@ -14,6 +15,11 @@ pub mod routes;
 pub mod scope;
 pub mod state;
 pub mod templates;
+
+pub use job_source_doc::{
+    JobSourceDocCap, JobSourceDocDisplay, JobSourceDocInstance, JobSourceDocRegistrar,
+    JobSourceDocRegistry, JobSourceDocTag, JobSourceDocType, resolve_job_source_doc,
+};
 
 use frunk::{HCons, hlist::HList};
 use lariv_rs::{
@@ -43,6 +49,8 @@ define_plugin_install! {
     plugin: MachineryScheduleTag;
     /// Register Machinery Schedule migrations, routes, templates, and dashboard tile.
     steps: [
+        cap_attach(job_source_doc::JobSourceDocTag, job_source_doc::JobSourceDocCap, job_source_doc::JobSourceDocCap::<frunk::HNil>::new()),
+        cap_hook(job_source_doc::JobSourceDocTag, job_source_doc::JobSourceDocCap, job_source_doc::BaseHook),
         apps(apps::Hook),
         migrations(migrations::Hook),
         templates(templates::Hook),

@@ -14,9 +14,7 @@ use maud::{Markup, html};
 
 use super::forms::ImportForm;
 use super::import::ImportReport;
-use super::routes::{
-    MarketingSheetExportRouteTag, MarketingSheetImportRouteTag,
-};
+use super::routes::{MarketingSheetExportRouteTag, MarketingSheetImportRouteTag};
 use super::xlsx::{SheetRow, discussion_header};
 
 lariv_rs::define_register_items! {

@@ -15,9 +15,11 @@ use crate::machinery_schedule::{
     crumbs::jobs_tab_url,
     entities::job::Entity as JobEntity,
     handlers::{
-        BulkIdsForm, BulkIdsQuery, ModalNameQuery, bulk_delete_message, parse_bulk_ids,
+        BulkIdsForm, BulkIdsQuery, ModalNameQuery, bulk_delete_message,
         jobs::{file_items_from_ids, machine_items_from_ids, respond_duplicated_job_modal},
+        parse_bulk_ids,
     },
+    job_source_doc::{JobSourceDocRegistry, resolve_job_source_doc},
     keys::{CompletedJobBulkDeleteModalKey, CompletedJobDeleteModalKey},
     logic::{
         delete_completed_job, duplicate_job, format_job_duration, load_job_file_ids,
@@ -34,6 +36,7 @@ use crate::machinery_schedule::{
 
 async fn completed_detail_page(
     state: &MachineryScheduleState,
+    source_docs: &JobSourceDocRegistry,
     ctx: &lariv_rs::plugins::users::state::AuthContext,
     completed_id: i64,
 ) -> Option<CompletedJobDetailPage> {
@@ -55,6 +58,13 @@ async fn completed_detail_page(
         .into_iter()
         .filter_map(|item| item.key.parse().ok().map(|id| (id, item.value)))
         .collect();
+    let source_doc = resolve_job_source_doc(
+        &state.db,
+        source_docs,
+        &job.source_doc_type,
+        job.source_doc_id,
+    )
+    .await;
     Some(CompletedJobDetailPage {
         id: completed.id,
         name: job.name,
@@ -65,18 +75,22 @@ async fn completed_detail_page(
         completed_at: ctx.format_datetime(completed.completed_at).into_string(),
         machines,
         files,
+        source_doc_type: source_doc.type_label,
+        source_doc_name: source_doc.instance_name,
+        source_doc_url: source_doc.detail_url,
         can_edit: ctx.user.is_superuser,
     })
 }
 
 pub async fn detail(
     Cap(state): Cap<MachineryScheduleState>,
+    Cap(source_docs): Cap<JobSourceDocRegistry>,
     Cap(chrome): Cap<SharedChromeFolder>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     Path(id): Path<i64>,
 ) -> Response {
-    let Some(page) = completed_detail_page(&state, &ctx, id).await else {
+    let Some(page) = completed_detail_page(&state, &source_docs, &ctx, id).await else {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     };
     html_built_page_or_app_layout(&page, &htmx, &chrome, &SlotCtx::from_auth(&ctx)).into_response()

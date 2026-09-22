@@ -1,9 +1,9 @@
 {# Minijinja template: the rendered output must be valid Typst markup.
    Context (PascalCase) for a draft work order PDF:
-     ID, OrderNumber, CustomerId, CreatedAt,
+     ID, OrderNumber, CustomerId, CreatedAt, Duration,
      Customer { ID, Name, Address, GSTIN, PAN, Phone, Email, Website },
-     MaterialLines [ { ID, ComponentId, Component, VariablesDisplay, Quantity, UnitWeight, MaterialRate, FinalCost } ],
-     MachineLines  [ { ID, MachineId, Machine, TimeUsedHours, Rate, LineTotal } ],
+     MaterialLines [ { ID, ComponentId, Component, VariablesDisplay, Taxes, PreTax, FinalCost } ],
+     MachineLines  [ { ID, MachineId, Machine, VariablesDisplay, Taxes, PreTax, LineTotal } ],
      TotalAmount (string).
    Functions: num2words, num2wordsAnd, num2wordsRupees, totalAmountWords. #}
 #set page(paper: "a4", margin: 1.2cm)
@@ -35,22 +35,15 @@
 
 #let inr(n) = [₹ #fmt-num(n)]
 
-#let fmt-qty(q) = {
-  let s = str(q)
-  if not s.contains(".") { s + ".00" }
-  else if s.split(".").at(1).len() == 1 { s + "0" }
-  else { s }
-}
-
 #let material-lines = (
 {% for line in MaterialLines %}
-  (component: [{{ line.Component }}], vars: [{{ line.VariablesDisplay }}], qty: float(str({{ line.Quantity }})), weight: float(str({{ line.UnitWeight }})), rate: float(str({{ line.MaterialRate }})), amount: float(str({{ line.FinalCost }}))),
+  (component: [{{ line.Component }}], vars: [{{ line.VariablesDisplay }}], taxes: [{{ line.Taxes }}], pretax: float(str({{ line.PreTax }})), amount: float(str({{ line.FinalCost }}))),
 {% endfor %}
 )
 
 #let machine-lines = (
 {% for line in MachineLines %}
-  (machine: [{{ line.Machine }}], hours: float(str({{ line.TimeUsedHours }})), rate: float(str({{ line.Rate }})), amount: float(str({{ line.LineTotal }}))),
+  (machine: [{{ line.Machine }}], vars: [{{ line.VariablesDisplay }}], taxes: [{{ line.Taxes }}], pretax: float(str({{ line.PreTax }})), amount: float(str({{ line.LineTotal }}))),
 {% endfor %}
 )
 
@@ -73,6 +66,7 @@
   [
     *Order No.:* {% if OrderNumber %}{{ OrderNumber }}{% else %}Draft \#{{ ID }}{% endif %} \
     *Date:* {{ CreatedAt }} \
+    *Duration:* {{ Duration }} \
     *Customer ID:* {{ CustomerId }}
   ],
 )
@@ -83,16 +77,15 @@
 *Material Lines*
 
 #table(
-  columns: (0.4fr, 1.6fr, 1.8fr, 0.9fr, 0.9fr, 0.8fr, 1fr),
-  align: (center, left, left, right, right, right, right),
-  [*Sl*], [*Component*], [*Dimensions*], [*Weight (kg)*], [*Rate (₹/kg)*], [*Qty*], [*Amount*],
+  columns: (0.35fr, 1.4fr, 1.8fr, 1fr, 0.9fr, 0.95fr),
+  align: (center, left, left, left, right, right),
+  [*Sl*], [*Component*], [*Variables*], [*Taxes*], [*Pre-tax*], [*Amount*],
   ..material-lines.enumerate().map(((i, ln)) => (
     str(i + 1),
     ln.component,
     ln.vars,
-    fmt-qty(ln.weight),
-    fmt-num(ln.rate),
-    fmt-qty(ln.qty),
+    ln.taxes,
+    inr(ln.pretax),
     inr(ln.amount),
   )).flatten(),
 )
@@ -103,14 +96,15 @@
 *Machine Lines*
 
 #table(
-  columns: (0.4fr, 2.4fr, 1.2fr, 1.2fr, 1.2fr),
-  align: (center, left, right, right, right),
-  [*Sl*], [*Machine*], [*Hours*], [*Rate (₹/hr)*], [*Amount*],
+  columns: (0.35fr, 1.6fr, 1.8fr, 1fr, 0.9fr, 0.95fr),
+  align: (center, left, left, left, right, right),
+  [*Sl*], [*Machine*], [*Variables*], [*Taxes*], [*Pre-tax*], [*Amount*],
   ..machine-lines.enumerate().map(((i, ln)) => (
     str(i + 1),
     ln.machine,
-    fmt-qty(ln.hours),
-    fmt-num(ln.rate),
+    ln.vars,
+    ln.taxes,
+    inr(ln.pretax),
     inr(ln.amount),
   )).flatten(),
 )

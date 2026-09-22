@@ -1,0 +1,22 @@
+# Local HTTPS front door for kds-tagore-rs pages.
+#
+#   https://:42071 (0.0.0.0) -> Lariv HTTP (unix socket)
+#
+# MoQ media does NOT go through Caddy.
+# Browsers connect directly to the embedded moq-relay on :4433 (see config.toml publicUrl).
+#
+# Requires dev/certs/ from ./setup-certs.sh
+
+{
+	auto_https disable_redirects
+}
+
+https://:42071 {
+	tls {$DEV_CERT_DIR}/cert.pem {$DEV_CERT_DIR}/key.pem
+
+	reverse_proxy unix//{$LARIV_SOCK} {
+		transport http {
+			versions 1.1
+		}
+	}
+}

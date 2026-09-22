@@ -1,164 +1,100 @@
-//! Seeding of built-in standard shapes, common manufacturing stock materials, and machines.
+//! Seeding of example components and machines with Rune cost formulas.
 
 use chrono::Utc;
-use rust_decimal::Decimal;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, PaginatorTrait, Set};
 
-use super::entities::{component, machine, material, material_rate, shape};
-use super::geometry::PrimitiveKind;
+use super::entities::component;
+use crate::formula::{VariableType, schema_to_json};
+use crate::machinery_schedule::entities::machine;
 
-/// Ensures standard shapes, materials, rates, and machines exist in the database.
-/// Idempotent: only inserts if tables are empty.
+fn ms_flat_schema() -> serde_json::Value {
+    let mut map = std::collections::HashMap::new();
+    map.insert("length".into(), VariableType::Length);
+    map.insert("qty".into(), VariableType::Quantity);
+    schema_to_json(&map)
+}
+
+fn ss_rod_schema() -> serde_json::Value {
+    let mut map = std::collections::HashMap::new();
+    map.insert("length".into(), VariableType::Length);
+    map.insert("qty".into(), VariableType::Quantity);
+    schema_to_json(&map)
+}
+
+fn machine_schema() -> serde_json::Value {
+    let mut map = std::collections::HashMap::new();
+    map.insert("duration".into(), VariableType::Duration);
+    schema_to_json(&map)
+}
+
+/// Idempotent: inserts example components and machines if those tables are empty.
 pub async fn ensure_standard_seeds<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
-    ensure_standard_bases(db).await?;
+    ensure_standard_machines(db).await?;
     ensure_standard_components(db).await
 }
 
-/// Ensures standard shapes, materials/rates, and machines exist in the database.
-/// Does NOT seed components (which require the `fixed_variables` column on
-/// `work_order_components`). Idempotent: only inserts if tables are empty.
-pub async fn ensure_standard_bases<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
-    // 1. Seed standard shapes
-    let shape_count = shape::Entity::find().count(db).await.unwrap_or(0);
-    if shape_count == 0 {
-        let now = Utc::now();
-        for kind in PrimitiveKind::all() {
-            let var_names: Vec<String> = kind
-                .required_variables()
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            let active = shape::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                name: Set(kind.display_name().to_string()),
-                openscad_code: Set(kind.default_openscad_code().to_string()),
-                variable_names: Set(serde_json::to_value(&var_names).unwrap_or_default()),
-            };
-            let _ = active.insert(db).await?;
-        }
-    }
-
-    // 2. Seed standard materials and their rates
-    let mat_count = material::Entity::find().count(db).await.unwrap_or(0);
-    if mat_count == 0 {
-        let now = Utc::now();
-        let materials = [
-            ("Mild Steel (MS)", 7850.0, Decimal::new(8500, 2)),          // ₹85.00/kg
-            ("Stainless Steel 304 (SS 304)", 7930.0, Decimal::new(38000, 2)), // ₹380.00/kg
-            ("Aluminum 6061-T6", 2700.0, Decimal::new(29000, 2)),       // ₹290.00/kg
-            ("Brass (CuZn39Pb3)", 8500.0, Decimal::new(52000, 2)),       // ₹520.00/kg
-        ];
-
-        for (name, density, rate) in materials {
-            let active_mat = material::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                name: Set(name.to_string()),
-                density: Set(density),
-            };
-            if let Ok(inserted) = active_mat.insert(db).await {
-                let active_rate = material_rate::ActiveModel {
-                    id: Default::default(),
-                    created_at: Set(Some(now)),
-                    updated_at: Set(Some(now)),
-                    material_id: Set(inserted.id),
-                    rate_decimal: Set(rate),
-                    datetime: Set(now),
-                };
-                let _ = active_rate.insert(db).await;
-            }
-        }
-    }
-
-    // 3. Seed standard machines
-    let machine_count = machine::Entity::find().count(db).await.unwrap_or(0);
-    if machine_count == 0 {
-        let now = Utc::now();
-        let machines = [
-            ("CNC Turning Center (Lathe)", Decimal::new(95000, 2)), // ₹950.00/hr
-            ("VMC 3-Axis Milling Center", Decimal::new(125000, 2)), // ₹1250.00/hr
-            ("Surface Grinding Machine", Decimal::new(55000, 2)),   // ₹550.00/hr
-            ("Heavy-Duty Band Saw", Decimal::new(35000, 2)),        // ₹350.00/hr
-        ];
-
-        for (name, rate) in machines {
-            let active_machine = machine::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                name: Set(name.to_string()),
-                rate_decimal: Set(rate),
-            };
-            let _ = active_machine.insert(db).await;
-        }
-    }
-
+/// Kept for historical migration call sites; seeding now happens in later migrations.
+pub async fn ensure_standard_bases<C: ConnectionTrait>(_db: &C) -> Result<(), sea_orm::DbErr> {
     Ok(())
 }
 
-/// Ensures standard components with fixed stock dimensions in mm exist.
-/// Requires the `fixed_variables` column on `work_order_components`,
-/// so it must run after `m00003_component_fixed_variables`.
-/// Idempotent: only inserts if the table is empty.
+pub async fn ensure_standard_machines<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
+    let machine_count = machine::Entity::find().count(db).await.unwrap_or(0);
+    if machine_count == 0 {
+        let now = Utc::now();
+        let schema = machine_schema();
+        let machines = [
+            ("CNC Turning Center (Lathe)", "duration / 3600 * 950"),
+            ("VMC 3-Axis Milling Center", "duration / 3600 * 1250"),
+            ("Surface Grinding Machine", "duration / 3600 * 550"),
+            ("Heavy-Duty Band Saw", "duration / 3600 * 350"),
+        ];
+        for (name, formula) in machines {
+            let active = machine::ActiveModel {
+                id: Default::default(),
+                created_at: Set(Some(now)),
+                updated_at: Set(Some(now)),
+                name: Set(name.to_string()),
+                cost_formula: Set(formula.to_string()),
+                variables: Set(schema.clone()),
+            };
+            active.insert(db).await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn ensure_standard_components<C: ConnectionTrait>(db: &C) -> Result<(), sea_orm::DbErr> {
     let comp_count = component::Entity::find().count(db).await.unwrap_or(0);
     if comp_count == 0 {
         let now = Utc::now();
-        let ms_mat = material::Entity::find()
-            .filter(material::Column::Name.contains("Mild Steel"))
-            .one(db)
-            .await?;
-        let ss_mat = material::Entity::find()
-            .filter(material::Column::Name.contains("Stainless Steel"))
-            .one(db)
-            .await?;
-        let box_shape = shape::Entity::find()
-            .filter(shape::Column::Name.contains("Box"))
-            .one(db)
-            .await?;
-        let cyl_shape = shape::Entity::find()
-            .filter(shape::Column::Name.contains("Cylinder"))
-            .one(db)
-            .await?;
+        let bar = component::ActiveModel {
+            id: Default::default(),
+            created_at: Set(Some(now)),
+            updated_at: Set(Some(now)),
+            name: Set("MS Flat Bar 2.5x3.5mm".to_string()),
+            variables: Set(ms_flat_schema()),
+            // volume mm³ / 1e9 * density 7850 * rate 85 * qty; 2.5 * 3.5 * length mm
+            weight_formula: Set(
+                "length * decimal(\"2.5\") * decimal(\"3.5\") / 1000000000 * 7850 * qty".into(),
+            ),
+            cost_formula: Set(
+                "length * decimal(\"2.5\") * decimal(\"3.5\") / 1000000000 * 7850 * 85 * qty"
+                    .into(),
+            ),
+        };
+        bar.insert(db).await?;
 
-        if let (Some(ms), Some(bx)) = (ms_mat.as_ref(), box_shape.as_ref()) {
-            let mut fixed = serde_json::Map::new();
-            fixed.insert("width".into(), serde_json::json!(2.5));
-            fixed.insert("thickness".into(), serde_json::json!(3.5));
-
-            let bar_comp = component::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                name: Set("MS Flat Bar 2.5x3.5mm".to_string()),
-                shape_id: Set(bx.id),
-                material_id: Set(ms.id),
-                fixed_variables: Set(serde_json::Value::Object(fixed)),
-            };
-            let _ = bar_comp.insert(db).await;
-        }
-
-        if let (Some(ss), Some(cyl)) = (ss_mat.as_ref(), cyl_shape.as_ref()) {
-            let mut fixed = serde_json::Map::new();
-            fixed.insert("diameter".into(), serde_json::json!(20.0));
-
-            let rod_comp = component::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                name: Set("SS 304 Round Rod Ø20mm".to_string()),
-                shape_id: Set(cyl.id),
-                material_id: Set(ss.id),
-                fixed_variables: Set(serde_json::Value::Object(fixed)),
-            };
-            let _ = rod_comp.insert(db).await;
-        }
+        let rod = component::ActiveModel {
+            id: Default::default(),
+            created_at: Set(Some(now)),
+            updated_at: Set(Some(now)),
+            name: Set("SS 304 Round Rod Ø20mm".to_string()),
+            variables: Set(ss_rod_schema()),
+            weight_formula: Set("length * 314 * qty / 1000000000 * 7930".into()),
+            cost_formula: Set("length * 314 * qty / 1000000000 * 7930 * 380".into()),
+        };
+        rod.insert(db).await?;
     }
-
     Ok(())
 }

@@ -279,15 +279,61 @@ pub async fn move_open_job_order(
         .await
         .ok_or_else(|| "job not found or already completed".to_string())?;
     let orders = open_job_orders(db).await;
-    let new_order = next_order_after_move(job.order, &orders, dir)
-        .ok_or_else(|| match dir {
-            OrderMove::Up => "job is already at the top of the order".to_string(),
-            OrderMove::Down => "job is already at the bottom of the order".to_string(),
-        })?;
+    let new_order = next_order_after_move(job.order, &orders, dir).ok_or_else(|| match dir {
+        OrderMove::Up => "job is already at the top of the order".to_string(),
+        OrderMove::Down => "job is already at the bottom of the order".to_string(),
+    })?;
     let mut am: job::ActiveModel = job.into();
     am.order = Set(new_order);
     am.updated_at = Set(Some(Utc::now()));
     am.update(db).await.map_err(|e| e.to_string())
+}
+
+pub async fn create_open_job<C: ConnectionTrait>(
+    db: &C,
+    name: String,
+    duration: JobDuration,
+    machine_ids: &[i64],
+    remarks: String,
+) -> Result<job::Model, String> {
+    let now = Utc::now();
+    let created = job::ActiveModel {
+        id: Default::default(),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
+        name: Set(name),
+        duration: Set(duration),
+        progress: Set(0),
+        order: Set(0),
+        remarks: Set(remarks),
+        source_doc_type: Set(String::new()),
+        source_doc_id: Set(0),
+    }
+    .insert(db)
+    .await
+    .map_err(|e| e.to_string())?;
+    sync_job_machines(db, created.id, machine_ids).await?;
+    Ok(created)
+}
+
+/// Point a job at its originating document (work order, etc.).
+pub async fn set_job_source_doc<C: ConnectionTrait>(
+    db: &C,
+    job_id: i64,
+    source_doc_type: &str,
+    source_doc_id: i64,
+) -> Result<(), String> {
+    let job = JobEntity::find_by_id(job_id)
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "job not found".to_string())?;
+    let mut am: job::ActiveModel = job.into();
+    am.source_doc_type = Set(source_doc_type.to_string());
+    am.source_doc_id = Set(source_doc_id);
+    am.updated_at = Set(Some(Utc::now()));
+    am.update(db).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub async fn duplicate_job(
@@ -312,6 +358,8 @@ pub async fn duplicate_job(
         progress: Set(0),
         order: Set(source.order),
         remarks: Set(source.remarks.clone()),
+        source_doc_type: Set(String::new()),
+        source_doc_id: Set(0),
     }
     .insert(&txn)
     .await

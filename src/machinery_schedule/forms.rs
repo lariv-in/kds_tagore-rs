@@ -1,7 +1,7 @@
-use lariv_rs::components::{label_hint, attrs::escape_attr};
+use lariv_rs::components::{attrs::escape_attr, label_hint};
 use lariv_rs::html_form::{
     FieldRender, FormCtx, FormWidget, html_form,
-    widgets::{Duration, ManyToMany, Number, Text, Textarea},
+    widgets::{Duration, List, ManyToMany, Number, Text, Textarea},
 };
 use maud::{Markup, PreEscaped, html};
 
@@ -42,6 +42,24 @@ impl FormWidget for ProgressPercent {
 pub struct MachineForm {
     #[form(label = "Name", required, widget = Text)]
     pub name: String,
+
+    #[form(
+        label = "Cost Formula",
+        required,
+        widget = Textarea,
+        rows = 4,
+        placeholder = "e.g. duration / 3600 * 950",
+        hint = "Rune expression. Variables are injected as Decimal (length mm, weight kg, duration seconds, quantity integer)."
+    )]
+    pub cost_formula: String,
+
+    #[form(
+        label = "Variables",
+        widget = List,
+        placeholder = "name:type  e.g. duration:duration",
+        hint = "One per row as name:type. Types: length, weight, duration, quantity."
+    )]
+    pub variables: Vec<String>,
 }
 
 #[html_form]

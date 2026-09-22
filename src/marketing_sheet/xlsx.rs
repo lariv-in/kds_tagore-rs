@@ -266,13 +266,13 @@ pub fn parse_workbook(bytes: &[u8]) -> Result<Vec<SheetRow>, String> {
             discussions.push((idx, date));
         }
     }
-    if !fixed
-        .iter()
-        .any(|(_, c)| matches!(c, FixedCol::LeadName | FixedCol::Customer | FixedCol::Company))
-    {
-        return Err(
-            "sheet is missing Lead Name, Customer, or Company Name columns".into(),
-        );
+    if !fixed.iter().any(|(_, c)| {
+        matches!(
+            c,
+            FixedCol::LeadName | FixedCol::Customer | FixedCol::Company
+        )
+    }) {
+        return Err("sheet is missing Lead Name, Customer, or Company Name columns".into());
     }
 
     let mut out = Vec::new();
@@ -343,9 +343,7 @@ pub fn build_workbook(rows: &[SheetRow]) -> Result<Vec<u8>, String> {
 
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
-    worksheet
-        .set_name(SHEET_NAME)
-        .map_err(|e| e.to_string())?;
+    worksheet.set_name(SHEET_NAME).map_err(|e| e.to_string())?;
     let header_format = Format::new().set_bold();
     let date_format = Format::new().set_num_format("d.m.yy");
     let text_format = Format::new().set_num_format("@");
@@ -407,8 +405,9 @@ pub fn build_workbook(rows: &[SheetRow]) -> Result<Vec<u8>, String> {
             .write_string(excel_row, 6, row.status.as_sheet_label())
             .map_err(|e| e.to_string())?;
         if let Some(date) = row.order_expected_date {
-            let excel = ExcelDateTime::from_ymd(date.year() as u16, date.month() as u8, date.day() as u8)
-                .map_err(|e| e.to_string())?;
+            let excel =
+                ExcelDateTime::from_ymd(date.year() as u16, date.month() as u8, date.day() as u8)
+                    .map_err(|e| e.to_string())?;
             worksheet
                 .write_with_format(excel_row, 7, &excel, &date_format)
                 .map_err(|e| e.to_string())?;
@@ -455,7 +454,10 @@ mod tests {
     #[test]
     fn status_maps_sheet_and_crm_labels() {
         assert_eq!(LeadStatus::parse("Discussion wip"), LeadStatus::Active);
-        assert_eq!(LeadStatus::parse("Ready to give the order"), LeadStatus::Active);
+        assert_eq!(
+            LeadStatus::parse("Ready to give the order"),
+            LeadStatus::Active
+        );
         assert_eq!(LeadStatus::parse("Not responding"), LeadStatus::Failed);
         assert_eq!(LeadStatus::parse("Completed"), LeadStatus::Completed);
         assert_eq!(LeadStatus::parse("Converted"), LeadStatus::Completed);
@@ -466,7 +468,10 @@ mod tests {
     fn discussion_header_roundtrip() {
         let date = NaiveDate::from_ymd_opt(2026, 8, 17).unwrap();
         assert_eq!(discussion_header(date), "Discussion Summary(17.8.26)");
-        assert_eq!(parse_discussion_header("Discussion Summary(17.8.26)"), Some(date));
+        assert_eq!(
+            parse_discussion_header("Discussion Summary(17.8.26)"),
+            Some(date)
+        );
     }
 
     #[test]

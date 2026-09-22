@@ -6,7 +6,10 @@ lariv_rs::swap_key!(JobBulkDeleteModalKey, "ms-job-bulk-delete-modal");
 lariv_rs::swap_key!(JobDuplicatedModalKey, "ms-job-duplicated-modal");
 
 lariv_rs::swap_key!(CompletedJobDeleteModalKey, "ms-completed-job-delete-modal");
-lariv_rs::swap_key!(CompletedJobBulkDeleteModalKey, "ms-completed-job-bulk-delete-modal");
+lariv_rs::swap_key!(
+    CompletedJobBulkDeleteModalKey,
+    "ms-completed-job-bulk-delete-modal"
+);
 
 lariv_rs::swap_key!(MachineTableKey, "ms-machine-table");
 lariv_rs::swap_key!(MachineJobsTableKey, "ms-machine-jobs-table");

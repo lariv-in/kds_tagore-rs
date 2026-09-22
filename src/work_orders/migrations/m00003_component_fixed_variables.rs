@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        crate::work_orders::seed::ensure_standard_components(manager.get_connection()).await
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

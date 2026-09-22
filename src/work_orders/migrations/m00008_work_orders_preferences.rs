@@ -27,8 +27,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(WorkOrdersPreferences::CreatedAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(WorkOrdersPreferences::UpdatedAt).timestamp_with_time_zone())
+                    .col(
+                        ColumnDef::new(WorkOrdersPreferences::CreatedAt).timestamp_with_time_zone(),
+                    )
+                    .col(
+                        ColumnDef::new(WorkOrdersPreferences::UpdatedAt).timestamp_with_time_zone(),
+                    )
                     .col(
                         ColumnDef::new(WorkOrdersPreferences::DraftWorkOrderPdfTemplate)
                             .text()

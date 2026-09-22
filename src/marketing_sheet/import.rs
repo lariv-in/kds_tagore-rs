@@ -55,9 +55,10 @@ pub async fn import_rows(
                 report.warnings.extend(warnings);
             }
             Err(err) => {
-                report
-                    .warnings
-                    .push(format!("Row {}: {err}", row.serial_no.unwrap_or((idx + 2) as i64)));
+                report.warnings.push(format!(
+                    "Row {}: {err}",
+                    row.serial_no.unwrap_or((idx + 2) as i64)
+                ));
             }
         }
     }
@@ -136,10 +137,7 @@ async fn upsert_company(
         .all(db)
         .await
         .map_err(|e| e.to_string())?;
-    if let Some(found) = existing
-        .into_iter()
-        .find(|c| names_match(&c.name, name))
-    {
+    if let Some(found) = existing.into_iter().find(|c| names_match(&c.name, name)) {
         if !location.is_empty() && found.city.as_deref() != Some(location) {
             let mut am: company::ActiveModel = found.into();
             am.city = Set(Some(location.to_string()));
@@ -177,10 +175,7 @@ async fn upsert_contact(
         .all(db)
         .await
         .map_err(|e| e.to_string())?;
-    if let Some(found) = existing
-        .into_iter()
-        .find(|c| names_match(&c.name, name))
-    {
+    if let Some(found) = existing.into_iter().find(|c| names_match(&c.name, name)) {
         if !phone.is_empty() && found.phone.as_deref() != Some(phone) {
             let mut am: contact::ActiveModel = found.into();
             am.phone = Set(Some(phone.to_string()));
@@ -214,10 +209,7 @@ async fn match_user(db: &DatabaseConnection, name: &str) -> Option<i64> {
     if needle.is_empty() {
         return None;
     }
-    let users = UserEntity::find()
-        .all(db)
-        .await
-        .unwrap_or_default();
+    let users = UserEntity::find().all(db).await.unwrap_or_default();
     if let Some(exact) = users.iter().find(|u| names_match(&u.name, needle)) {
         return Some(exact.id);
     }
@@ -338,7 +330,9 @@ async fn sync_discussions(
             continue;
         }
         let datetime = date_at_noon_tz(*date, &auth.timezone);
-        if let Some(found) = existing.iter().find(|u| update_date(u.datetime, &auth.timezone) == *date)
+        if let Some(found) = existing
+            .iter()
+            .find(|u| update_date(u.datetime, &auth.timezone) == *date)
         {
             if found.description != text {
                 let mut am: lead_update::ActiveModel = found.clone().into();
@@ -375,8 +369,7 @@ fn date_at_noon_tz(date: NaiveDate, tz: &str) -> chrono::DateTime<Utc> {
 }
 
 fn update_date(dt: chrono::DateTime<Utc>, tz: &str) -> NaiveDate {
-    lariv_rs::datetime::parse_date(&format_date_in_tz(dt, tz))
-        .unwrap_or_else(|| dt.date_naive())
+    lariv_rs::datetime::parse_date(&format_date_in_tz(dt, tz)).unwrap_or_else(|| dt.date_naive())
 }
 
 fn names_match(a: &str, b: &str) -> bool {
@@ -385,7 +378,11 @@ fn names_match(a: &str, b: &str) -> bool {
 
 fn nonempty_opt(s: &str) -> Option<String> {
     let t = s.trim();
-    if t.is_empty() { None } else { Some(t.to_string()) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 fn first_nonempty(values: &[&str]) -> Option<String> {
@@ -455,10 +452,7 @@ pub async fn export_rows(db: &DatabaseConnection, tz: &str) -> Result<Vec<SheetR
                 .and_then(|c| c.phone.clone())
                 .unwrap_or_default(),
             customer: contact.map(|c| c.name).unwrap_or_default(),
-            company_name: company
-                .as_ref()
-                .map(|c| c.name.clone())
-                .unwrap_or_default(),
+            company_name: company.as_ref().map(|c| c.name.clone()).unwrap_or_default(),
             expected_sales_location: company.and_then(|c| c.city).unwrap_or_default(),
             status,
             order_expected_date: lead.order_expected_date,

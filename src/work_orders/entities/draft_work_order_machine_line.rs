@@ -3,9 +3,6 @@ use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::machinery_schedule::duration::JobDuration;
-use super::machine::{decimal_to_rupees_paisa, rupees_paisa_to_decimal};
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "draft_work_order_machine_lines")]
 pub struct Model {
@@ -15,11 +12,9 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
     pub draft_work_order_id: i64,
     pub machine_id: i64,
-    /// Hourly machine rate for this line, pre-filled from the machine but manually editable.
+    pub variables: Json,
     #[sea_orm(column_type = "Decimal(Some((19, 6)))")]
-    pub rate_decimal: Decimal,
-    /// Machine time used stored as nanoseconds.
-    pub time_used: JobDuration,
+    pub final_cost: Decimal,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -32,9 +27,9 @@ pub enum Relation {
     )]
     DraftWorkOrder,
     #[sea_orm(
-        belongs_to = "super::machine::Entity",
+        belongs_to = "crate::machinery_schedule::entities::machine::Entity",
         from = "Column::MachineId",
-        to = "super::machine::Column::Id",
+        to = "crate::machinery_schedule::entities::machine::Column::Id",
         on_delete = "Restrict"
     )]
     Machine,
@@ -46,28 +41,30 @@ impl Related<super::draft_work_order::Entity> for Entity {
     }
 }
 
-impl Related<super::machine::Entity> for Entity {
+impl Related<crate::machinery_schedule::entities::machine::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Machine.def()
     }
 }
 
 impl Model {
-    /// Return the rate as (u64, u8) (Rupees and Paisa per hour) as requested.
-    pub fn rate(&self) -> (u64, u8) {
-        decimal_to_rupees_paisa(self.rate_decimal)
-    }
-
-    /// Set rate from (u64, u8) (Rupees and Paisa per hour).
-    pub fn rate_from_tuple(rupees: u64, paisa: u8) -> Decimal {
-        rupees_paisa_to_decimal(rupees, paisa)
-    }
-
-    /// Calculate total amount for this line item in INR (rate * hours).
     pub fn line_total(&self) -> Decimal {
-        let nanos = self.time_used.num_nanoseconds();
-        let hours = Decimal::from(nanos) / Decimal::from(3_600_000_000_000i64);
-        (self.rate_decimal * hours).round_dp(2)
+        self.final_cost
+    }
+
+    pub fn taxed_total(
+        &self,
+        taxes: &[lariv_rs::plugins::finance_taxes::entities::tax::Model],
+    ) -> Decimal {
+        crate::work_orders::tax_assoc::taxed_amount(self.line_total(), taxes)
+    }
+
+    pub fn format_variables_display(&self) -> String {
+        crate::work_orders::line_vars::format_variables_display(
+            &serde_json::json!({}),
+            &self.variables,
+            &serde_json::json!({}),
+        )
     }
 }
 

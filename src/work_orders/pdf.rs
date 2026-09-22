@@ -1,4 +1,4 @@
-//! PDF rendering for draft work orders and proforma invoices.
+//! PDF rendering for draft work orders and quotations.
 //!
 //! Pipeline: Minijinja template (Jinja2-style) → Typst source → PDF via the
 //! `typst` crate, mirroring the finance invoices renderer (`electronics style`).
@@ -14,12 +14,13 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use serde::Serialize;
 
 use super::entities::{
-    component, draft_work_order_machine_line, draft_work_order_material_line, machine,
-    proforma_invoice, proforma_invoice_machine_line, proforma_invoice_material_line, work_order,
+    component, draft_work_order, draft_work_order_machine_line, draft_work_order_material_line,
+    quotation, quotation_machine_line, quotation_material_line,
 };
-use super::preferences::{
-    draft_work_order_pdf_template, load_preferences, proforma_invoice_pdf_template,
-};
+use super::preferences::{draft_work_order_pdf_template, load_preferences, quotation_pdf_template};
+use super::tax_assoc;
+use crate::machinery_schedule::entities::machine;
+use crate::machinery_schedule::logic::format_job_duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PdfError {
@@ -64,10 +65,9 @@ struct PdfMaterialLine {
     component_id: i64,
     component: String,
     variables_display: String,
-    quantity: String,
-    unit_weight: String,
-    material_rate: String,
     final_cost: String,
+    taxes: String,
+    pre_tax: String,
 }
 
 #[derive(Serialize)]
@@ -77,31 +77,10 @@ struct PdfMachineLine {
     id: i64,
     machine_id: i64,
     machine: String,
-    time_used_hours: String,
-    rate: String,
+    variables_display: String,
     line_total: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct PdfInvoiceMaterialLine {
-    #[serde(rename = "ID")]
-    id: i64,
-    name: String,
-    qty: String,
-    rate: String,
-    line_total: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct PdfInvoiceMachineLine {
-    #[serde(rename = "ID")]
-    id: i64,
-    name: String,
-    time_used_hours: String,
-    rate: String,
-    line_total: String,
+    taxes: String,
+    pre_tax: String,
 }
 
 #[derive(Serialize)]
@@ -112,6 +91,7 @@ struct WorkOrderRoot {
     order_number: String,
     customer_id: i64,
     created_at: String,
+    duration: String,
     customer: PdfCustomer,
     material_lines: Vec<PdfMaterialLine>,
     machine_lines: Vec<PdfMachineLine>,
@@ -126,10 +106,10 @@ struct InvoiceRoot {
     invoice_number: String,
     customer_id: i64,
     date: String,
-    work_order_id: Option<i64>,
+    duration: String,
     customer: PdfCustomer,
-    material_lines: Vec<PdfInvoiceMaterialLine>,
-    machine_lines: Vec<PdfInvoiceMachineLine>,
+    material_lines: Vec<PdfMaterialLine>,
+    machine_lines: Vec<PdfMachineLine>,
     grand_total: String,
 }
 
@@ -219,7 +199,10 @@ fn amount_words_from_decimal(d: Decimal) -> String {
 }
 
 async fn load_customer(db: &DatabaseConnection, id: i64) -> Result<PdfCustomer, PdfError> {
-    let c = CustomerEntity::find_by_id(id).one(db).await.map_err(|e| PdfError::msg(e.to_string()))?;
+    let c = CustomerEntity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
     Ok(match c {
         Some(c) => {
             let address = c.formatted_address_for_typst();
@@ -286,7 +269,11 @@ fn render_template(
         .map_err(|e| PdfError::msg(format!("rendering PDF template failed: {e}")))
 }
 
-async fn compile_pdf(tmpl_src: &str, ctx: serde_json::Value, grand_words: String) -> Result<Vec<u8>, PdfError> {
+async fn compile_pdf(
+    tmpl_src: &str,
+    ctx: serde_json::Value,
+    grand_words: String,
+) -> Result<Vec<u8>, PdfError> {
     let typst_src = render_template(tmpl_src, ctx, &grand_words)?;
     lariv_rs::plugins::finance_common::typst::typst_compile(&typst_src)
         .await
@@ -299,7 +286,7 @@ pub async fn render_work_order_pdf(
     id: i64,
     tz: &str,
 ) -> Result<PdfResult, PdfError> {
-    let order = work_order::Entity::find_by_id(id)
+    let order = draft_work_order::Entity::find_by_id(id)
         .one(db)
         .await
         .map_err(|e| PdfError::msg(e.to_string()))?
@@ -325,7 +312,7 @@ pub async fn render_work_order_pdf(
         .all(db)
         .await
         .map_err(|e| PdfError::msg(e.to_string()))?;
-    let comp_map: HashMap<i64, String> = comps.into_iter().map(|c| (c.id, c.name)).collect();
+    let comp_map: HashMap<i64, component::Model> = comps.into_iter().map(|c| (c.id, c)).collect();
 
     let machine_ids: Vec<i64> = machine_lines.iter().map(|l| l.machine_id).collect();
     let machines = machine::Entity::find()
@@ -335,50 +322,84 @@ pub async fn render_work_order_pdf(
         .map_err(|e| PdfError::msg(e.to_string()))?;
     let machine_map: HashMap<i64, String> = machines.into_iter().map(|m| (m.id, m.name)).collect();
 
-    let total_amount = order.total_amount_with_machine_lines(&lines, &machine_lines);
+    let mat_ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
+    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
+    let mat_tax_ids = tax_assoc::load_draft_material_line_tax_ids_map(db, &mat_ids)
+        .await
+        .unwrap_or_default();
+    let mach_tax_ids = tax_assoc::load_draft_machine_line_tax_ids_map(db, &mach_ids)
+        .await
+        .unwrap_or_default();
+    let material_taxes = tax_assoc::resolve_taxes_by_line_id(db, &mat_tax_ids).await;
+    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(db, &mach_tax_ids).await;
 
-    let prefs = load_preferences(db).await.map_err(|e| PdfError::msg(e.to_string()))?;
+    let total_amount = lines
+        .iter()
+        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(&material_taxes, l.id)))
+        .sum::<Decimal>()
+        + machine_lines
+            .iter()
+            .map(|l| l.taxed_total(tax_assoc::taxes_for_line(&machine_taxes, l.id)))
+            .sum::<Decimal>();
+
+    let prefs = load_preferences(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
     let tmpl_src = draft_work_order_pdf_template(&prefs).to_string();
 
     let customer = load_customer(db, order.customer_id).await?;
     let material_lines = lines
         .iter()
-        .map(|l| PdfMaterialLine {
-            id: l.id,
-            component_id: l.component_id,
-            component: comp_map
-                .get(&l.component_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Component #{}", l.component_id)),
-            variables_display: l.format_variables_display(),
-            quantity: dec_str(l.quantity),
-            unit_weight: dec_str(l.unit_weight),
-            material_rate: dec_str(l.material_rate),
-            final_cost: dec_str(l.final_cost),
+        .map(|l| {
+            let taxes = tax_assoc::taxes_for_line(&material_taxes, l.id);
+            PdfMaterialLine {
+                id: l.id,
+                component_id: l.component_id,
+                component: comp_map
+                    .get(&l.component_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| format!("Component #{}", l.component_id)),
+                variables_display: {
+                    let schema = comp_map
+                        .get(&l.component_id)
+                        .map(|c| c.variables.clone())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    l.format_variables_display_with_schema(&schema)
+                },
+                pre_tax: dec_str(l.final_cost),
+                taxes: tax_assoc::tax_labels_display(taxes),
+                final_cost: dec_str(l.taxed_total(taxes)),
+            }
         })
         .collect();
 
     let pdf_machine_lines = machine_lines
         .iter()
-        .map(|l| PdfMachineLine {
-            id: l.id,
-            machine_id: l.machine_id,
-            machine: machine_map
-                .get(&l.machine_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Machine #{}", l.machine_id)),
-            time_used_hours: format!("{:.2}", l.time_used.as_hours_f64()),
-            rate: dec_str(l.rate_decimal),
-            line_total: dec_str(l.line_total()),
+        .map(|l| {
+            let taxes = tax_assoc::taxes_for_line(&machine_taxes, l.id);
+            PdfMachineLine {
+                id: l.id,
+                machine_id: l.machine_id,
+                machine: machine_map
+                    .get(&l.machine_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Machine #{}", l.machine_id)),
+                variables_display: l.format_variables_display(),
+                pre_tax: dec_str(l.line_total()),
+                taxes: tax_assoc::tax_labels_display(taxes),
+                line_total: dec_str(l.taxed_total(taxes)),
+            }
         })
         .collect();
 
-    let created_at = lariv_rs::datetime::format_date_in_tz(order.created_at.unwrap_or(Utc::now()), tz);
+    let created_at =
+        lariv_rs::datetime::format_date_in_tz(order.created_at.unwrap_or(Utc::now()), tz);
     let root = WorkOrderRoot {
         id: order.id,
         order_number: order.order_number.clone(),
         customer_id: order.customer_id,
         created_at,
+        duration: format_job_duration(order.duration),
         customer,
         material_lines,
         machine_lines: pdf_machine_lines,
@@ -397,55 +418,114 @@ pub async fn render_work_order_pdf(
     })
 }
 
-/// Render a proforma invoice to PDF bytes using the configured template.
-pub async fn render_proforma_invoice_pdf(
+/// Render a quotation to PDF bytes using the configured template.
+pub async fn render_quotation_pdf(
     db: &DatabaseConnection,
     id: i64,
     _tz: &str,
 ) -> Result<PdfResult, PdfError> {
-    let inv = proforma_invoice::Entity::find_by_id(id)
+    let inv = quotation::Entity::find_by_id(id)
         .one(db)
         .await
         .map_err(|e| PdfError::msg(e.to_string()))?
         .ok_or(PdfError::NotFound)?;
 
-    let material_lines = proforma_invoice_material_line::Entity::find()
-        .filter(proforma_invoice_material_line::Column::InvoiceId.eq(inv.id))
+    let material_lines = quotation_material_line::Entity::find()
+        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
         .all(db)
         .await
         .map_err(|e| PdfError::msg(e.to_string()))?;
 
-    let machine_lines = proforma_invoice_machine_line::Entity::find()
-        .filter(proforma_invoice_machine_line::Column::InvoiceId.eq(inv.id))
+    let machine_lines = quotation_machine_line::Entity::find()
+        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
         .all(db)
         .await
         .map_err(|e| PdfError::msg(e.to_string()))?;
 
-    let grand_total = inv.grand_total(&material_lines, &machine_lines);
+    let comp_ids: Vec<i64> = material_lines.iter().map(|l| l.component_id).collect();
+    let comps = component::Entity::find()
+        .filter(component::Column::Id.is_in(comp_ids))
+        .all(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
+    let comp_map: HashMap<i64, component::Model> = comps.into_iter().map(|c| (c.id, c)).collect();
 
-    let prefs = load_preferences(db).await.map_err(|e| PdfError::msg(e.to_string()))?;
-    let tmpl_src = proforma_invoice_pdf_template(&prefs).to_string();
+    let machine_ids: Vec<i64> = machine_lines.iter().filter_map(|l| l.machine_id).collect();
+    let machines = machine::Entity::find()
+        .filter(machine::Column::Id.is_in(machine_ids))
+        .all(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
+    let machine_map: HashMap<i64, String> = machines.into_iter().map(|m| (m.id, m.name)).collect();
+
+    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
+    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
+    let mat_tax_ids = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
+        .await
+        .unwrap_or_default();
+    let mach_tax_ids = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
+        .await
+        .unwrap_or_default();
+    let material_taxes = tax_assoc::resolve_taxes_by_line_id(db, &mat_tax_ids).await;
+    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(db, &mach_tax_ids).await;
+
+    let grand_total = material_lines
+        .iter()
+        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(&material_taxes, l.id)))
+        .sum::<Decimal>()
+        + machine_lines
+            .iter()
+            .map(|l| l.taxed_total(tax_assoc::taxes_for_line(&machine_taxes, l.id)))
+            .sum::<Decimal>();
+
+    let prefs = load_preferences(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
+    let tmpl_src = quotation_pdf_template(&prefs).to_string();
 
     let customer = load_customer(db, inv.customer_id).await?;
     let pdf_material_lines = material_lines
         .iter()
-        .map(|l| PdfInvoiceMaterialLine {
-            id: l.id,
-            name: l.name.clone(),
-            qty: dec_str(l.qty_decimal),
-            rate: dec_str(l.rate_decimal),
-            line_total: dec_str(l.line_total()),
+        .map(|l| {
+            let taxes = tax_assoc::taxes_for_line(&material_taxes, l.id);
+            PdfMaterialLine {
+                id: l.id,
+                component_id: l.component_id,
+                component: comp_map
+                    .get(&l.component_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| format!("Component #{}", l.component_id)),
+                variables_display: {
+                    let schema = comp_map
+                        .get(&l.component_id)
+                        .map(|c| c.variables.clone())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    l.format_variables_display_with_schema(&schema)
+                },
+                pre_tax: dec_str(l.final_cost),
+                taxes: tax_assoc::tax_labels_display(taxes),
+                final_cost: dec_str(l.taxed_total(taxes)),
+            }
         })
         .collect();
 
     let pdf_machine_lines = machine_lines
         .iter()
-        .map(|l| PdfInvoiceMachineLine {
-            id: l.id,
-            name: l.name.clone(),
-            time_used_hours: format!("{:.2}", l.time_used.as_hours_f64()),
-            rate: dec_str(l.rate_decimal),
-            line_total: dec_str(l.line_total()),
+        .map(|l| {
+            let taxes = tax_assoc::taxes_for_line(&machine_taxes, l.id);
+            PdfMachineLine {
+                id: l.id,
+                machine_id: l.machine_id.unwrap_or(0),
+                machine: l
+                    .machine_id
+                    .and_then(|id| machine_map.get(&id).cloned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| l.name.clone()),
+                variables_display: l.format_variables_display(),
+                pre_tax: dec_str(l.line_total()),
+                taxes: tax_assoc::tax_labels_display(taxes),
+                line_total: dec_str(l.taxed_total(taxes)),
+            }
         })
         .collect();
 
@@ -455,19 +535,16 @@ pub async fn render_proforma_invoice_pdf(
         invoice_number: inv.invoice_number.clone(),
         customer_id: inv.customer_id,
         date,
-        work_order_id: inv.work_order_id,
+        duration: format_job_duration(inv.duration),
         customer,
         material_lines: pdf_material_lines,
         machine_lines: pdf_machine_lines,
         grand_total: dec_str(grand_total),
     };
     let ctx = serde_json::to_value(&root)
-        .map_err(|e| PdfError::msg(format!("serialize proforma invoice PDF context: {e}")))?;
+        .map_err(|e| PdfError::msg(format!("serialize quotation PDF context: {e}")))?;
     let bytes = compile_pdf(&tmpl_src, ctx, amount_words_from_decimal(grand_total)).await?;
-    let base = pdf_filename_base(
-        Some(&inv.invoice_number),
-        &format!("proforma-invoice-{}", inv.id),
-    );
+    let base = pdf_filename_base(Some(&inv.invoice_number), &format!("quotation-{}", inv.id));
     Ok(PdfResult {
         bytes,
         filename_base: base,
@@ -500,26 +577,27 @@ fn sample_work_order_root(dt: DateTime<Utc>, tz: &str) -> WorkOrderRoot {
         order_number: "WO/2026/0001".into(),
         customer_id: 1,
         created_at: lariv_rs::datetime::format_date_in_tz(dt, tz),
+        duration: "2h 30m".into(),
         customer: sample_customer(),
         material_lines: vec![PdfMaterialLine {
             id: 1,
             component_id: 1,
             component: "MS Flat Bar 2.5x3.5mm — 1000mm".into(),
-            variables_display: "length: 1000 mm, width: 25 mm, thickness: 35 mm".into(),
-            quantity: "2.5".into(),
-            unit_weight: "1.4".into(),
-            material_rate: "85".into(),
-            final_cost: "297.5".into(),
+            variables_display: "length: 1000 mm, qty: 2".into(),
+            pre_tax: "297.5".into(),
+            taxes: "GST 18%".into(),
+            final_cost: "351.05".into(),
         }],
         machine_lines: vec![PdfMachineLine {
             id: 1,
             machine_id: 1,
             machine: "CNC Lathe".into(),
-            time_used_hours: "2.5".into(),
-            rate: "950".into(),
-            line_total: "2375".into(),
+            variables_display: "duration: 2h 30m".into(),
+            pre_tax: "2375".into(),
+            taxes: "GST 18%".into(),
+            line_total: "2802.5".into(),
         }],
-        total_amount: "2672.5".into(),
+        total_amount: "3153.55".into(),
     }
 }
 
@@ -528,24 +606,30 @@ fn sample_invoice_root() -> InvoiceRoot {
         id: 1,
         invoice_number: "PF/2026/0042".into(),
         customer_id: 1,
-        date: lariv_rs::datetime::format_date(NaiveDate::from_ymd_opt(2026, 2, 8).expect("valid date")),
-        work_order_id: Some(1),
+        date: lariv_rs::datetime::format_date(
+            NaiveDate::from_ymd_opt(2026, 2, 8).expect("valid date"),
+        ),
+        duration: "3h".into(),
         customer: sample_customer(),
-        material_lines: vec![PdfInvoiceMaterialLine {
+        material_lines: vec![PdfMaterialLine {
             id: 1,
-            name: "Mild Steel".into(),
-            qty: "50".into(),
-            rate: "85".into(),
-            line_total: "4250".into(),
+            component_id: 1,
+            component: "MS Flat Bar 2.5x3.5mm — 1000mm".into(),
+            variables_display: "length: 1000 mm, qty: 50".into(),
+            pre_tax: "4250".into(),
+            taxes: "GST 18%".into(),
+            final_cost: "5015".into(),
         }],
-        machine_lines: vec![PdfInvoiceMachineLine {
+        machine_lines: vec![PdfMachineLine {
             id: 1,
-            name: "CNC Lathe".into(),
-            time_used_hours: "3".into(),
-            rate: "950".into(),
-            line_total: "2850".into(),
+            machine_id: 1,
+            machine: "CNC Lathe".into(),
+            variables_display: "duration: 3h".into(),
+            pre_tax: "2850".into(),
+            taxes: "GST 18%".into(),
+            line_total: "3363".into(),
         }],
-        grand_total: "7100".into(),
+        grand_total: "8378".into(),
     }
 }
 
@@ -555,7 +639,9 @@ pub async fn render_work_order_pdf_preview(
     template_src: Option<&str>,
     tz: &str,
 ) -> Result<PdfResult, PdfError> {
-    let prefs = load_preferences(db).await.map_err(|e| PdfError::msg(e.to_string()))?;
+    let prefs = load_preferences(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
     let tmpl_src = template_src
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -571,24 +657,26 @@ pub async fn render_work_order_pdf_preview(
     })
 }
 
-/// Render a sample proforma invoice PDF using an optional template override.
-pub async fn render_proforma_invoice_pdf_preview(
+/// Render a sample quotation PDF using an optional template override.
+pub async fn render_quotation_pdf_preview(
     db: &DatabaseConnection,
     template_src: Option<&str>,
 ) -> Result<PdfResult, PdfError> {
-    let prefs = load_preferences(db).await.map_err(|e| PdfError::msg(e.to_string()))?;
+    let prefs = load_preferences(db)
+        .await
+        .map_err(|e| PdfError::msg(e.to_string()))?;
     let tmpl_src = template_src
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| proforma_invoice_pdf_template(&prefs));
+        .unwrap_or_else(|| quotation_pdf_template(&prefs));
     let root = sample_invoice_root();
     let grand: Decimal = root.grand_total.parse().unwrap_or(Decimal::ZERO);
     let ctx = serde_json::to_value(&root)
-        .map_err(|e| PdfError::msg(format!("serialize proforma invoice PDF context: {e}")))?;
+        .map_err(|e| PdfError::msg(format!("serialize quotation PDF context: {e}")))?;
     let bytes = compile_pdf(tmpl_src, ctx, amount_words_from_decimal(grand)).await?;
     Ok(PdfResult {
         bytes,
-        filename_base: "proforma-invoice-preview".to_string(),
+        filename_base: "quotation-preview".to_string(),
     })
 }
 
@@ -596,7 +684,7 @@ pub async fn render_proforma_invoice_pdf_preview(
 mod tests {
     use super::*;
     use crate::work_orders::pdf_templates::{
-        DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE, DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE,
+        DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE, DEFAULT_QUOTATION_PDF_TEMPLATE,
     };
 
     #[test]
@@ -625,7 +713,10 @@ mod tests {
         )
         .expect("render");
         let out_lower = out.to_lowercase();
-        assert!(out_lower.contains("acme industries"), "customer name missing:\n{out}");
+        assert!(
+            out_lower.contains("acme industries"),
+            "customer name missing:\n{out}"
+        );
         assert!(out.contains("DRAFT WORK ORDER"));
         assert!(out.contains("WO/2026/0001"));
     }
@@ -636,12 +727,12 @@ mod tests {
         let grand: Decimal = root.grand_total.parse().unwrap_or(Decimal::ZERO);
         let ctx = serde_json::to_value(&root).expect("serialize");
         let out = render_template(
-            DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE,
+            DEFAULT_QUOTATION_PDF_TEMPLATE,
             ctx,
             &amount_words_from_decimal(grand),
         )
         .expect("render");
-        assert!(out.contains("PROFORMA INVOICE"));
+        assert!(out.contains("QUOTATION"));
         assert!(out.contains("PF/2026/0042"));
     }
 
@@ -662,12 +753,22 @@ mod tests {
                 let root = sample_work_order_root(Utc::now(), "Asia/Kolkata");
                 let grand: Decimal = root.total_amount.parse().unwrap_or(Decimal::ZERO);
                 let ctx = serde_json::to_value(&root).expect("serialize");
-                compile_pdf(DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE, ctx, amount_words_from_decimal(grand)).await
+                compile_pdf(
+                    DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
+                    ctx,
+                    amount_words_from_decimal(grand),
+                )
+                .await
             } else {
                 let root = sample_invoice_root();
                 let grand: Decimal = root.grand_total.parse().unwrap_or(Decimal::ZERO);
                 let ctx = serde_json::to_value(&root).expect("serialize");
-                compile_pdf(DEFAULT_PROFORMA_INVOICE_PDF_TEMPLATE, ctx, amount_words_from_decimal(grand)).await
+                compile_pdf(
+                    DEFAULT_QUOTATION_PDF_TEMPLATE,
+                    ctx,
+                    amount_words_from_decimal(grand),
+                )
+                .await
             }
         });
         let bytes = result.expect("render preview");

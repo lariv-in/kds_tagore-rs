@@ -16,10 +16,9 @@ use lariv_rs::{
         respond_create_modal_done_fk, respond_edit_modal_done,
     },
 };
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait,
-};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
 
+use crate::formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 use crate::machinery_schedule::{
     entities::machine::{self, Entity as MachineEntity},
     forms::MachineForm,
@@ -81,6 +80,45 @@ fn query_is_multi(raw: Option<&str>) -> bool {
     matches!(raw, Some("1") | Some("true") | Some("True"))
 }
 
+fn machine_row(m: &machine::Model) -> MachineRow {
+    MachineRow {
+        id: m.id,
+        name: m.name.clone(),
+        formula_label: m.formula_label(),
+        variables_json: serde_json::to_string(&m.variables).unwrap_or_else(|_| "{}".into()),
+        cost_formula: m.cost_formula.clone(),
+    }
+}
+
+fn schema_entries_for(m: &machine::Model) -> Vec<String> {
+    parse_schema(&m.variables)
+        .map(|s| schema_to_entries(&s))
+        .unwrap_or_default()
+}
+
+fn parse_machine_form(form: &MachineForm) -> Result<(String, String, serde_json::Value), String> {
+    let name = form.name.trim().to_string();
+    if name.is_empty() {
+        return Err("Name is required".into());
+    }
+    let cost_formula = form.cost_formula.trim().to_string();
+    if cost_formula.is_empty() {
+        return Err("Cost formula is required".into());
+    }
+    let schema = parse_schema_list(&form.variables).map_err(|e| e.to_string())?;
+    let variables = schema_to_json(&schema);
+    let temp = machine::Model {
+        id: 0,
+        created_at: None,
+        updated_at: None,
+        name: name.clone(),
+        cost_formula: cost_formula.clone(),
+        variables: variables.clone(),
+    };
+    temp.validate_formulas().map_err(|e| e.to_string())?;
+    Ok((name, cost_formula, variables))
+}
+
 async fn load_machine_rows(
     db: &sea_orm::DatabaseConnection,
     q: &MachineListQuery,
@@ -103,13 +141,7 @@ async fn load_machine_rows(
         .fetch_page((page as u64).saturating_sub(1))
         .await
         .unwrap_or_default();
-    let rows = models
-        .into_iter()
-        .map(|m| MachineRow {
-            id: m.id,
-            name: m.name,
-        })
-        .collect();
+    let rows = models.into_iter().map(|m| machine_row(&m)).collect();
     ObjectList::from_page(rows, page, page_size, total)
 }
 
@@ -191,6 +223,8 @@ pub async fn detail(
         .into_string();
     let page = MachineDetailPage {
         id: m.id,
+        formula_label: m.formula_label(),
+        variables_label: schema_entries_for(&m).join(", "),
         name: m.name,
         can_edit: ctx.user.is_superuser,
         jobs,
@@ -217,6 +251,8 @@ pub async fn create_get(
         refresh_table: q.refresh_table(),
         target_input: q.target_input(),
         name: String::new(),
+        cost_formula: String::new(),
+        variables: Vec::new(),
         error: String::new(),
     };
     html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
@@ -234,24 +270,31 @@ pub async fn create_post(
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     }
-    let name = form.name.trim().to_string();
-    if name.is_empty() {
-        let page = MachineCreateModalPage {
-            form_name: q.form_name(),
-            refresh_table: q.refresh_table(),
-            target_input: q.target_input(),
-            name: form.name,
-            error: "Name is required".into(),
-        };
-        return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
-            .into_response();
-    }
+    let parsed = parse_machine_form(&form);
+    let (name, cost_formula, variables) = match parsed {
+        Ok(v) => v,
+        Err(error) => {
+            let page = MachineCreateModalPage {
+                form_name: q.form_name(),
+                refresh_table: q.refresh_table(),
+                target_input: q.target_input(),
+                name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
+                error,
+            };
+            return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+                .into_response();
+        }
+    };
     let now = Utc::now();
     let model = machine::ActiveModel {
         id: Default::default(),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
         name: Set(name),
+        cost_formula: Set(cost_formula),
+        variables: Set(variables),
     };
     match model.insert(&state.db).await {
         Ok(saved) => respond_create_modal_done_fk::<MachineCreateModalKey>(
@@ -268,6 +311,8 @@ pub async fn create_post(
                 refresh_table: q.refresh_table(),
                 target_input: q.target_input(),
                 name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
                 error: e.to_string(),
             };
             html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
@@ -290,10 +335,13 @@ pub async fn edit_get(
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     };
+    let variables = schema_entries_for(&m);
     let page = MachineEditModalPage {
         id: m.id,
         form_name: q.form_name(),
         name: m.name,
+        cost_formula: m.cost_formula,
+        variables,
         error: String::new(),
     };
     html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
@@ -316,21 +364,28 @@ pub async fn edit_post(
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     };
-    let name = form.name.trim().to_string();
-    if name.is_empty() {
-        let page = MachineEditModalPage {
-            id,
-            form_name: q.form_name(),
-            name: form.name,
-            error: "Name is required".into(),
-        };
-        return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
-            .into_response();
-    }
+    let parsed = parse_machine_form(&form);
+    let (name, cost_formula, variables) = match parsed {
+        Ok(v) => v,
+        Err(error) => {
+            let page = MachineEditModalPage {
+                id,
+                form_name: q.form_name(),
+                name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
+                error,
+            };
+            return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+                .into_response();
+        }
+    };
     let now = Utc::now();
     let mut am: machine::ActiveModel = existing.into();
     am.updated_at = Set(Some(now));
     am.name = Set(name);
+    am.cost_formula = Set(cost_formula);
+    am.variables = Set(variables);
     match am.update(&state.db).await {
         Ok(_) => respond_edit_modal_done::<MachineEditModalKey>(
             &htmx,
@@ -341,6 +396,8 @@ pub async fn edit_post(
                 id,
                 form_name: q.form_name(),
                 name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
                 error: e.to_string(),
             };
             html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx)).into_response()

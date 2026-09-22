@@ -3,8 +3,11 @@ use super::{handlers, keys::*};
 lariv_rs::define_plugin_routes! {
     plugin: super::WorkOrdersTag;
     routes: [
-        // Work Orders
-        get WorkOrdersDefaultRouteTag, "/work-orders", handlers::work_orders_list, fragment(WorkOrderTableKey);
+        // Quotations (app default)
+        get WorkOrdersDefaultRouteTag, "/work-orders", handlers::invoices_list, fragment(InvoiceTableKey);
+
+        // Draft Work Orders
+        get DraftWorkOrdersDefaultRouteTag, "/work-orders/orders", handlers::work_orders_list, fragment(WorkOrderTableKey);
         get WorkOrderFkSelectRouteTag, "/work-orders/orders/pick", handlers::work_order_select, fk_select(WorkOrderSelectTableKey, WorkOrderSelectModalKey);
         get WorkOrderCreateGetRouteTag, "/work-orders/orders/create", handlers::work_order_create_get, modal;
         post WorkOrderCreatePostRouteTag, "/work-orders/orders/create", handlers::work_order_create_post;
@@ -13,6 +16,14 @@ lariv_rs::define_plugin_routes! {
         post WorkOrderEditPostRouteTag, "/work-orders/orders/{id}/edit", handlers::work_order_edit_post;
         get WorkOrderDeleteGetRouteTag, "/work-orders/orders/{id}/delete", handlers::work_order_delete_get, modal;
         post WorkOrderDeletePostRouteTag, "/work-orders/orders/{id}/delete", bare handlers::work_order_delete_post, fragment(WorkOrderDeleteModalKey);
+        post WorkOrderConvertPostRouteTag, "/work-orders/orders/{id}/convert", bare handlers::work_order_convert_post, redirect;
+
+        // Issued Work Orders
+        get IssuedWorkOrdersRouteTag, "/work-orders/issued", handlers::issued_work_orders_list, fragment(IssuedWorkOrderTableKey);
+        get IssuedWorkOrderDetailRouteTag, "/work-orders/issued/{id}", handlers::issued_work_order_detail;
+        get IssuedWorkOrderDeleteGetRouteTag, "/work-orders/issued/{id}/delete", handlers::issued_work_order_delete_get, modal;
+        post IssuedWorkOrderDeletePostRouteTag, "/work-orders/issued/{id}/delete", bare handlers::issued_work_order_delete_post, fragment(IssuedWorkOrderDeleteModalKey);
+        post IssuedWorkOrderNewDraftPostRouteTag, "/work-orders/issued/{id}/new-draft", bare handlers::issued_work_order_new_draft_post, redirect;
 
         // Work Order Lines
         get WorkOrderLineEditGetRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_get, modal;
@@ -37,65 +48,28 @@ lariv_rs::define_plugin_routes! {
         get ComponentDeleteGetRouteTag, "/work-orders/components/{id}/delete", handlers::component_delete_get, modal;
         post ComponentDeletePostRouteTag, "/work-orders/components/{id}/delete", bare handlers::component_delete_post, fragment(ComponentDeleteModalKey);
 
-        // Shapes
-        get WorkOrdersShapesRouteTag, "/work-orders/shapes", handlers::shapes_list, fragment(ShapeTableKey);
-        get ShapeFkSelectRouteTag, "/work-orders/shapes/pick", handlers::shape_select, fk_select(ShapeSelectTableKey, ShapeSelectModalKey);
-        get ShapeCreateGetRouteTag, "/work-orders/shapes/create", handlers::shape_create_get, modal;
-        post ShapeCreatePostRouteTag, "/work-orders/shapes/create", handlers::shape_create_post;
-        get ShapeDetailRouteTag, "/work-orders/shapes/{id}", handlers::shape_detail;
-        get ShapeEditGetRouteTag, "/work-orders/shapes/{id}/edit", handlers::shape_edit_get, modal;
-        post ShapeEditPostRouteTag, "/work-orders/shapes/{id}/edit", handlers::shape_edit_post;
-        get ShapeDeleteGetRouteTag, "/work-orders/shapes/{id}/delete", handlers::shape_delete_get, modal;
-        post ShapeDeletePostRouteTag, "/work-orders/shapes/{id}/delete", bare handlers::shape_delete_post, fragment(ShapeDeleteModalKey);
-
-        // Materials
-        get WorkOrdersMaterialsRouteTag, "/work-orders/materials", handlers::materials_list, fragment(MaterialTableKey);
-        get MaterialFkSelectRouteTag, "/work-orders/materials/pick", handlers::material_select, fk_select(MaterialSelectTableKey, MaterialSelectModalKey);
-        get MaterialCreateGetRouteTag, "/work-orders/materials/create", handlers::material_create_get, modal;
-        post MaterialCreatePostRouteTag, "/work-orders/materials/create", handlers::material_create_post;
-        get MaterialDetailRouteTag, "/work-orders/materials/{id}", handlers::material_detail;
-        get MaterialEditGetRouteTag, "/work-orders/materials/{id}/edit", handlers::material_edit_get, modal;
-        post MaterialEditPostRouteTag, "/work-orders/materials/{id}/edit", handlers::material_edit_post;
-        get MaterialDeleteGetRouteTag, "/work-orders/materials/{id}/delete", handlers::material_delete_get, modal;
-        post MaterialDeletePostRouteTag, "/work-orders/materials/{id}/delete", bare handlers::material_delete_post, fragment(MaterialDeleteModalKey);
-
-        // Material Rates
-        get WorkOrdersRatesRouteTag, "/work-orders/rates", handlers::rates_list, fragment(MaterialRateTableKey);
-        get MaterialRateCreateGetRouteTag, "/work-orders/rates/create", handlers::rate_create_get, modal;
-        post MaterialRateCreatePostRouteTag, "/work-orders/rates/create", handlers::rate_create_post;
-        get MaterialRateDeleteGetRouteTag, "/work-orders/rates/{id}/delete", handlers::rate_delete_get, modal;
-        post MaterialRateDeletePostRouteTag, "/work-orders/rates/{id}/delete", bare handlers::rate_delete_post, fragment(MaterialRateDeleteModalKey);
-
-        // Machines
-        get WorkOrdersMachinesRouteTag, "/work-orders/machines", handlers::machines_list, fragment(MachineTableKey);
-        get MachineCreateGetRouteTag, "/work-orders/machines/create", handlers::machine_create_get, modal;
-        post MachineCreatePostRouteTag, "/work-orders/machines/create", handlers::machine_create_post;
-        get MachineDetailRouteTag, "/work-orders/machines/{id}", handlers::machine_detail;
-        get MachineEditGetRouteTag, "/work-orders/machines/{id}/edit", handlers::machine_edit_get, modal;
-        post MachineEditPostRouteTag, "/work-orders/machines/{id}/edit", handlers::machine_edit_post;
-        get MachineDeleteGetRouteTag, "/work-orders/machines/{id}/delete", handlers::machine_delete_get, modal;
-        post MachineDeletePostRouteTag, "/work-orders/machines/{id}/delete", bare handlers::machine_delete_post, fragment(MachineDeleteModalKey);
-        get MachineFkSelectRouteTag, "/work-orders/machines/pick", handlers::machine_select, fk_select(MachineSelectTableKey, MachineSelectModalKey);
-
-        // Proforma Invoices
-        get WorkOrdersInvoicesRouteTag, "/work-orders/invoices", handlers::invoices_list, fragment(InvoiceTableKey);
-        get InvoiceCreateGetRouteTag, "/work-orders/invoices/create", handlers::invoice_create_get, modal;
-        post InvoiceCreatePostRouteTag, "/work-orders/invoices/create", handlers::invoice_create_post;
-        get InvoiceDetailRouteTag, "/work-orders/invoices/{id}", handlers::invoice_detail;
-        get InvoiceEditGetRouteTag, "/work-orders/invoices/{id}/edit", handlers::invoice_edit_get, modal;
-        post InvoiceEditPostRouteTag, "/work-orders/invoices/{id}/edit", handlers::invoice_edit_post;
-        get InvoiceDeleteGetRouteTag, "/work-orders/invoices/{id}/delete", handlers::invoice_delete_get, modal;
-        post InvoiceDeletePostRouteTag, "/work-orders/invoices/{id}/delete", bare handlers::invoice_delete_post, fragment(InvoiceDeleteModalKey);
+        // Quotations
+        get WorkOrdersInvoicesRouteTag, "/work-orders/quotations", handlers::invoices_list, fragment(InvoiceTableKey);
+        get InvoiceCreateGetRouteTag, "/work-orders/quotations/create", handlers::invoice_create_get, modal;
+        post InvoiceCreatePostRouteTag, "/work-orders/quotations/create", handlers::invoice_create_post;
+        get InvoiceDetailRouteTag, "/work-orders/quotations/{id}", handlers::invoice_detail;
+        post InvoiceCreateWorkOrderPostRouteTag, "/work-orders/quotations/{id}/create-work-order", bare handlers::invoice_create_work_order_post, redirect;
+        get InvoiceEditGetRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_get, modal;
+        post InvoiceEditPostRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_post;
+        get InvoiceDeleteGetRouteTag, "/work-orders/quotations/{id}/delete", handlers::invoice_delete_get, modal;
+        post InvoiceDeletePostRouteTag, "/work-orders/quotations/{id}/delete", bare handlers::invoice_delete_post, fragment(InvoiceDeleteModalKey);
 
         // Preferences
         get WorkOrdersPrefsGetRouteTag, "/work-orders/preferences", handlers::preferences_get;
         post WorkOrdersPrefsPostRouteTag, "/work-orders/preferences", handlers::preferences_post;
 
         // PDFs
-        get WorkOrderPdfRouteTag, "/work-orders/orders/{id}/pdf", bare handlers::work_order_pdf, file;
-        get InvoicePdfRouteTag, "/work-orders/invoices/{id}/pdf", bare handlers::invoice_pdf, file;
+        get WorkOrderPdfModalRouteTag, "/work-orders/orders/{id}/pdf", bare handlers::work_order_pdf_modal, modal;
+        get WorkOrderPdfRouteTag, "/work-orders/orders/{id}/pdf/file", bare handlers::work_order_pdf, file;
+        get InvoicePdfModalRouteTag, "/work-orders/quotations/{id}/pdf", bare handlers::invoice_pdf_modal, modal;
+        get InvoicePdfRouteTag, "/work-orders/quotations/{id}/pdf/file", bare handlers::invoice_pdf, file;
         post WorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/work-order", bare handlers::work_order_pdf_preview_post, modal;
-        post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/invoice", bare handlers::invoice_pdf_preview_post, modal;
+        post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/quotation", bare handlers::invoice_pdf_preview_post, modal;
         get WorkOrdersPdfPreviewPdfRouteTag, "/work-orders/pdf/preview/{token}", bare handlers::preview_pdf_get, file, param token: String;
 
         // API
@@ -103,7 +77,6 @@ lariv_rs::define_plugin_routes! {
     ]
 }
 
-pub type DraftWorkOrdersDefaultRouteTag = WorkOrdersDefaultRouteTag;
 pub type DraftWorkOrderFkSelectRouteTag = WorkOrderFkSelectRouteTag;
 pub type DraftWorkOrderCreateGetRouteTag = WorkOrderCreateGetRouteTag;
 pub type DraftWorkOrderCreatePostRouteTag = WorkOrderCreatePostRouteTag;
@@ -132,6 +105,3 @@ pub type DraftWorkOrderMachineLineEditGetRouteTag = WorkOrderMachineLineEditGetR
 pub type DraftWorkOrderMachineLineEditPostRouteTag = WorkOrderMachineLineEditPostRouteTag;
 pub type DraftWorkOrderMachineLineDeleteGetRouteTag = WorkOrderMachineLineDeleteGetRouteTag;
 pub type DraftWorkOrderMachineLineDeletePostRouteTag = WorkOrderMachineLineDeletePostRouteTag;
-
-pub type DraftMachineFkSelectRouteTag = MachineFkSelectRouteTag;
-

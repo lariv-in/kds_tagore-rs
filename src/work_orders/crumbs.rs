@@ -1,4 +1,4 @@
-//! Breadcrumbs and sidebar navigation menu for Work Orders.
+//! Breadcrumbs and sidebar navigation menu for KDS Quotations.
 
 use lariv_rs::components::{
     Crumb, SidebarMenu, SidebarMenuItem, breadcrumbs, sidebar_menu, sidebar_menu_item_pane,
@@ -6,21 +6,32 @@ use lariv_rs::components::{
 use maud::{Markup, html};
 
 use super::routes::{
-    ComponentDetailRouteTag, InvoiceDetailRouteTag, MachineDetailRouteTag, MaterialDetailRouteTag,
-    ShapeDetailRouteTag, WorkOrderDetailRouteTag, WorkOrdersComponentsRouteTag,
-    WorkOrdersDefaultRouteTag, WorkOrdersInvoicesRouteTag, WorkOrdersMachinesRouteTag,
-    WorkOrdersMaterialsRouteTag, WorkOrdersPrefsGetRouteTag, WorkOrdersRatesRouteTag,
-    WorkOrdersShapesRouteTag,
+    ComponentDetailRouteTag, DraftWorkOrdersDefaultRouteTag, InvoiceDetailRouteTag,
+    IssuedWorkOrderDetailRouteTag, IssuedWorkOrdersRouteTag, WorkOrderDetailRouteTag,
+    WorkOrdersComponentsRouteTag, WorkOrdersDefaultRouteTag, WorkOrdersPrefsGetRouteTag,
 };
+
+pub fn work_orders_tab_url(tab: &str) -> String {
+    match tab {
+        "issued" => IssuedWorkOrdersRouteTag.url(),
+        _ => DraftWorkOrdersDefaultRouteTag.url(),
+    }
+}
 
 pub fn wo_menu(active: &str) -> Markup {
     sidebar_menu(SidebarMenu {
-        title: "Work Orders",
+        title: "KDS Quotations",
         children: html! {
             (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Draft Work Orders",
+                title: "Quotations",
                 url: &WorkOrdersDefaultRouteTag.url(),
-                active: active == "orders",
+                active: active == "invoices",
+                ..Default::default()
+            }))
+            (sidebar_menu_item_pane(SidebarMenuItem {
+                title: "Work Orders",
+                url: &DraftWorkOrdersDefaultRouteTag.url(),
+                active: active == "orders" || active == "issued",
                 ..Default::default()
             }))
             (sidebar_menu_item_pane(SidebarMenuItem {
@@ -30,37 +41,7 @@ pub fn wo_menu(active: &str) -> Markup {
                 ..Default::default()
             }))
             (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Shapes",
-                url: &WorkOrdersShapesRouteTag.url(),
-                active: active == "shapes",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Materials",
-                url: &WorkOrdersMaterialsRouteTag.url(),
-                active: active == "materials",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Material Rates",
-                url: &WorkOrdersRatesRouteTag.url(),
-                active: active == "rates",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Machines",
-                url: &WorkOrdersMachinesRouteTag.url(),
-                active: active == "machines",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Proforma Invoices",
-                url: &WorkOrdersInvoicesRouteTag.url(),
-                active: active == "invoices",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "PDF Preferences",
+                title: "Preferences",
                 url: &WorkOrdersPrefsGetRouteTag.url(),
                 active: active == "preferences",
                 ..Default::default()
@@ -106,17 +87,31 @@ fn entity_crumbs(
 
 pub fn work_orders_list_crumbs() -> Markup {
     breadcrumbs(&[Crumb {
-        label: "Draft Work Orders",
+        label: "Work Orders",
         href: None,
     }])
 }
 
 pub fn work_order_crumbs(order_number: &str, id: i64) -> Markup {
     entity_crumbs(
-        "Draft Work Orders",
-        &WorkOrdersDefaultRouteTag.url(),
+        "Work Orders",
+        &work_orders_tab_url("drafts"),
         order_number,
         &WorkOrderDetailRouteTag::new(id).url(),
+        None,
+    )
+}
+
+pub fn issued_work_orders_list_crumbs() -> Markup {
+    work_orders_list_crumbs()
+}
+
+pub fn issued_work_order_crumbs(order_number: &str, id: i64) -> Markup {
+    entity_crumbs(
+        "Work Orders",
+        &work_orders_tab_url("issued"),
+        order_number,
+        &IssuedWorkOrderDetailRouteTag::new(id).url(),
         None,
     )
 }
@@ -138,75 +133,17 @@ pub fn component_crumbs(name: &str, id: i64) -> Markup {
     )
 }
 
-pub fn shapes_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Shapes",
-        href: None,
-    }])
-}
-
-pub fn shape_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Shapes",
-        &WorkOrdersShapesRouteTag.url(),
-        name,
-        &ShapeDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn materials_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Materials",
-        href: None,
-    }])
-}
-
-pub fn material_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Materials",
-        &WorkOrdersMaterialsRouteTag.url(),
-        name,
-        &MaterialDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn rates_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Material Rates",
-        href: None,
-    }])
-}
-
-pub fn machines_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Machines",
-        href: None,
-    }])
-}
-
-pub fn machine_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Machines",
-        &WorkOrdersMachinesRouteTag.url(),
-        name,
-        &MachineDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
 pub fn invoices_list_crumbs() -> Markup {
     breadcrumbs(&[Crumb {
-        label: "Proforma Invoices",
+        label: "Quotations",
         href: None,
     }])
 }
 
 pub fn invoice_crumbs(invoice_number: &str, id: i64) -> Markup {
     entity_crumbs(
-        "Proforma Invoices",
-        &WorkOrdersInvoicesRouteTag.url(),
+        "Quotations",
+        &WorkOrdersDefaultRouteTag.url(),
         invoice_number,
         &InvoiceDetailRouteTag::new(id).url(),
         None,
@@ -215,7 +152,7 @@ pub fn invoice_crumbs(invoice_number: &str, id: i64) -> Markup {
 
 pub fn work_orders_prefs_crumbs() -> Markup {
     breadcrumbs(&[Crumb {
-        label: "Work Orders PDF Preferences",
+        label: "Preferences",
         href: None,
     }])
 }
@@ -223,7 +160,7 @@ pub fn work_orders_prefs_crumbs() -> Markup {
 pub fn work_order_edit_crumbs(order_number: &str, id: i64) -> Markup {
     entity_crumbs(
         "Work Orders",
-        &WorkOrdersDefaultRouteTag.url(),
+        &work_orders_tab_url("drafts"),
         order_number,
         &WorkOrderDetailRouteTag::new(id).url(),
         Some("Edit"),
@@ -240,43 +177,12 @@ pub fn component_edit_crumbs(name: &str, id: i64) -> Markup {
     )
 }
 
-pub fn shape_edit_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Shapes",
-        &WorkOrdersShapesRouteTag.url(),
-        name,
-        &ShapeDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
-}
-
-pub fn material_edit_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Materials",
-        &WorkOrdersMaterialsRouteTag.url(),
-        name,
-        &MaterialDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
-}
-
-pub fn machine_edit_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Machines",
-        &WorkOrdersMachinesRouteTag.url(),
-        name,
-        &MachineDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
-}
-
 pub fn invoice_edit_crumbs(invoice_number: &str, id: i64) -> Markup {
     entity_crumbs(
-        "Proforma Invoices",
-        &WorkOrdersInvoicesRouteTag.url(),
+        "Quotations",
+        &WorkOrdersDefaultRouteTag.url(),
         invoice_number,
         &InvoiceDetailRouteTag::new(id).url(),
         Some("Edit"),
     )
 }
-
