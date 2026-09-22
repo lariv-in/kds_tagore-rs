@@ -66,6 +66,14 @@ impl Model {
             &serde_json::json!({}),
         )
     }
+
+    pub fn format_variables_display_with_schema(&self, machine_schema: &Json) -> String {
+        crate::work_orders::line_vars::format_variables_display(
+            machine_schema,
+            &self.variables,
+            &serde_json::json!({}),
+        )
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

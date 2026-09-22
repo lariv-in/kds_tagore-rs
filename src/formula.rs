@@ -57,6 +57,28 @@ impl VariableType {
             _ => None,
         }
     }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::Length, Self::Weight, Self::Duration, Self::Quantity]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Length => "Length",
+            Self::Weight => "Weight",
+            Self::Duration => "Duration",
+            Self::Quantity => "Quantity",
+        }
+    }
+
+    pub fn default_placeholder(self) -> &'static str {
+        match self {
+            Self::Length => "mm, e.g. 1000",
+            Self::Weight => "kg, e.g. 1.5",
+            Self::Duration => "e.g. 2h 30m",
+            Self::Quantity => "e.g. 1",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -710,5 +732,17 @@ mod tests {
             Some(&VariableValue::DurationNanos(NANOS_PER_SECOND))
         );
         assert_eq!(s.get("q"), Some(&VariableValue::Quantity(1)));
+    }
+
+    #[test]
+    fn format_values_display_duration() {
+        let schema = schema(&[("duration", VariableType::Duration)]);
+        let mut values = VariableValues::new();
+        values.insert(
+            "duration".into(),
+            VariableValue::DurationNanos(7_200_000_000_000),
+        );
+        let out = format_values_display(&schema, &values, &HashMap::new());
+        assert_eq!(out, "duration: 2 hours");
     }
 }

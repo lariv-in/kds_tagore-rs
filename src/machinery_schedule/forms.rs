@@ -1,9 +1,11 @@
 use lariv_rs::components::{attrs::escape_attr, label_hint};
 use lariv_rs::html_form::{
     FieldRender, FormCtx, FormWidget, html_form,
-    widgets::{Duration, List, ManyToMany, Number, Text, Textarea},
+    widgets::{Duration, ManyToMany, Number, Text, Textarea},
 };
 use maud::{Markup, PreEscaped, html};
+
+use crate::variable_schema_input::VariableSchemaList;
 
 use super::routes::MachineFkSelectRouteTag;
 
@@ -55,9 +57,9 @@ pub struct MachineForm {
 
     #[form(
         label = "Variables",
-        widget = List,
-        placeholder = "name:type  e.g. duration:duration",
-        hint = "One per row as name:type. Types: length, weight, duration, quantity."
+        widget = VariableSchemaList,
+        placeholder = "Variable name",
+        hint = "Name plus type for each formula variable. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
     )]
     pub variables: Vec<String>,
 }

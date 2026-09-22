@@ -1,0 +1,169 @@
+//! Company presentation fields for quotation PDFs (name, address, GSTIN, logo, signature).
+
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[derive(DeriveIden)]
+enum WorkOrdersPreferences {
+    Table,
+    CompanyName,
+    CompanyAddress,
+    CompanyPhone,
+    CompanyGstin,
+    PlaceOfSupply,
+    CompanyLogoVnodeId,
+    CompanySignatureVnodeId,
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanyName)
+                            .text()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanyAddress)
+                            .text()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanyPhone)
+                            .text()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanyGstin)
+                            .text()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::PlaceOfSupply)
+                            .text()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanyLogoVnodeId)
+                            .big_integer()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .add_column_if_not_exists(
+                        ColumnDef::new(WorkOrdersPreferences::CompanySignatureVnodeId)
+                            .big_integer()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanySignatureVnodeId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanyLogoVnodeId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::PlaceOfSupply)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanyGstin)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanyPhone)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanyAddress)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(WorkOrdersPreferences::Table)
+                    .drop_column(WorkOrdersPreferences::CompanyName)
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+}

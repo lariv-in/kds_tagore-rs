@@ -1,16 +1,16 @@
 {# Minijinja template: output must be valid Typst markup.
-   Context (PascalCase) for a quotation PDF:
-     ID, InvoiceNumber, CustomerId, Date,
+   Context (PascalCase) for a finalized work order PDF:
+     ID, OrderNumber, CustomerId, CreatedAt, Duration,
      Customer { ID, Name, Address, GSTIN, PAN, Phone, Email, Website },
      MaterialLines [ { ID, ComponentId, Component, VariablesDisplay, Taxes, TaxItems, PreTax, FinalCost } ],
      MachineLines  [ { ID, MachineId, Machine, VariablesDisplay, Taxes, TaxItems, PreTax, LineTotal } ],
-     GrandTotal (string),
+     TotalAmount (string),
      company_name, company_address, company_phone, company_gstin, place_of_supply,
      company_logo_vnode_id, company_signature_vnode_id
      (from KDS Quotations → Preferences; blank preview fields use sample placeholders).
      preview (bool): true for the preferences sample PDF.
    TaxItems: [ { ID, Name, Percentage, TaxType } ] where TaxType is levied|withholding.
-   Functions: num2words, num2wordsAnd, num2wordsRupees, grandTotalWords, vnodeImage. #}
+   Functions: num2words, num2wordsAnd, num2wordsRupees, totalAmountWords, grandTotalWords, vnodeImage. #}
 #set page(paper: "a4", margin: 1.1cm)
 #set text(font: "Liberation Sans", size: 8.5pt)
 #set table(stroke: 0.4pt, inset: 5pt)
@@ -120,8 +120,7 @@
 {% set preview = preview or Preview or false %}
 
 #align(center)[
-  *QUOTATION* \
-  (ORIGINAL FOR RECIPIENT)
+  *WORK ORDER*
 ]
 #v(0.4em)
 #grid(
@@ -162,8 +161,9 @@
     {% if place_of_supply %}Place of Supply: {{ place_of_supply }}{% endif %}
   ],
   [
-    *Quotation No.:* {% if InvoiceNumber %}{{ InvoiceNumber }}{% else %}Draft \#{{ ID }}{% endif %} \
-    *Dated:* {{ Date }}
+    *Order No.:* {% if OrderNumber %}{{ OrderNumber }}{% else %}Work Order \#{{ ID }}{% endif %} \
+    *Dated:* {{ CreatedAt }} \
+    *Duration:* {{ Duration }}
   ],
 )
 
@@ -217,7 +217,7 @@
 
 #table(
   columns: (1fr, 0.7fr),
-  [This is a Computer Generated Quotation],
+  [This is a Computer Generated Work Order],
   align(center)[
     for *{% if company_name %}{{ company_name }}{% else %}the Company{% endif %}*
     {% if company_signature_vnode_id and company_signature_vnode_id != 0 %}

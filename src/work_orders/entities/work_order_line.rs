@@ -49,6 +49,14 @@ impl Model {
             &self.extra_data,
         )
     }
+
+    pub fn format_variables_display_with_schema(&self, component_schema: &Json) -> String {
+        crate::work_orders::line_vars::format_variables_display(
+            component_schema,
+            &self.variables,
+            &self.extra_data,
+        )
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

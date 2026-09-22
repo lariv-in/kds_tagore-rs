@@ -2,11 +2,8 @@ use kds_tagore_rs::formula::{
     VariableType, VariableValue, VariableValues, eval_formula, standard_sample_values,
     validate_formula,
 };
-use kds_tagore_rs::machinery_schedule::duration::JobDuration;
 use kds_tagore_rs::work_orders::{
-    entities::{
-        component, quotation, quotation_machine_line, quotation_material_line,
-    },
+    entities::{component, quotation, quotation_machine_line, quotation_material_line},
     seed,
 };
 use rust_decimal::Decimal;
@@ -133,9 +130,11 @@ fn test_invoice_line_totals_and_taxes() {
         date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
         customer_id: 1,
         invoice_number: "Q-1".into(),
-        duration: JobDuration::from_nanos(3_600_000_000_000),
     };
-    assert_eq!(inv.grand_total(&[mat.clone()], &[mach.clone()]), pretax * Decimal::from(2));
+    assert_eq!(
+        inv.grand_total(&[mat.clone()], &[mach.clone()]),
+        pretax * Decimal::from(2)
+    );
     let tax = gst18_levied_tax();
     assert_eq!(
         mat.taxed_total(&[tax.clone()]),

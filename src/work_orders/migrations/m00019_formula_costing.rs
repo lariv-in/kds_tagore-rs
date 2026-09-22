@@ -171,8 +171,18 @@ impl MigrationTrait for Migration {
                 "DROP TABLE IF EXISTS work_order_material_rates CASCADE",
             )
             .await?;
-            exec(db, backend, "DROP TABLE IF EXISTS work_order_materials CASCADE").await?;
-            exec(db, backend, "DROP TABLE IF EXISTS work_order_shapes CASCADE").await?;
+            exec(
+                db,
+                backend,
+                "DROP TABLE IF EXISTS work_order_materials CASCADE",
+            )
+            .await?;
+            exec(
+                db,
+                backend,
+                "DROP TABLE IF EXISTS work_order_shapes CASCADE",
+            )
+            .await?;
         } else {
             let _ = exec(db, backend, "PRAGMA foreign_keys = OFF").await;
             exec_ok(db, backend, "DROP VIEW IF EXISTS draft_work_order_lines").await;

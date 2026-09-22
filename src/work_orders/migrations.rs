@@ -21,6 +21,9 @@ mod m00016_machines_to_machinery_schedule;
 mod m00017_create_work_orders;
 mod m00018_job_source_doc_backfill;
 mod m00019_formula_costing;
+mod m00020_quotation_pdf_presentation;
+mod m00021_drop_quotation_duration;
+mod m00022_work_order_pdf_template;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -48,6 +51,9 @@ impl MigratorTrait for Migrator {
             Box::new(m00017_create_work_orders::Migration),
             Box::new(m00018_job_source_doc_backfill::Migration),
             Box::new(m00019_formula_costing::Migration),
+            Box::new(m00020_quotation_pdf_presentation::Migration),
+            Box::new(m00021_drop_quotation_duration::Migration),
+            Box::new(m00022_work_order_pdf_template::Migration),
         ]
     }
 }

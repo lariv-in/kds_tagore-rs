@@ -1,3 +1,4 @@
+use crate::variable_schema_input::VariableSchemaList;
 #[allow(unused_imports)]
 use lariv_rs::html_form::widgets::{ForeignKey, ManyToMany};
 use lariv_rs::{
@@ -9,8 +10,9 @@ use lariv_rs::{
     },
     html_form::{
         FieldRender, FormCtx, FormFieldKey, FormWidget, html_form,
-        widgets::{CodeEditor, Duration, List, Section, Text, Textarea},
+        widgets::{CodeEditor, Duration, Section, Text, Textarea},
     },
+    plugins::filesystem::routes::VNodeFileSelectRouteTag,
     plugins::finance_taxes::routes::TaxMultiSelectRouteTag,
 };
 use maud::{Markup, PreEscaped, html};
@@ -642,13 +644,46 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                     if (!item.dim_units) item.dim_units = {};
                     const next = {};
                     for (const name of Object.keys(schema || {})) {
-                        next[name] = (item.variables[name] != null && item.variables[name] !== undefined)
+                        let val = (item.variables[name] != null && item.variables[name] !== undefined)
                             ? item.variables[name] : '';
+                        if (String(schema[name]).toLowerCase() === 'duration') {
+                            val = this.formatDurationValue(val);
+                        }
+                        next[name] = val;
                         if (String(schema[name]).toLowerCase() === 'length' && !item.dim_units[name]) {
                             item.dim_units[name] = 'mm';
                         }
                     }
                     item.variables = next;
+                },
+                formatDurationValue(val) {
+                    if (val == null || val === '') return '';
+                    let n = null;
+                    if (typeof val === 'number' && Number.isFinite(val)) n = val;
+                    else if (typeof val === 'string' && /^-?\d+$/.test(String(val).trim())) n = Number(val.trim());
+                    if (n == null || !Number.isFinite(n)) return val;
+                    if (Math.abs(n) < 1e6) return val;
+                    return this.nanosToDuration(n);
+                },
+                nanosToDuration(n) {
+                    n = Math.trunc(n);
+                    if (n <= 0) return '';
+                    const S = 1e9, M = 60 * S, H = 60 * M, D = 24 * H, W = 7 * D;
+                    const parts = [];
+                    for (const [singular, plural, unit] of [
+                        ['week', 'weeks', W],
+                        ['day', 'days', D],
+                        ['hour', 'hours', H],
+                        ['minute', 'minutes', M],
+                        ['second', 'seconds', S],
+                    ]) {
+                        if (n >= unit) {
+                            const c = Math.floor(n / unit);
+                            n = n % unit;
+                            parts.push(c + ' ' + (c === 1 ? singular : plural));
+                        }
+                    }
+                    return parts.length ? parts.join(' ') : (n + 'ns');
                 },
                 parseVariables(raw) {
                     if (!raw) return {};
@@ -724,9 +759,9 @@ pub struct ComponentForm {
 
     #[form(
         label = "Variables",
-        widget = List,
-        placeholder = "name:type  e.g. length:length",
-        hint = "One per row as name:type. Types: length, weight, duration, quantity."
+        widget = VariableSchemaList,
+        placeholder = "Variable name",
+        hint = "Name plus type for each formula variable. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
     )]
     pub variables: Vec<String>,
 
@@ -781,6 +816,25 @@ fn json_object_field(v: Option<&serde_json::Value>) -> serde_json::Value {
         None => serde_json::json!({}),
         _ => serde_json::json!({}),
     }
+}
+
+fn schema_json_from_meta(variables: &HashMap<String, String>) -> serde_json::Value {
+    serde_json::to_value(variables).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+fn schema_json_from_list(list: &serde_json::Value, id: i64) -> serde_json::Value {
+    list.as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|v| v.get("id").and_then(|x| x.as_i64()) == Some(id))
+        })
+        .and_then(|v| v.get("variables"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn form_variables(schema: &serde_json::Value, raw: serde_json::Value) -> serde_json::Value {
+    crate::work_orders::line_vars::values_json_for_form(schema, &raw)
 }
 
 fn json_i64_id(v: Option<&serde_json::Value>) -> i64 {
@@ -850,7 +904,13 @@ impl FormWidget for MaterialLinesWidget {
             for (i, v) in arr.into_iter().enumerate() {
                 if let serde_json::Value::Object(obj) = v {
                     let component_id = json_i64_id(obj.get("component_id"));
-                    let variables = json_object_field(obj.get("variables"));
+                    let schema = component_metas
+                        .iter()
+                        .find(|c| c.id == component_id)
+                        .map(|c| schema_json_from_meta(&c.variables))
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let variables =
+                        form_variables(&schema, json_object_field(obj.get("variables")));
                     let extra_data = obj
                         .get("extra_data")
                         .cloned()
@@ -1163,6 +1223,8 @@ impl FormWidget for MachineLinesWidget {
         } else {
             machines_json
         };
+        let machines_val: serde_json::Value =
+            serde_json::from_str(machines_json).unwrap_or_else(|_| serde_json::json!([]));
         let mut rows = Vec::new();
         if let Ok(serde_json::Value::Array(arr)) =
             serde_json::from_str::<serde_json::Value>(field.value)
@@ -1176,7 +1238,9 @@ impl FormWidget for MachineLinesWidget {
                         .and_then(|x| x.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let variables = json_object_field(obj.get("variables"));
+                    let schema = schema_json_from_list(&machines_val, machine_id);
+                    let variables =
+                        form_variables(&schema, json_object_field(obj.get("variables")));
                     let db_id = json_i64_id(obj.get("id"));
                     let final_cost = obj
                         .get("final_cost")
@@ -1668,6 +1732,46 @@ pub struct WorkOrdersPreferencesForm {
     )]
     pub default_machine_taxes: Vec<i64>,
 
+    #[form(widget = Section, label = "Quotation PDF presentation")]
+    _section_company: (),
+
+    #[form(label = "Company name", widget = Text, name = "company_name")]
+    pub company_name: String,
+
+    #[form(label = "Company address (Typst)", widget = Textarea, rows = 4, name = "company_address")]
+    pub company_address: String,
+
+    #[form(label = "Company phone", widget = Text, name = "company_phone")]
+    pub company_phone: String,
+
+    #[form(label = "Company GSTIN", widget = Text, name = "company_gstin")]
+    pub company_gstin: String,
+
+    #[form(label = "Default place of supply", widget = Text, name = "place_of_supply")]
+    pub place_of_supply: String,
+
+    #[form(
+        label = "Quotation logo",
+        widget = ForeignKey,
+        route = VNodeFileSelectRouteTag,
+        swap_key = "wo-pref-quotation-logo-vnode",
+        display = "company_logo_vnode",
+        placeholder = "Select logo file…",
+        name = "company_logo_vnode_id"
+    )]
+    pub company_logo_vnode_id: String,
+
+    #[form(
+        label = "Quotation signature",
+        widget = ForeignKey,
+        route = VNodeFileSelectRouteTag,
+        swap_key = "wo-pref-quotation-signature-vnode",
+        display = "company_signature_vnode",
+        placeholder = "Select signature file…",
+        name = "company_signature_vnode_id"
+    )]
+    pub company_signature_vnode_id: String,
+
     #[form(widget = Section, label = "Draft Work Order PDF")]
     _section_wo: (),
 
@@ -1678,6 +1782,17 @@ pub struct WorkOrdersPreferencesForm {
         rows = 24
     )]
     pub draft_work_order_pdf_template: String,
+
+    #[form(widget = Section, label = "Work Order PDF")]
+    _section_issued_wo: (),
+
+    #[form(
+        label = "Work Order Template (Typst)",
+        widget = CodeEditor,
+        language = "typst",
+        rows = 24
+    )]
+    pub work_order_pdf_template: String,
 
     #[form(widget = Section, label = "Quotation PDF")]
     _section_inv: (),
@@ -1757,9 +1872,6 @@ pub struct InvoiceForm {
     )]
     pub customer_id: i64,
 
-    #[form(label = "Duration", required, widget = Duration)]
-    pub duration: String,
-
     #[form(
         label = "Material Lines",
         widget = MaterialLinesWidget,
@@ -1775,6 +1887,12 @@ pub struct InvoiceForm {
 
 pub type InvoiceCreateForm = InvoiceForm;
 pub type InvoiceEditForm = InvoiceForm;
+
+#[html_form]
+pub struct InvoiceCreateWorkOrderForm {
+    #[form(label = "Duration", required, widget = Duration)]
+    pub duration: String,
+}
 
 pub type InvoiceMaterialLineInput = DraftWorkOrderMaterialLineInput;
 pub type InvoiceMachineLineInput = DraftWorkOrderMachineLineInput;

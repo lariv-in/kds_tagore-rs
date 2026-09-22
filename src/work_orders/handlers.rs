@@ -15,6 +15,7 @@ use lariv_rs::{
     http::Cap,
     picker::respond_picker_select,
     plugins::{
+        filesystem::{entities::VNodeEntity, state::FilesystemState},
         finance_common::require_superuser,
         users::middleware::{OptionalAuth, RequireAuth, RequireStaff},
     },
@@ -44,7 +45,14 @@ use super::{
     keys::*,
     line_vars,
     pdf::{self, PdfError, PdfResult},
-    preferences::{empty_preferences, load_preferences, save_preferences},
+    pdf_templates::{
+        is_stock_draft_work_order_template, is_stock_quotation_template,
+        is_stock_work_order_template,
+    },
+    preferences::{
+        draft_work_order_pdf_template, empty_preferences, load_preferences, opt_text, opt_vnode_id,
+        quotation_pdf_template, save_preferences, work_order_pdf_template,
+    },
     quotation_number,
     routes::*,
     state::WorkOrdersState,
@@ -200,7 +208,10 @@ pub async fn work_order_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let machine_map: HashMap<i64, String> = machines.into_iter().map(|m| (m.id, m.name)).collect();
+    let machine_map: HashMap<i64, String> =
+        machines.iter().map(|m| (m.id, m.name.clone())).collect();
+    let machine_schemas: HashMap<i64, serde_json::Value> =
+        machines.into_iter().map(|m| (m.id, m.variables)).collect();
 
     let comp_ids: Vec<i64> = lines.iter().map(|l| l.component_id).collect();
     let comps = component::Entity::find()
@@ -208,7 +219,9 @@ pub async fn work_order_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.into_iter().map(|c| (c.id, c.name)).collect();
+    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
+    let component_schemas: HashMap<i64, serde_json::Value> =
+        comps.into_iter().map(|c| (c.id, c.variables)).collect();
 
     let customer =
         lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(order.customer_id)
@@ -286,6 +299,8 @@ pub async fn work_order_detail(
         order,
         lines: lines_with_comp,
         machine_lines: machine_lines_with_name,
+        component_schemas,
+        machine_schemas,
         customer_name: customer.map(|c| c.name),
         quotation_number,
         total_amount,
@@ -2414,7 +2429,10 @@ pub async fn invoice_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let machine_map: HashMap<i64, String> = machines.into_iter().map(|m| (m.id, m.name)).collect();
+    let machine_map: HashMap<i64, String> =
+        machines.iter().map(|m| (m.id, m.name.clone())).collect();
+    let machine_schemas: HashMap<i64, serde_json::Value> =
+        machines.into_iter().map(|m| (m.id, m.variables)).collect();
 
     let comp_ids: Vec<i64> = material_lines_raw.iter().map(|l| l.component_id).collect();
     let comps = component::Entity::find()
@@ -2422,7 +2440,9 @@ pub async fn invoice_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.into_iter().map(|c| (c.id, c.name)).collect();
+    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
+    let component_schemas: HashMap<i64, serde_json::Value> =
+        comps.into_iter().map(|c| (c.id, c.variables)).collect();
 
     let mat_ids: Vec<i64> = material_lines_raw.iter().map(|l| l.id).collect();
     let mach_ids: Vec<i64> = machine_lines_raw.iter().map(|l| l.id).collect();
@@ -2488,6 +2508,8 @@ pub async fn invoice_detail(
         invoice: inv,
         machine_lines,
         material_lines,
+        component_schemas,
+        machine_schemas,
         grand_total,
         customer_name,
     };
@@ -2522,7 +2544,6 @@ async fn invoice_create_error_modal(
         date: form.date.clone(),
         customer_id: (form.customer_id > 0).then_some(form.customer_id),
         customer_name: customer_name_by_id(db, form.customer_id).await,
-        duration: form.duration.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
         components_json: components_json(db).await,
@@ -2546,7 +2567,6 @@ async fn invoice_edit_error_modal(
         date: form.date.clone(),
         customer_id: form.customer_id,
         customer_name: customer_name_by_id(db, form.customer_id).await,
-        duration: form.duration.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
         components_json: components_json(db).await,
@@ -2572,7 +2592,6 @@ pub async fn invoice_create_get(
         date: today,
         customer_id: None,
         customer_name: String::new(),
-        duration: String::new(),
         material_lines_json: "[]".into(),
         machine_lines_json: "[]".into(),
         components_json,
@@ -2602,8 +2621,6 @@ pub struct InvoiceFormData {
     pub material_lines: Option<String>,
     #[serde(alias = "machine_lines", default)]
     pub machine_lines: Option<String>,
-    #[serde(alias = "duration", default)]
-    pub duration: String,
 }
 
 pub async fn invoice_create_post(
@@ -2663,20 +2680,6 @@ pub async fn invoice_create_post(
             }
         };
 
-    let duration = match parse_optional_job_duration(&form.duration, JobDuration::default()) {
-        Ok(d) => d,
-        Err(e) => {
-            let page = invoice_create_error_modal(
-                &state.db,
-                q.form_name(),
-                &form,
-                format!("Invalid duration: {e}"),
-            )
-            .await;
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
     let now = Utc::now();
     let model = quotation::ActiveModel {
         id: Default::default(),
@@ -2685,7 +2688,6 @@ pub async fn invoice_create_post(
         date: Set(date),
         customer_id: Set(form.customer_id),
         invoice_number: Set(invoice_number),
-        duration: Set(duration),
     };
 
     match model.insert(&state.db).await {
@@ -2746,7 +2748,6 @@ pub async fn invoice_edit_get(
         date: inv.date.to_string(),
         customer_id: inv.customer_id,
         customer_name,
-        duration: format_job_duration(inv.duration),
         material_lines_json,
         machine_lines_json,
         components_json,
@@ -2799,26 +2800,11 @@ pub async fn invoice_edit_post(
         };
 
     let now = Utc::now();
-    let duration = match parse_optional_job_duration(&form.duration, existing.duration) {
-        Ok(d) => d,
-        Err(e) => {
-            let page = invoice_edit_error_modal(
-                &state.db,
-                id,
-                q.form_name(),
-                &form,
-                format!("Invalid duration: {e}"),
-            )
-            .await;
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
     let mut am: quotation::ActiveModel = existing.into();
     am.updated_at = Set(Some(now));
     am.invoice_number = Set(invoice_number);
     am.date = Set(date);
     am.customer_id = Set(form.customer_id);
-    am.duration = Set(duration);
 
     match am.update(&state.db).await {
         Ok(_) => {
@@ -2865,6 +2851,7 @@ pub async fn invoice_delete_post(
 async fn create_work_order_from_quotation(
     db: &sea_orm::DatabaseConnection,
     quotation_id: i64,
+    duration: JobDuration,
 ) -> Result<i64, String> {
     let inv = quotation::Entity::find_by_id(quotation_id)
         .one(db)
@@ -2913,7 +2900,7 @@ async fn create_work_order_from_quotation(
     let remarks = format!("Work order from quotation {}", inv.invoice_number);
 
     let txn = db.begin().await.map_err(|e| e.to_string())?;
-    let job = create_open_job(&txn, job_name, inv.duration, &machine_ids, remarks).await?;
+    let job = create_open_job(&txn, job_name, duration, &machine_ids, remarks).await?;
 
     let saved = work_order::ActiveModel {
         id: Default::default(),
@@ -2923,7 +2910,7 @@ async fn create_work_order_from_quotation(
         customer_id: Set(inv.customer_id),
         quotation_id: Set(Some(inv.id)),
         job_id: Set(Some(job.id)),
-        duration: Set(inv.duration),
+        duration: Set(duration),
     }
     .insert(&txn)
     .await
@@ -2975,14 +2962,81 @@ async fn create_work_order_from_quotation(
     Ok(saved.id)
 }
 
-pub async fn invoice_create_work_order_post(
+pub async fn invoice_create_work_order_get(
     Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    auth: OptionalAuth,
+    Query(q): Query<ModalFormQuery>,
     Path(id): Path<i64>,
 ) -> Response {
-    match create_work_order_from_quotation(&state.db, id).await {
-        Ok(order_id) => htmx.redirect(&IssuedWorkOrderDetailRouteTag::new(order_id).url()),
-        Err(_) => htmx.redirect(&InvoiceDetailRouteTag::new(id).url()),
+    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
+    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
+        Ok(Some(i)) => i,
+        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
+    };
+
+    let page = InvoiceCreateWorkOrderModalPage {
+        id,
+        form_name: q.form_name(),
+        quotation_number: inv.invoice_number,
+        duration: String::new(),
+        error: String::new(),
+    };
+    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct InvoiceCreateWorkOrderFormData {
+    #[serde(alias = "duration", default)]
+    pub duration: String,
+}
+
+pub async fn invoice_create_work_order_post(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    auth: OptionalAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    Path(id): Path<i64>,
+    Form(form): Form<InvoiceCreateWorkOrderFormData>,
+) -> Response {
+    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
+    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
+        Ok(Some(i)) => i,
+        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
+    };
+
+    let duration = match parse_job_duration(&form.duration) {
+        Ok(d) => d,
+        Err(e) => {
+            let page = InvoiceCreateWorkOrderModalPage {
+                id,
+                form_name: q.form_name(),
+                quotation_number: inv.invoice_number,
+                duration: form.duration.clone(),
+                error: format!("Invalid duration: {e}"),
+            };
+            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+        }
+    };
+
+    match create_work_order_from_quotation(&state.db, id, duration).await {
+        Ok(order_id) => respond_create_modal_done::<InvoiceCreateWorkOrderModalKey>(
+            &htmx,
+            &q.refresh_table(),
+            &IssuedWorkOrderDetailRouteTag::new(order_id).url(),
+        ),
+        Err(e) => {
+            let page = InvoiceCreateWorkOrderModalPage {
+                id,
+                form_name: q.form_name(),
+                quotation_number: inv.invoice_number,
+                duration: form.duration,
+                error: e,
+            };
+            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
+        }
     }
 }
 
@@ -3403,7 +3457,10 @@ pub async fn issued_work_order_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let machine_map: HashMap<i64, String> = machines.into_iter().map(|m| (m.id, m.name)).collect();
+    let machine_map: HashMap<i64, String> =
+        machines.iter().map(|m| (m.id, m.name.clone())).collect();
+    let machine_schemas: HashMap<i64, serde_json::Value> =
+        machines.into_iter().map(|m| (m.id, m.variables)).collect();
 
     let comp_ids: Vec<i64> = lines.iter().map(|l| l.component_id).collect();
     let comps = component::Entity::find()
@@ -3411,7 +3468,9 @@ pub async fn issued_work_order_detail(
         .all(&state.db)
         .await
         .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.into_iter().map(|c| (c.id, c.name)).collect();
+    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
+    let component_schemas: HashMap<i64, serde_json::Value> =
+        comps.into_iter().map(|c| (c.id, c.variables)).collect();
 
     let customer =
         lariv_rs::plugins::customer::entities::customer::Entity::find_by_id(order.customer_id)
@@ -3500,6 +3559,8 @@ pub async fn issued_work_order_detail(
         order,
         lines: lines_with_comp,
         machine_lines: machine_lines_with_name,
+        component_schemas,
+        machine_schemas,
         customer_name: customer.map(|c| c.name),
         quotation_number,
         job_name,
@@ -3842,13 +3903,41 @@ async fn prefs_page(
             .unwrap_or_default(),
     };
     WorkOrdersPreferencesPage {
+        draft_work_order_pdf_template: draft_work_order_pdf_template(&prefs).to_string(),
+        work_order_pdf_template: work_order_pdf_template(&prefs).to_string(),
+        quotation_pdf_template: quotation_pdf_template(&prefs).to_string(),
         quotation_number_format: prefs.quotation_number_format.unwrap_or_default(),
-        draft_work_order_pdf_template: prefs.draft_work_order_pdf_template.unwrap_or_default(),
-        quotation_pdf_template: prefs.quotation_pdf_template.unwrap_or_default(),
+        company_name: prefs.company_name.unwrap_or_default(),
+        company_address: prefs.company_address.unwrap_or_default(),
+        company_phone: prefs.company_phone.unwrap_or_default(),
+        company_gstin: prefs.company_gstin.unwrap_or_default(),
+        place_of_supply: prefs.place_of_supply.unwrap_or_default(),
+        company_logo_vnode_id: fk_value(prefs.company_logo_vnode_id),
+        company_logo_vnode_display: load_vnode_display(db, prefs.company_logo_vnode_id).await,
+        company_signature_vnode_id: fk_value(prefs.company_signature_vnode_id),
+        company_signature_vnode_display: load_vnode_display(db, prefs.company_signature_vnode_id)
+            .await,
         default_material_tax_items: tax_items_for_ids(db, &mat_ids).await,
         default_machine_tax_items: tax_items_for_ids(db, &mach_ids).await,
         error,
     }
+}
+
+fn fk_value(id: Option<i64>) -> String {
+    id.filter(|&id| id > 0).unwrap_or(0).to_string()
+}
+
+async fn load_vnode_display(db: &sea_orm::DatabaseConnection, id: Option<i64>) -> String {
+    let Some(id) = id.filter(|&id| id > 0) else {
+        return String::new();
+    };
+    VNodeEntity::find_by_id(id)
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|n| n.name)
+        .unwrap_or_default()
 }
 
 /// HTTP handler: `get /work-orders/preferences`.
@@ -3898,9 +3987,35 @@ pub async fn preferences_post(
         id: 1,
         created_at: None,
         updated_at: None,
-        draft_work_order_pdf_template: Some(form.draft_work_order_pdf_template),
-        quotation_pdf_template: Some(form.quotation_pdf_template),
+        draft_work_order_pdf_template: if is_stock_draft_work_order_template(Some(
+            form.draft_work_order_pdf_template.as_str(),
+        )) {
+            None
+        } else {
+            Some(form.draft_work_order_pdf_template)
+        },
+        work_order_pdf_template: if is_stock_work_order_template(Some(
+            form.work_order_pdf_template.as_str(),
+        )) {
+            None
+        } else {
+            Some(form.work_order_pdf_template)
+        },
+        quotation_pdf_template: if is_stock_quotation_template(Some(
+            form.quotation_pdf_template.as_str(),
+        )) {
+            None
+        } else {
+            Some(form.quotation_pdf_template)
+        },
         quotation_number_format,
+        company_name: opt_text(&form.company_name),
+        company_address: opt_text(&form.company_address),
+        company_phone: opt_text(&form.company_phone),
+        company_gstin: opt_text(&form.company_gstin),
+        place_of_supply: opt_text(&form.place_of_supply),
+        company_logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
+        company_signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
     };
     match save_preferences(&state.db, prefs.clone()).await {
         Ok(_) => {
@@ -3957,13 +4072,54 @@ pub async fn work_order_pdf_modal(
 /// HTTP handler: `get /work-orders/orders/{id}/pdf/file`.
 pub async fn work_order_pdf(
     Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
     if !require_superuser(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    match pdf::render_work_order_pdf(&state.db, id, &ctx.timezone).await {
+    match pdf::render_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
+        Ok(result) => pdf_ok_response(result),
+        Err(e) => pdf_error_response(e),
+    }
+}
+
+/// HTTP handler: `get /work-orders/issued/{id}/pdf`.
+pub async fn issued_work_order_pdf_modal(
+    Cap(state): Cap<WorkOrdersState>,
+    RequireAuth(ctx): RequireAuth,
+    Path(id): Path<i64>,
+) -> Markup {
+    if !require_superuser(&ctx) {
+        return render_pdf_modal_error("Forbidden");
+    }
+    let Some(order) = work_order::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .unwrap_or(None)
+    else {
+        return render_pdf_modal_error("Work order not found");
+    };
+    let title = if order.order_number.trim().is_empty() {
+        "Work Order PDF".to_string()
+    } else {
+        format!("Work Order {} PDF", order.order_number)
+    };
+    render_pdf_modal(&title, &IssuedWorkOrderPdfRouteTag::new(id).path())
+}
+
+/// HTTP handler: `get /work-orders/issued/{id}/pdf/file`.
+pub async fn issued_work_order_pdf(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
+    RequireAuth(ctx): RequireAuth,
+    Path(id): Path<i64>,
+) -> Response {
+    if !require_superuser(&ctx) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match pdf::render_issued_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
         Ok(result) => pdf_ok_response(result),
         Err(e) => pdf_error_response(e),
     }
@@ -3996,21 +4152,35 @@ pub async fn invoice_pdf_modal(
 /// HTTP handler: `get /work-orders/quotations/{id}/pdf/file`.
 pub async fn invoice_pdf(
     Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
     if !require_superuser(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    match pdf::render_quotation_pdf(&state.db, id, &ctx.timezone).await {
+    match pdf::render_quotation_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
         Ok(result) => pdf_ok_response(result),
         Err(e) => pdf_error_response(e),
+    }
+}
+
+fn company_presentation_from_form(form: &WorkOrdersPreferencesForm) -> pdf::CompanyPresentation {
+    pdf::CompanyPresentation {
+        name: form.company_name.clone(),
+        address: form.company_address.clone(),
+        phone: form.company_phone.clone(),
+        gstin: form.company_gstin.clone(),
+        place_of_supply: form.place_of_supply.clone(),
+        logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
+        signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
     }
 }
 
 /// HTTP handler: `post /work-orders/pdf/preview/work-order`.
 pub async fn work_order_pdf_preview_post(
     Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
     RequireAuth(ctx): RequireAuth,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Markup {
@@ -4023,7 +4193,55 @@ pub async fn work_order_pdf_preview_post(
     } else {
         Some(form.draft_work_order_pdf_template.as_str())
     };
-    match pdf::render_work_order_pdf_preview(&state.db, template, &ctx.timezone).await {
+    let presentation = company_presentation_from_form(&form);
+    match pdf::render_work_order_pdf_preview(
+        &state.db,
+        Some(&fs),
+        template,
+        Some(presentation),
+        &ctx.timezone,
+    )
+    .await
+    {
+        Ok(result) => {
+            let token = preview_token();
+            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
+                return render_preview_modal("", Some(&msg));
+            }
+            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
+            render_preview_modal(&pdf_url, None)
+        }
+        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
+        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
+    }
+}
+
+/// HTTP handler: `post /work-orders/pdf/preview/issued-work-order`.
+pub async fn issued_work_order_pdf_preview_post(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
+    RequireAuth(ctx): RequireAuth,
+    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
+) -> Markup {
+    if !require_superuser(&ctx) {
+        return render_preview_modal("", Some("Forbidden"));
+    }
+    cleanup_stale_previews(3600);
+    let template = if form.work_order_pdf_template.trim().is_empty() {
+        None
+    } else {
+        Some(form.work_order_pdf_template.as_str())
+    };
+    let presentation = company_presentation_from_form(&form);
+    match pdf::render_issued_work_order_pdf_preview(
+        &state.db,
+        Some(&fs),
+        template,
+        Some(presentation),
+        &ctx.timezone,
+    )
+    .await
+    {
         Ok(result) => {
             let token = preview_token();
             if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
@@ -4040,6 +4258,7 @@ pub async fn work_order_pdf_preview_post(
 /// HTTP handler: `post /work-orders/pdf/preview/invoice`.
 pub async fn invoice_pdf_preview_post(
     Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
     RequireAuth(ctx): RequireAuth,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Markup {
@@ -4052,7 +4271,10 @@ pub async fn invoice_pdf_preview_post(
     } else {
         Some(form.quotation_pdf_template.as_str())
     };
-    match pdf::render_quotation_pdf_preview(&state.db, template).await {
+    let presentation = company_presentation_from_form(&form);
+    match pdf::render_quotation_pdf_preview(&state.db, Some(&fs), template, Some(presentation))
+        .await
+    {
         Ok(result) => {
             let token = preview_token();
             if let Err(msg) = store_preview_pdf(&token, &result.bytes) {

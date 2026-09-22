@@ -1,13 +1,18 @@
-{# Minijinja template: the rendered output must be valid Typst markup.
+{# Minijinja template: output must be valid Typst markup.
    Context (PascalCase) for a draft work order PDF:
      ID, OrderNumber, CustomerId, CreatedAt, Duration,
      Customer { ID, Name, Address, GSTIN, PAN, Phone, Email, Website },
-     MaterialLines [ { ID, ComponentId, Component, VariablesDisplay, Taxes, PreTax, FinalCost } ],
-     MachineLines  [ { ID, MachineId, Machine, VariablesDisplay, Taxes, PreTax, LineTotal } ],
-     TotalAmount (string).
-   Functions: num2words, num2wordsAnd, num2wordsRupees, totalAmountWords. #}
-#set page(paper: "a4", margin: 1.2cm)
-#set text(font: "Liberation Sans", size: 9pt)
+     MaterialLines [ { ID, ComponentId, Component, VariablesDisplay, Taxes, TaxItems, PreTax, FinalCost } ],
+     MachineLines  [ { ID, MachineId, Machine, VariablesDisplay, Taxes, TaxItems, PreTax, LineTotal } ],
+     TotalAmount (string),
+     company_name, company_address, company_phone, company_gstin, place_of_supply,
+     company_logo_vnode_id, company_signature_vnode_id
+     (from KDS Quotations → Preferences; blank preview fields use sample placeholders).
+     preview (bool): true for the preferences sample PDF.
+   TaxItems: [ { ID, Name, Percentage, TaxType } ] where TaxType is levied|withholding.
+   Functions: num2words, num2wordsAnd, num2wordsRupees, totalAmountWords, grandTotalWords, vnodeImage. #}
+#set page(paper: "a4", margin: 1.1cm)
+#set text(font: "Liberation Sans", size: 8.5pt)
 #set table(stroke: 0.4pt, inset: 5pt)
 
 #let fmt-num(n) = {
@@ -35,93 +40,197 @@
 
 #let inr(n) = [₹ #fmt-num(n)]
 
+#let pct(v) = float(str(v).trim("%")) / 100.0
+#let line-untaxed(ln) = float(str(ln.pretax))
+#let line-tax-amt(base, t) = base * pct(t.pct)
+#let tax-label(ln) = {
+  let names = ln.taxes.map(t => t.name)
+  if names.len() == 0 { [—] } else { names.join(", ") }
+}
+
 #let material-lines = (
 {% for line in MaterialLines %}
-  (component: [{{ line.Component }}], vars: [{{ line.VariablesDisplay }}], taxes: [{{ line.Taxes }}], pretax: float(str({{ line.PreTax }})), amount: float(str({{ line.FinalCost }}))),
+  (
+    desc: [{{ line.Component }}],
+    details: [{{ line.VariablesDisplay }}],
+    pretax: float(str({{ line.PreTax or 0 }})),
+    amount: float(str({{ line.FinalCost or 0 }})),
+    taxes: (
+{% for tax in line.TaxItems %}
+      (name: "{{ tax.Name }}", pct: {{ tax.Percentage or 0 }}, kind: "{{ tax.TaxType }}"),
+{% endfor %}
+    ),
+  ),
 {% endfor %}
 )
 
 #let machine-lines = (
 {% for line in MachineLines %}
-  (machine: [{{ line.Machine }}], vars: [{{ line.VariablesDisplay }}], taxes: [{{ line.Taxes }}], pretax: float(str({{ line.PreTax }})), amount: float(str({{ line.LineTotal }}))),
+  (
+    desc: [{{ line.Machine }}],
+    details: [{{ line.VariablesDisplay }}],
+    pretax: float(str({{ line.PreTax or 0 }})),
+    amount: float(str({{ line.LineTotal or 0 }})),
+    taxes: (
+{% for tax in line.TaxItems %}
+      (name: "{{ tax.Name }}", pct: {{ tax.Percentage or 0 }}, kind: "{{ tax.TaxType }}"),
+{% endfor %}
+    ),
+  ),
 {% endfor %}
 )
 
-#let grand = float(str({{ TotalAmount }}))
+#let all-lines = material-lines + machine-lines
+#let untaxed-total = all-lines.map(line-untaxed).sum(default: 0.0)
+
+#let tax-totals = {
+  let m = (:)
+  for ln in all-lines {
+    let base = line-untaxed(ln)
+    for t in ln.taxes {
+      let k = t.name
+      let prev = m.at(k, default: 0.0)
+      m.insert(k, prev + line-tax-amt(base, t))
+    }
+  }
+  m
+}
+
+#let withholding-total = {
+  let s = 0.0
+  for ln in all-lines {
+    let base = line-untaxed(ln)
+    for t in ln.taxes {
+      if t.kind == "withholding" { s += line-tax-amt(base, t) }
+    }
+  }
+  s
+}
+
+#let levied-total = tax-totals.values().sum(default: 0.0) - withholding-total
+#let grand-total = untaxed-total + levied-total - withholding-total
+
+{% set company_name = company_name or CompanyName or "" %}
+{% set company_address = company_address or CompanyAddress or "" %}
+{% set company_phone = company_phone or CompanyPhone or "" %}
+{% set company_gstin = company_gstin or CompanyGstin or "" %}
+{% set place_of_supply = place_of_supply or PlaceOfSupply or "" %}
+{% set company_logo_vnode_id = company_logo_vnode_id or CompanyLogoVnodeId or 0 %}
+{% set company_signature_vnode_id = company_signature_vnode_id or CompanySignatureVnodeId or 0 %}
+{% set preview = preview or Preview or false %}
 
 #align(center)[
   *DRAFT WORK ORDER*
 ]
 #v(0.4em)
+#grid(
+  columns: (1fr, auto),
+  column-gutter: 1em,
+  align: (left + horizon, right + horizon),
+  [
+    #text(size: 12pt, weight: "bold")[{{ company_name }}] \
+    {{ company_address }} \
+    {% if company_gstin %}GSTIN: {{ company_gstin }}{% endif %}
+    {% if company_gstin and company_phone %} #h(1em) {% endif %}
+    {% if company_phone %}Phone: {{ company_phone }}{% endif %}
+  ],
+  [
+    {% if company_logo_vnode_id and company_logo_vnode_id != 0 %}
+    #image("{{ vnodeImage(company_logo_vnode_id) }}", width: 3.2cm)
+    {% elif preview %}
+    #rect(width: 3.2cm, height: 2.1cm, stroke: (paint: luma(160), dash: "dashed"), fill: luma(96%))[
+      #align(center + horizon)[#text(size: 7.5pt, fill: luma(80))[Logo]]
+    ]
+    {% endif %}
+  ],
+)
+
+#v(0.6em)
 
 #table(
   columns: (1fr, 1fr),
   [
-    *Bill To* \
+    *Buyer (Bill to)* \
     {% if Customer.Name %}*{{ Customer.Name }}* \ {% endif %}
     {% if Customer.Address %}{{ Customer.Address }} \ {% endif %}
-    {% if Customer.GSTIN %}GSTIN: {{ Customer.GSTIN }} \ {% endif %}
-    {% if Customer.PAN %}PAN: {{ Customer.PAN }}{% endif %}
+    {% if Customer.GSTIN %}GSTIN/UIN: {{ Customer.GSTIN }} \ {% endif %}
+    {% if Customer.PAN %}PAN: {{ Customer.PAN }} \ {% endif %}
+    {% if Customer.Phone %}Phone: {{ Customer.Phone }} \ {% endif %}
+    {% if Customer.Email %}Email: {{ Customer.Email | replace("@", "\\@") }} \ {% endif %}
+    {% if Customer.Website %}Website: {{ Customer.Website }} \ {% endif %}
+    {% if place_of_supply %}Place of Supply: {{ place_of_supply }}{% endif %}
   ],
   [
     *Order No.:* {% if OrderNumber %}{{ OrderNumber }}{% else %}Draft \#{{ ID }}{% endif %} \
-    *Date:* {{ CreatedAt }} \
-    *Duration:* {{ Duration }} \
-    *Customer ID:* {{ CustomerId }}
+    *Dated:* {{ CreatedAt }} \
+    *Duration:* {{ Duration }}
   ],
 )
 
-#v(0.5em)
-
 {% if MaterialLines %}
-*Material Lines*
-
 #table(
-  columns: (0.35fr, 1.4fr, 1.8fr, 1fr, 0.9fr, 0.95fr),
-  align: (center, left, left, left, right, right),
-  [*Sl*], [*Component*], [*Variables*], [*Taxes*], [*Pre-tax*], [*Amount*],
+  columns: (0.4fr, 2.2fr, 1.8fr, 1.2fr, 1fr),
+  align: (center, left, left, center, right),
+  table.cell(colspan: 5, align: left)[*Materials*],
+  [*Sl*], [*Particulars*], [*Details*], [*Taxes*], [*Amount*],
   ..material-lines.enumerate().map(((i, ln)) => (
     str(i + 1),
-    ln.component,
-    ln.vars,
-    ln.taxes,
-    inr(ln.pretax),
-    inr(ln.amount),
+    ln.desc,
+    ln.details,
+    tax-label(ln),
+    inr(line-untaxed(ln)),
   )).flatten(),
 )
-#v(0.5em)
 {% endif %}
 
 {% if MachineLines %}
-*Machine Lines*
-
 #table(
-  columns: (0.35fr, 1.6fr, 1.8fr, 1fr, 0.9fr, 0.95fr),
-  align: (center, left, left, left, right, right),
-  [*Sl*], [*Machine*], [*Variables*], [*Taxes*], [*Pre-tax*], [*Amount*],
+  columns: (0.4fr, 2.2fr, 1.8fr, 1.2fr, 1fr),
+  align: (center, left, left, center, right),
+  table.cell(colspan: 5, align: left)[*Machine Operations*],
+  [*Sl*], [*Particulars*], [*Details*], [*Taxes*], [*Amount*],
   ..machine-lines.enumerate().map(((i, ln)) => (
     str(i + 1),
-    ln.machine,
-    ln.vars,
-    ln.taxes,
-    inr(ln.pretax),
-    inr(ln.amount),
+    ln.desc,
+    ln.details,
+    tax-label(ln),
+    inr(line-untaxed(ln)),
   )).flatten(),
 )
-#v(0.5em)
 {% endif %}
 
-#grid(
+#table(
   columns: (1.4fr, 1fr),
-  column-gutter: 1em,
-  align: (left + horizon, right + horizon),
   [
-    *Amount (in words)* \
-    {{ totalAmountWords() }}
+    *Amount Chargeable (in words)* \
+    {{ grandTotalWords() }} \
+    #text(size: 7.5pt)[E. & O.E.]
   ],
   table(
-    columns: (1fr, auto),
+    columns: (1.4fr, 1fr),
     align: (left, right),
-    [*Total Cost*], [*#inr(grand)*],
+    [Untaxed Amount], inr(untaxed-total),
+    ..tax-totals.pairs().map(((name, amt)) => (name, inr(amt))).flatten(),
+    [*Grand Total*], [*#inr(grand-total)*],
   ),
+)
+
+#table(
+  columns: (1fr, 0.7fr),
+  [This is a Computer Generated Draft Work Order],
+  align(center)[
+    for *{% if company_name %}{{ company_name }}{% else %}the Company{% endif %}*
+    {% if company_signature_vnode_id and company_signature_vnode_id != 0 %}
+    #v(0.3em)
+    #image("{{ vnodeImage(company_signature_vnode_id) }}", width: 4.5cm)
+    {% elif preview %}
+    #v(0.3em)
+    #rect(width: 4.5cm, height: 1.8cm, stroke: (paint: luma(160), dash: "dashed"), fill: luma(96%))[
+      #align(center + horizon)[#text(size: 7.5pt, fill: luma(80))[Signature]]
+    ]
+    {% else %}
+    #v(2.4cm)
+    {% endif %}
+    Authorised Signatory
+  ],
 )

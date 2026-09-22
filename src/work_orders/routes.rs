@@ -24,6 +24,8 @@ lariv_rs::define_plugin_routes! {
         get IssuedWorkOrderDeleteGetRouteTag, "/work-orders/issued/{id}/delete", handlers::issued_work_order_delete_get, modal;
         post IssuedWorkOrderDeletePostRouteTag, "/work-orders/issued/{id}/delete", bare handlers::issued_work_order_delete_post, fragment(IssuedWorkOrderDeleteModalKey);
         post IssuedWorkOrderNewDraftPostRouteTag, "/work-orders/issued/{id}/new-draft", bare handlers::issued_work_order_new_draft_post, redirect;
+        get IssuedWorkOrderPdfModalRouteTag, "/work-orders/issued/{id}/pdf", bare handlers::issued_work_order_pdf_modal, modal;
+        get IssuedWorkOrderPdfRouteTag, "/work-orders/issued/{id}/pdf/file", bare handlers::issued_work_order_pdf, file;
 
         // Work Order Lines
         get WorkOrderLineEditGetRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_get, modal;
@@ -53,7 +55,8 @@ lariv_rs::define_plugin_routes! {
         get InvoiceCreateGetRouteTag, "/work-orders/quotations/create", handlers::invoice_create_get, modal;
         post InvoiceCreatePostRouteTag, "/work-orders/quotations/create", handlers::invoice_create_post;
         get InvoiceDetailRouteTag, "/work-orders/quotations/{id}", handlers::invoice_detail;
-        post InvoiceCreateWorkOrderPostRouteTag, "/work-orders/quotations/{id}/create-work-order", bare handlers::invoice_create_work_order_post, redirect;
+        get InvoiceCreateWorkOrderGetRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_get, modal;
+        post InvoiceCreateWorkOrderPostRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_post;
         get InvoiceEditGetRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_get, modal;
         post InvoiceEditPostRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_post;
         get InvoiceDeleteGetRouteTag, "/work-orders/quotations/{id}/delete", handlers::invoice_delete_get, modal;
@@ -69,6 +72,7 @@ lariv_rs::define_plugin_routes! {
         get InvoicePdfModalRouteTag, "/work-orders/quotations/{id}/pdf", bare handlers::invoice_pdf_modal, modal;
         get InvoicePdfRouteTag, "/work-orders/quotations/{id}/pdf/file", bare handlers::invoice_pdf, file;
         post WorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/work-order", bare handlers::work_order_pdf_preview_post, modal;
+        post IssuedWorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/issued-work-order", bare handlers::issued_work_order_pdf_preview_post, modal;
         post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/quotation", bare handlers::invoice_pdf_preview_post, modal;
         get WorkOrdersPdfPreviewPdfRouteTag, "/work-orders/pdf/preview/{token}", bare handlers::preview_pdf_get, file, param token: String;
 

@@ -31,6 +31,15 @@ impl MigrationTrait for Migration {
             exec(
                 db,
                 backend,
+                r#"UPDATE machinery_machines
+                   SET cost_formula = 'duration / 3600 * ' || trim(trailing '.' from trim(trailing '0' from rate_decimal::text)),
+                       variables = '{"duration":"duration"}'::json
+                   WHERE btrim(cost_formula) = ''"#,
+            )
+            .await?;
+            exec(
+                db,
+                backend,
                 "ALTER TABLE machinery_machines DROP COLUMN IF EXISTS rate_decimal",
             )
             .await?;
@@ -45,6 +54,15 @@ impl MigrationTrait for Migration {
                 db,
                 backend,
                 "ALTER TABLE machinery_machines ADD COLUMN cost_formula TEXT NOT NULL DEFAULT ''",
+            )
+            .await;
+            let _ = exec(
+                db,
+                backend,
+                r#"UPDATE machinery_machines
+                   SET cost_formula = 'duration / 3600 * ' || rate_decimal,
+                       variables = '{"duration":"duration"}'
+                   WHERE trim(cost_formula) = ''"#,
             )
             .await;
             let _ = exec(
@@ -86,8 +104,12 @@ impl MigrationTrait for Migration {
                 "ALTER TABLE machinery_machines ADD COLUMN rate_decimal REAL NOT NULL DEFAULT 0",
             )
             .await;
-            let _ = exec(db, backend, "ALTER TABLE machinery_machines DROP COLUMN variables")
-                .await;
+            let _ = exec(
+                db,
+                backend,
+                "ALTER TABLE machinery_machines DROP COLUMN variables",
+            )
+            .await;
             let _ = exec(
                 db,
                 backend,

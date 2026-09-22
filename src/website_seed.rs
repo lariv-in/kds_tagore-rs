@@ -10,7 +10,6 @@ use lariv_rs::plugins::filesystem::node::{self, NodeFile};
 use lariv_rs::plugins::filesystem::storage::DynFilestore;
 use lariv_rs::plugins::website::{
     WebsiteTag,
-    builder_assets::public_asset_url,
     entities::{
         WebsitePreferences,
         db_route::{self, Column as DbRouteColumn, Entity as DbRouteEntity},
@@ -105,9 +104,8 @@ async fn ensure_homepage_state(
     store: &DynFilestore,
 ) -> anyhow::Result<()> {
     ensure_custom_theme(db, store).await?;
-    let media_urls = ensure_static_assets(db, store).await?;
-    let html = homepage_html_with_media_urls(&media_urls);
-    let (page, page_rewritten) = ensure_page_vnode(db, store, html.as_bytes()).await?;
+    ensure_static_assets(db, store).await?;
+    let (page, page_rewritten) = ensure_page_vnode(db, store, HOMEPAGE_HTML.as_bytes()).await?;
     ensure_db_route(db, ROUTE_PATH, page.id, THEME, page_rewritten).await?;
     tracing::info!(page_id = page.id, "kds website: homepage route ready");
     Ok(())
@@ -171,14 +169,6 @@ async fn ensure_custom_theme(db: &DatabaseConnection, store: &DynFilestore) -> a
     Ok(())
 }
 
-fn homepage_html_with_media_urls(urls: &[(String, String)]) -> String {
-    let mut html = HOMEPAGE_HTML.to_string();
-    for (name, url) in urls {
-        html = html.replace(&format!("/static/{name}"), url);
-    }
-    html
-}
-
 async fn ensure_page_vnode(
     db: &DatabaseConnection,
     store: &DynFilestore,
@@ -202,13 +192,10 @@ async fn ensure_page_vnode(
     ensure_file_vnode(db, store, parent_id, parent.as_ref(), PAGE_NAME, html).await
 }
 
-/// Seeds blobs + `/static/{name}` aliases. Returns `(filename, /media/{id}/)` pairs
-/// so the homepage can use the website plugin's public asset route instead of the
-/// catch-all (which production proxies often intercept for `/static/`).
-async fn ensure_static_assets(
-    db: &DatabaseConnection,
-    store: &DynFilestore,
-) -> anyhow::Result<Vec<(String, String)>> {
+/// Seeds blobs under `/website/static/{name}` so homepage `media_url(...)` calls
+/// resolve at render time. Also keeps `/static/{name}` route aliases for anything
+/// that still hits those paths (production proxies often intercept `/static/`).
+async fn ensure_static_assets(db: &DatabaseConnection, store: &DynFilestore) -> anyhow::Result<()> {
     let segments = ["website".into(), "static".into()];
     let parent_id = node::ensure_directory_path(db, store, None, &segments)
         .await
@@ -224,7 +211,6 @@ async fn ensure_static_assets(
         None => None,
     };
 
-    let mut urls = Vec::with_capacity(STATIC_ASSETS.len());
     for asset in STATIC_ASSETS {
         let vnode = ensure_file_vnode(
             db,
@@ -236,18 +222,15 @@ async fn ensure_static_assets(
         )
         .await?
         .0;
-        let media_url = public_asset_url(vnode.id);
         tracing::info!(
             name = asset.name,
             vnode_id = vnode.id,
-            media_url = %media_url,
             bytes = asset.bytes.len(),
             "kds website: static asset ready"
         );
         ensure_db_route(db, &format!("/static/{}", asset.name), vnode.id, "", false).await?;
-        urls.push((asset.name.to_string(), media_url));
     }
-    Ok(urls)
+    Ok(())
 }
 
 async fn ensure_file_vnode(
@@ -356,4 +339,29 @@ async fn ensure_db_route(
     .await?;
     tracing::info!(path, page_id, "kds website: created db route");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn homepage_resolves_media_via_template_function() {
+        let mut rest = HOMEPAGE_HTML;
+        while let Some(i) = rest.find("/media/") {
+            let after = &rest[i + "/media/".len()..];
+            assert!(
+                after.chars().next().is_none_or(|c| !c.is_ascii_digit()),
+                "homepage.html must not hardcode /media/{{id}}/ paths"
+            );
+            rest = after;
+        }
+        for asset in STATIC_ASSETS {
+            let call = format!("{{{{ media_url('/website/static/{}') }}}}", asset.name);
+            assert!(
+                HOMEPAGE_HTML.contains(&call),
+                "homepage.html missing {call}"
+            );
+        }
+    }
 }

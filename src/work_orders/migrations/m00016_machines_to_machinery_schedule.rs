@@ -34,6 +34,47 @@ async fn table_exists(
     }
 }
 
+async fn column_exists(
+    db: &impl ConnectionTrait,
+    backend: DbBackend,
+    table: &str,
+    column: &str,
+) -> Result<bool, DbErr> {
+    if backend == DbBackend::Postgres {
+        let sql = format!(
+            "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{table}' AND column_name = '{column}'"
+        );
+        let row = db
+            .query_one_raw(Statement::from_string(backend, sql))
+            .await?;
+        let n: i64 = row.map(|r| r.try_get("", "n").unwrap_or(0)).unwrap_or(0);
+        Ok(n > 0)
+    } else {
+        let sql =
+            format!("SELECT 1 AS n FROM pragma_table_info('{table}') WHERE name = '{column}'");
+        let row = db
+            .query_one_raw(Statement::from_string(backend, sql))
+            .await?;
+        Ok(row.is_some())
+    }
+}
+
+fn duration_schema_sql(backend: DbBackend) -> &'static str {
+    if backend == DbBackend::Postgres {
+        r#"'{"duration":"duration"}'::json"#
+    } else {
+        r#"'{"duration":"duration"}'"#
+    }
+}
+
+fn rate_to_formula_sql(backend: DbBackend) -> &'static str {
+    if backend == DbBackend::Postgres {
+        "trim(trailing '.' from trim(trailing '0' from rate_decimal::text))"
+    } else {
+        "rate_decimal"
+    }
+}
+
 async fn copy_work_order_machines(
     db: &impl ConnectionTrait,
     backend: DbBackend,
@@ -45,14 +86,35 @@ async fn copy_work_order_machines(
         ))
         .await?;
 
+    let has_formula = column_exists(db, backend, "machinery_machines", "cost_formula").await?;
+    let has_rate = column_exists(db, backend, "machinery_machines", "rate_decimal").await?;
+    let schema_sql = duration_schema_sql(backend);
+    let rate_sql = rate_to_formula_sql(backend);
+
     let mut map = Vec::with_capacity(rows.len());
     for row in rows {
         let old_id: i64 = row.try_get("", "id")?;
-        let insert_sql = format!(
-            "INSERT INTO machinery_machines (created_at, updated_at, name, rate_decimal) \
-             SELECT created_at, updated_at, name, rate_decimal FROM work_order_machines WHERE id = {old_id} \
-             RETURNING id"
-        );
+        let insert_sql = if has_formula {
+            format!(
+                "INSERT INTO machinery_machines (created_at, updated_at, name, cost_formula, variables) \
+                 SELECT created_at, updated_at, name, \
+                    'duration / 3600 * ' || {rate_sql}, {schema_sql} \
+                 FROM work_order_machines WHERE id = {old_id} \
+                 RETURNING id"
+            )
+        } else if has_rate {
+            format!(
+                "INSERT INTO machinery_machines (created_at, updated_at, name, rate_decimal) \
+                 SELECT created_at, updated_at, name, rate_decimal FROM work_order_machines WHERE id = {old_id} \
+                 RETURNING id"
+            )
+        } else {
+            format!(
+                "INSERT INTO machinery_machines (created_at, updated_at, name) \
+                 SELECT created_at, updated_at, name FROM work_order_machines WHERE id = {old_id} \
+                 RETURNING id"
+            )
+        };
         let inserted = db
             .query_one_raw(Statement::from_string(backend, insert_sql))
             .await?
@@ -113,7 +175,8 @@ impl MigrationTrait for Migration {
                         created_at timestamp with time zone,
                         updated_at timestamp with time zone,
                         name text NOT NULL,
-                        rate_decimal numeric(16,4) NOT NULL DEFAULT 0
+                        cost_formula text NOT NULL DEFAULT '',
+                        variables json NOT NULL DEFAULT '{}'
                     )
                     "#,
                 )
@@ -128,7 +191,8 @@ impl MigrationTrait for Migration {
                         created_at TEXT,
                         updated_at TEXT,
                         name TEXT NOT NULL,
-                        rate_decimal REAL NOT NULL DEFAULT 0
+                        cost_formula TEXT NOT NULL DEFAULT '',
+                        variables TEXT NOT NULL DEFAULT '{}'
                     )
                     "#,
                 )
@@ -233,7 +297,7 @@ impl MigrationTrait for Migration {
                 backend,
                 r#"
                 INSERT INTO work_order_machines (id, created_at, updated_at, name, rate_decimal)
-                SELECT id, created_at, updated_at, name, rate_decimal FROM machinery_machines
+                SELECT id, created_at, updated_at, name, 0 FROM machinery_machines
                 "#,
             )
             .await?;
@@ -285,7 +349,7 @@ impl MigrationTrait for Migration {
                 backend,
                 r#"
                 INSERT INTO work_order_machines (id, created_at, updated_at, name, rate_decimal)
-                SELECT id, created_at, updated_at, name, rate_decimal FROM machinery_machines
+                SELECT id, created_at, updated_at, name, 0 FROM machinery_machines
                 "#,
             )
             .await?;

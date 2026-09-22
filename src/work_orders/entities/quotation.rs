@@ -3,8 +3,6 @@ use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::machinery_schedule::duration::JobDuration;
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "kds_quotations")]
 pub struct Model {
@@ -15,7 +13,6 @@ pub struct Model {
     pub date: NaiveDate,
     pub customer_id: i64,
     pub invoice_number: String,
-    pub duration: JobDuration,
 }
 
 impl Model {

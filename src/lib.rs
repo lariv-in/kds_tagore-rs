@@ -6,5 +6,6 @@
 pub mod formula;
 pub mod machinery_schedule;
 pub mod marketing_sheet;
+pub mod variable_schema_input;
 pub mod website_seed;
 pub mod work_orders;

@@ -14,10 +14,11 @@ use lariv_rs::{
     http::ProvideRequestCaps,
     picker::RenderPickerSelect,
     template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
-    web::modal_create_post_query,
+    web::{modal_create_post_query, modal_edit_post_url},
 };
 use maud::PreEscaped;
 use maud::{Markup, html};
+use std::collections::HashMap;
 
 use crate::machinery_schedule::logic::format_job_duration;
 
@@ -34,7 +35,8 @@ use super::entities::{
 use super::forms::{
     ComponentForm, ComponentFormField, DraftWorkOrderForm, DraftWorkOrderFormField,
     DraftWorkOrderLineForm, DraftWorkOrderLineFormField, DraftWorkOrderMachineLineForm,
-    DraftWorkOrderMachineLineFormField, InvoiceForm, InvoiceFormField, LineEditorDisplayKey,
+    DraftWorkOrderMachineLineFormField, InvoiceCreateWorkOrderForm,
+    InvoiceCreateWorkOrderFormField, InvoiceForm, InvoiceFormField, LineEditorDisplayKey,
     WorkOrdersPreferencesForm, WorkOrdersPreferencesFormField, draft_work_order_form_hx_post,
     lines_form_hx_post, schema_entries_from_json,
 };
@@ -91,6 +93,7 @@ lariv_rs::define_register_items! {
         InvoiceDetailPageIdx: InvoiceDetailPageTag => InvoiceDetailPage,
         InvoiceCreateModalPageIdx: InvoiceCreateModalPageTag => InvoiceCreateModalPage,
         InvoiceEditModalPageIdx: InvoiceEditModalPageTag => InvoiceEditModalPage,
+        InvoiceCreateWorkOrderModalPageIdx: InvoiceCreateWorkOrderModalPageTag => InvoiceCreateWorkOrderModalPage,
 
         IssuedWorkOrderListPageIdx: IssuedWorkOrderListPageTag => IssuedWorkOrderListPage,
         IssuedWorkOrderDetailPageIdx: IssuedWorkOrderDetailPageTag => IssuedWorkOrderDetailPage,
@@ -337,12 +340,28 @@ pub struct WorkOrderDetailPage {
         String,
         Decimal,
     )>,
+    pub component_schemas: HashMap<i64, serde_json::Value>,
+    pub machine_schemas: HashMap<i64, serde_json::Value>,
     pub customer_name: Option<String>,
     pub quotation_number: Option<String>,
     pub total_amount: Decimal,
 }
 
 impl WorkOrderDetailPage {
+    fn material_vars(&self, l: &draft_work_order_material_line::Model) -> String {
+        match self.component_schemas.get(&l.component_id) {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
+    fn machine_vars(&self, l: &draft_work_order_machine_line::Model) -> String {
+        match self.machine_schemas.get(&l.machine_id) {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
     fn body(&self) -> Markup {
         let edit_url = WorkOrderEditGetRouteTag::new(self.order.id).url();
         let actions = html! {
@@ -370,10 +389,11 @@ impl WorkOrderDetailPage {
             ))
         };
 
-        let cust_label = match &self.customer_name {
-            Some(name) => format!("{} (#{})", name, self.order.customer_id),
-            None => format!("#{}", self.order.customer_id),
-        };
+        let cust_label = self
+            .customer_name
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "—".into());
         let quotation_href = self
             .order
             .quotation_id
@@ -401,16 +421,18 @@ impl WorkOrderDetailPage {
                         title: &title_str,
                         actions,
                     }))
-                    (container_row("gap-6", html! {
-                        (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
-                        @if let Some(href) = &quotation_href {
-                            (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
+                    div class="@container w-full min-w-0" {
+                        div class="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-x-6 gap-y-1 w-full" {
+                            (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
+                            @if let Some(href) = &quotation_href {
+                                (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
+                            }
+                            (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
+                            (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
+                            (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
+                            (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
                         }
-                        (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
-                        (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
-                        (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
-                        (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
-                    }))
+                    }
 
                     div class="mt-8" {
                         div class="mb-3" {
@@ -439,7 +461,7 @@ impl WorkOrderDetailPage {
                                             tr {
                                                 td class="opacity-60" { (idx + 1) }
                                                 td class="font-semibold" { (comp_name) }
-                                                td class="font-mono text-xs" { (l.format_variables_display()) }
+                                                td class="font-mono text-xs" { (self.material_vars(l)) }
                                                 td class="text-sm" { (tax_labels) }
                                                 td class="text-right font-mono" { (format!("₹ {:.2}", l.final_cost)) }
                                                 td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
@@ -478,7 +500,7 @@ impl WorkOrderDetailPage {
                                             tr {
                                                 td class="opacity-60" { (idx + 1) }
                                                 td class="font-semibold" { (machine_name) }
-                                                td class="font-mono text-xs" { (l.format_variables_display()) }
+                                                td class="font-mono text-xs" { (self.machine_vars(l)) }
                                                 td class="text-sm" { (tax_labels) }
                                                 td class="text-right font-mono" { (format!("₹ {:.2}", l.line_total())) }
                                                 td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
@@ -1474,19 +1496,39 @@ pub struct InvoiceDetailPage {
         String,
         rust_decimal::Decimal,
     )>,
+    pub component_schemas: HashMap<i64, serde_json::Value>,
+    pub machine_schemas: HashMap<i64, serde_json::Value>,
     pub grand_total: rust_decimal::Decimal,
     pub customer_name: String,
 }
 
 impl InvoiceDetailPage {
+    fn material_vars(&self, l: &quotation_material_line::Model) -> String {
+        match self.component_schemas.get(&l.component_id) {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
+    fn machine_vars(&self, l: &quotation_machine_line::Model) -> String {
+        let schema = l.machine_id.and_then(|id| self.machine_schemas.get(&id));
+        match schema {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
     fn body(&self) -> Markup {
         let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
-        let create_wo_path = InvoiceCreateWorkOrderPostRouteTag::new(self.invoice.id).path();
+        let create_wo_url = InvoiceCreateWorkOrderGetRouteTag::new(self.invoice.id).url();
         let actions = html! {
-            (button_post(ButtonPost {
+            (button_modal_form(ButtonModalForm {
                 label: "Create Work Order",
-                action: &create_wo_path,
                 icon_name: Some("plus"),
+                name: "wo.InvoiceCreateWorkOrderForm",
+                href: &create_wo_url,
+                form_post_url: &create_wo_url,
+                modal_uid: InvoiceCreateWorkOrderModalKey::ID,
                 classes: "btn-primary btn-sm",
                 ..Default::default()
             }))
@@ -1509,7 +1551,6 @@ impl InvoiceDetailPage {
 
         let date_str = self.invoice.date.to_string();
         let cust_str = self.customer_name.clone();
-        let duration_str = format_job_duration(self.invoice.duration);
 
         html! {
             (detail(html! {
@@ -1521,7 +1562,6 @@ impl InvoiceDetailPage {
                     (container_row("gap-6", html! {
                         (label("Quotation Date", field_text(FieldText { value: &date_str, classes: "" })))
                         (label("Customer", field_text(FieldText { value: &cust_str, classes: "" })))
-                        (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
                     }))
 
                     // Machine Lines Table
@@ -1545,7 +1585,7 @@ impl InvoiceDetailPage {
                                     @for (l, machine_name, tax_labels, taxed_total) in &self.machine_lines {
                                         tr {
                                             td { (machine_name) }
-                                            td class="font-mono text-xs" { (l.format_variables_display()) }
+                                            td class="font-mono text-xs" { (self.machine_vars(l)) }
                                             td { (tax_labels) }
                                             td class="font-semibold" { (format!("₹ {:.2}", l.line_total())) }
                                             td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
@@ -1578,7 +1618,7 @@ impl InvoiceDetailPage {
                                     @for (l, comp_name, tax_labels, taxed_total) in &self.material_lines {
                                         tr {
                                             td { (comp_name) }
-                                            td class="font-mono text-xs" { (l.format_variables_display()) }
+                                            td class="font-mono text-xs" { (self.material_vars(l)) }
                                             td { (tax_labels) }
                                             td class="font-semibold" { (format!("₹ {:.2}", l.final_cost)) }
                                             td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
@@ -1768,6 +1808,8 @@ pub struct IssuedWorkOrderDetailPage {
     pub order: work_order::Model,
     pub lines: Vec<(work_order_line::Model, String, String, Decimal)>,
     pub machine_lines: Vec<(work_order_machine_line::Model, String, String, Decimal)>,
+    pub component_schemas: HashMap<i64, serde_json::Value>,
+    pub machine_schemas: HashMap<i64, serde_json::Value>,
     pub customer_name: Option<String>,
     pub quotation_number: Option<String>,
     pub job_name: Option<String>,
@@ -1775,6 +1817,21 @@ pub struct IssuedWorkOrderDetailPage {
 }
 
 impl IssuedWorkOrderDetailPage {
+    fn material_vars(&self, l: &work_order_line::Model) -> String {
+        match self.component_schemas.get(&l.component_id) {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
+    fn machine_vars(&self, l: &work_order_machine_line::Model) -> String {
+        let schema = l.machine_id.and_then(|id| self.machine_schemas.get(&id));
+        match schema {
+            Some(schema) => l.format_variables_display_with_schema(schema),
+            None => l.format_variables_display(),
+        }
+    }
+
     fn body(&self) -> Markup {
         let delete_url = IssuedWorkOrderDeleteGetRouteTag::new(self.order.id).url();
         let new_draft_path = IssuedWorkOrderNewDraftPostRouteTag::new(self.order.id).path();
@@ -1786,6 +1843,11 @@ impl IssuedWorkOrderDetailPage {
                 classes: "btn-primary btn-sm",
                 ..Default::default()
             }))
+            (button_modal_route(
+                IssuedWorkOrderPdfModalRouteTag::new(self.order.id),
+                "PDF",
+                "btn-outline btn-sm",
+            ))
             (button_modal_form(ButtonModalForm {
                 label: "Delete",
                 icon_name: Some("trash"),
@@ -1798,10 +1860,11 @@ impl IssuedWorkOrderDetailPage {
             }))
         };
 
-        let cust_label = match &self.customer_name {
-            Some(name) => format!("{} (#{})", name, self.order.customer_id),
-            None => format!("#{}", self.order.customer_id),
-        };
+        let cust_label = self
+            .customer_name
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "—".into());
         let quotation_href = self
             .order
             .quotation_id
@@ -1836,19 +1899,21 @@ impl IssuedWorkOrderDetailPage {
                         title: &title_str,
                         actions,
                     }))
-                    (container_row("gap-6", html! {
-                        (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
-                        @if let Some(href) = &quotation_href {
-                            (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
+                    div class="@container w-full min-w-0" {
+                        div class="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-x-6 gap-y-1 w-full" {
+                            (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
+                            @if let Some(href) = &quotation_href {
+                                (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
+                            }
+                            @if let Some(href) = &job_href {
+                                (label("Job", field_link(FieldLink { href, label: &job_label, classes: "" })))
+                            }
+                            (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
+                            (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
+                            (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
+                            (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
                         }
-                        @if let Some(href) = &job_href {
-                            (label("Job", field_link(FieldLink { href, label: &job_label, classes: "" })))
-                        }
-                        (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
-                        (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
-                        (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
-                        (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
-                    }))
+                    }
 
                     div class="mt-8" {
                         div class="mb-3" {
@@ -1876,7 +1941,7 @@ impl IssuedWorkOrderDetailPage {
                                             tr {
                                                 td class="opacity-60" { (idx + 1) }
                                                 td class="font-semibold" { (comp_name) }
-                                                td class="font-mono text-xs" { (l.format_variables_display()) }
+                                                td class="font-mono text-xs" { (self.material_vars(l)) }
                                                 td class="text-sm" { (tax_labels) }
                                                 td class="text-right font-mono" { (format!("₹ {:.2}", l.final_cost)) }
                                                 td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
@@ -1914,7 +1979,7 @@ impl IssuedWorkOrderDetailPage {
                                             tr {
                                                 td class="opacity-60" { (idx + 1) }
                                                 td class="font-semibold" { (machine_name) }
-                                                td class="font-mono text-xs" { (l.format_variables_display()) }
+                                                td class="font-mono text-xs" { (self.machine_vars(l)) }
                                                 td class="text-sm" { (tax_labels) }
                                                 td class="text-right font-mono" { (format!("₹ {:.2}", l.line_total())) }
                                                 td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
@@ -1980,7 +2045,6 @@ pub struct InvoiceCreateModalPage {
     pub date: String,
     pub customer_id: Option<i64>,
     pub customer_name: String,
-    pub duration: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
     pub components_json: String,
@@ -2010,7 +2074,6 @@ impl RenderTemplate for InvoiceCreateModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
-            .value(InvoiceFormField::Duration, &self.duration)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)
@@ -2053,7 +2116,6 @@ pub struct InvoiceEditModalPage {
     pub date: String,
     pub customer_id: i64,
     pub customer_name: String,
-    pub duration: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
     pub components_json: String,
@@ -2080,7 +2142,6 @@ impl RenderTemplate for InvoiceEditModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
-            .value(InvoiceFormField::Duration, &self.duration)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)
@@ -2118,6 +2179,55 @@ impl RenderTemplate for InvoiceEditModalPage {
                             ..Default::default()
                         }))
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
+                    },
+                    ..Default::default()
+                }))
+            },
+        )
+    }
+}
+
+#[derive(Clone, Generic)]
+pub struct InvoiceCreateWorkOrderModalPage {
+    pub id: i64,
+    pub form_name: String,
+    pub quotation_number: String,
+    pub duration: String,
+    pub error: String,
+}
+
+impl RenderTemplate for InvoiceCreateWorkOrderModalPage {
+    fn render(&self, _chrome: &ShellChrome) -> Markup {
+        let ctx = FormCtx::form::<InvoiceCreateWorkOrderForm>(CsrfToken::current())
+            .value(InvoiceCreateWorkOrderFormField::Duration, &self.duration);
+
+        modal_keyed::<InvoiceCreateWorkOrderModalKey>(
+            &self.form_name,
+            html! {
+                h3 class="font-bold text-lg mb-4" { "Create Work Order" }
+                p class="text-sm opacity-70 mb-4" {
+                    "Set the job duration for work order from quotation "
+                    span class="font-semibold" { (self.quotation_number) }
+                    "."
+                }
+                @if !self.error.is_empty() {
+                    div class="alert alert-error text-sm mb-4 shadow-sm" {
+                        span { (self.error) }
+                    }
+                }
+                (form(&CsrfToken::current(), FormOpts {
+                    attrs: lariv_rs::components::swap::form_hx_post_url::<InvoiceCreateWorkOrderModalKey>(
+                        &modal_edit_post_url(
+                            InvoiceCreateWorkOrderPostRouteTag::new(self.id),
+                            &self.form_name,
+                        ),
+                    ),
+                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                    inputs: html! {
+                        (InvoiceCreateWorkOrderForm::render_inputs(&ctx))
+                    },
+                    actions: html! {
+                        (button_submit(ButtonSubmit { label: "Create Work Order", ..Default::default() }))
                     },
                     ..Default::default()
                 }))
@@ -2238,7 +2348,17 @@ impl RenderTemplate for ConfirmDeleteModalPage {
 pub struct WorkOrdersPreferencesPage {
     pub quotation_number_format: String,
     pub draft_work_order_pdf_template: String,
+    pub work_order_pdf_template: String,
     pub quotation_pdf_template: String,
+    pub company_name: String,
+    pub company_address: String,
+    pub company_phone: String,
+    pub company_gstin: String,
+    pub place_of_supply: String,
+    pub company_logo_vnode_id: String,
+    pub company_logo_vnode_display: String,
+    pub company_signature_vnode_id: String,
+    pub company_signature_vnode_display: String,
     pub default_material_tax_items: Vec<ManyToManyItem>,
     pub default_machine_tax_items: Vec<ManyToManyItem>,
     pub error: String,
@@ -2297,12 +2417,70 @@ impl WorkOrdersPreferencesPage {
             .m2m(
                 WorkOrdersPreferencesFormField::DefaultMachineTaxes,
                 &self.default_machine_tax_items,
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanyName,
+                self.company_name.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanyAddress,
+                self.company_address.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanyPhone,
+                self.company_phone.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanyGstin,
+                self.company_gstin.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::PlaceOfSupply,
+                self.place_of_supply.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanyLogoVnodeId,
+                self.company_logo_vnode_id.as_str(),
+            )
+            .display(
+                WorkOrdersPreferencesFormField::CompanyLogoVnodeId,
+                self.company_logo_vnode_display.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::CompanySignatureVnodeId,
+                self.company_signature_vnode_id.as_str(),
+            )
+            .display(
+                WorkOrdersPreferencesFormField::CompanySignatureVnodeId,
+                self.company_signature_vnode_display.as_str(),
             );
         let tax_fields = html! {
             @for spec in WorkOrdersPreferencesForm::field_specs() {
                 @if spec.name == WorkOrdersPreferencesFormField::SectionTaxes.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::DefaultMaterialTaxes.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::DefaultMachineTaxes.html_name()
+                {
+                    @let field = FieldRender {
+                        name: spec.name,
+                        label: ctx.label_of(spec),
+                        value: ctx.value_of(spec.name),
+                        required: spec.required,
+                        spec,
+                    };
+                    ((spec.render)(&ctx, &field))
+                }
+            }
+        };
+        let company_fields = html! {
+            @for spec in WorkOrdersPreferencesForm::field_specs() {
+                @if spec.name == WorkOrdersPreferencesFormField::SectionCompany.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanyName.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanyAddress.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanyPhone.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanyGstin.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::PlaceOfSupply.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanyLogoVnodeId.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::CompanySignatureVnodeId.html_name()
                 {
                     @let field = FieldRender {
                         name: spec.name,
@@ -2322,7 +2500,7 @@ impl WorkOrdersPreferencesPage {
                     &WorkOrdersPrefsPostRouteTag.url(),
                 ),
                 title: "KDS Quotations Preferences",
-                subtitle: "Configure quotation numbering, default line taxes, and the PDF templates used for draft work orders and quotations. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
+                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
                 form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                 inputs: html! {
                     (label_hint(
@@ -2337,12 +2515,21 @@ impl WorkOrdersPreferencesPage {
                         },
                     ))
                     (tax_fields)
+                    (company_fields)
                     (pdf_template_editor(
                         "Draft Work Order PDF Template",
                         "draft_work_order_pdf_template",
                         &self.draft_work_order_pdf_template,
                         &WorkOrderPdfPreviewPostRouteTag.url(),
                         crate::work_orders::pdf_templates::DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
+                        18,
+                    ))
+                    (pdf_template_editor(
+                        "Work Order PDF Template",
+                        "work_order_pdf_template",
+                        &self.work_order_pdf_template,
+                        &IssuedWorkOrderPdfPreviewPostRouteTag.url(),
+                        crate::work_orders::pdf_templates::DEFAULT_WORK_ORDER_PDF_TEMPLATE,
                         18,
                     ))
                     (pdf_template_editor(
