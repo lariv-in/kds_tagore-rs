@@ -15,7 +15,6 @@ pub mod pdf_templates;
 pub mod preferences;
 pub mod quotation_number;
 pub mod routes;
-pub mod seed;
 pub mod source_docs;
 pub mod state;
 pub mod tax_assoc;

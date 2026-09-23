@@ -466,7 +466,7 @@ impl MigrationTrait for Migration {
             let _ = exec(db, backend, "PRAGMA foreign_keys = ON").await;
         }
 
-        crate::work_orders::seed::ensure_standard_seeds(db).await
+        Ok(())
     }
 
     async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {

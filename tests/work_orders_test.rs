@@ -2,9 +2,9 @@ use kds_tagore_rs::formula::{
     VariableType, VariableValue, VariableValues, eval_formula, standard_sample_values,
     validate_formula,
 };
-use kds_tagore_rs::work_orders::{
-    entities::{component, quotation, quotation_machine_line, quotation_material_line},
-    seed,
+use kds_tagore_rs::machinery_schedule::entities::machine;
+use kds_tagore_rs::work_orders::entities::{
+    component, quotation, quotation_machine_line, quotation_material_line,
 };
 use rust_decimal::Decimal;
 use sea_orm::{EntityTrait, PaginatorTrait};
@@ -163,12 +163,16 @@ fn test_eval_formula_no_f64() {
 }
 
 #[tokio::test]
-async fn test_work_orders_migration_and_seed() {
+async fn test_work_orders_migration_does_not_seed_catalog() {
     let db = test_db().await;
-    seed::ensure_standard_seeds(&db).await.expect("seed");
-    let n = component::Entity::find()
+    let components = component::Entity::find()
         .count(&db)
         .await
         .expect("count components");
-    assert!(n >= 1, "standard components should be seeded");
+    let machines = machine::Entity::find()
+        .count(&db)
+        .await
+        .expect("count machines");
+    assert_eq!(components, 0, "components must not be auto-seeded");
+    assert_eq!(machines, 0, "machines must not be auto-seeded");
 }

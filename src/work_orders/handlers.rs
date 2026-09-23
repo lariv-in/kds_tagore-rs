@@ -1979,7 +1979,6 @@ pub async fn components_list(
     htmx: Htmx,
     uri: Uri,
 ) -> maud::Markup {
-    let _ = crate::work_orders::seed::ensure_standard_seeds(&state.db).await;
     let comps = component::Entity::find()
         .order_by_asc(component::Column::Name)
         .all(&state.db)
@@ -2066,12 +2065,11 @@ fn empty_component_edit_page(
 }
 
 pub async fn component_create_get(
-    Cap(state): Cap<WorkOrdersState>,
+    Cap(_state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
     auth: OptionalAuth,
     Query(q): Query<ModalFormQuery>,
 ) -> maud::Markup {
-    let _ = crate::work_orders::seed::ensure_standard_seeds(&state.db).await;
     let page = empty_component_create_page(
         &q,
         String::new(),
