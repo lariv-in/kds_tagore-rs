@@ -22,6 +22,7 @@ lariv-rs = { version = "0.1.0",
 		"plugin-forms",
 		"plugin-hr",
 		"plugin-llm-assistant",
+		"plugin-pwa",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
