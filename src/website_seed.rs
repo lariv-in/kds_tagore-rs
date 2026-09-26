@@ -346,6 +346,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn homepage_pulls_title_and_pwa_head_from_plugin() {
+        assert!(
+            HOMEPAGE_HTML.contains("<title>{{ title }}</title>"),
+            "homepage.html must use {{{{ title }}}} from the PWA plugin"
+        );
+        assert!(
+            HOMEPAGE_HTML.contains("{{ pwa_head() }}"),
+            "homepage.html must call {{{{ pwa_head() }}}} from the PWA plugin"
+        );
+        assert!(
+            !HOMEPAGE_HTML.contains("<title>KDS and Tagore Pvt. Ltd."),
+            "homepage.html must not hardcode the document title"
+        );
+    }
+
+    #[test]
     fn homepage_resolves_media_via_template_function() {
         let mut rest = HOMEPAGE_HTML;
         while let Some(i) = rest.find("/media/") {

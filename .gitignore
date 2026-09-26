@@ -2,3 +2,4 @@
 *.db
 /filesystem
 *.xlsx
+pwa_static
