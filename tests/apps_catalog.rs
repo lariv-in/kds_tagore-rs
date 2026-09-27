@@ -114,7 +114,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert_eq!(quotations.verbose_name, "KDS Quotations");
                 assert_eq!(
                     quotations.href.trim_end_matches('/'),
-                    "/work-orders",
+                    "/dashboard/work-orders",
                     "KDS Quotations tile should open the quotation list"
                 );
             });

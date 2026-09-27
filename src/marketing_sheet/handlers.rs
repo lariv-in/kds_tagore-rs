@@ -4,6 +4,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use lariv_rs::plugins::crm::routes::LeadDefaultRouteTag;
 use chrono::Utc;
 use lariv_rs::{
     components::{SharedChromeFolder, SlotCtx},
@@ -63,7 +64,7 @@ struct RedirectForbidden;
 
 impl IntoResponse for RedirectForbidden {
     fn into_response(self) -> Response {
-        axum::response::Redirect::to("/crm/leads").into_response()
+        axum::response::Redirect::to(&LeadDefaultRouteTag.url()).into_response()
     }
 }
 

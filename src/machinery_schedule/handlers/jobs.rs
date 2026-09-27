@@ -49,10 +49,6 @@ use crate::machinery_schedule::{
         load_job_file_ids, load_job_machine_ids, move_open_job_order, next_order_after_move,
         open_job_orders, parse_job_duration, parse_job_progress, sync_job_files, sync_job_machines,
     },
-    routes::{
-        CompletedJobDetailRouteTag, JobBulkDeletePostRouteTag, JobDefaultRouteTag,
-        JobDetailRouteTag,
-    },
     scope::{
         apply_completed_job_hub_sort, apply_name_filter, apply_open_job_hub_sort, find_job_scoped,
         find_open_job, scope_superuser, sql_job_not_completed,
@@ -61,6 +57,10 @@ use crate::machinery_schedule::{
     templates::{
         ConfirmBulkDeletePage, ConfirmDeletePage, JobCreateModalPage, JobDetailPage,
         JobDuplicatedModalPage, JobEditModalPage, JobHubPage, JobRow,
+    },
+    routes::{
+        CompletedJobDetailRouteTag, JobBulkDeletePostRouteTag, JobDefaultRouteTag,
+        JobDetailRouteTag,
     },
 };
 

@@ -2,6 +2,7 @@ use super::{handlers, keys::*};
 
 lariv_rs::define_plugin_routes! {
     plugin: super::WorkOrdersTag;
+    prefix: "/dashboard";
     routes: [
         // Quotations (app default)
         get WorkOrdersDefaultRouteTag, "/work-orders", handlers::invoices_list, fragment(InvoiceTableKey);
