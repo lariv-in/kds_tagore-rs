@@ -51,10 +51,13 @@ where
 }
 
 const HOMEPAGE_HTML: &str = include_str!("../assets/homepage.html");
+const PRIVACY_POLICY_HTML: &str = include_str!("../assets/privacy-policy.html");
 const THEME_CSS: &[u8] = include_bytes!("../assets/theme/kds.css");
 const THEME_JS: &[u8] = include_bytes!("../assets/theme/kds.js");
 const ROUTE_PATH: &str = "/";
+const PRIVACY_ROUTE_PATH: &str = "/privacy-policy";
 const PAGE_NAME: &str = "index.html";
+const PRIVACY_PAGE_NAME: &str = "privacy-policy.html";
 const THEME_CSS_NAME: &str = "kds.css";
 const THEME_JS_NAME: &str = "kds.js";
 const THEME: &str = CUSTOM_THEME_ID;
@@ -105,9 +108,30 @@ async fn ensure_homepage_state(
 ) -> anyhow::Result<()> {
     ensure_custom_theme(db, store).await?;
     ensure_static_assets(db, store).await?;
-    let (page, page_rewritten) = ensure_page_vnode(db, store, HOMEPAGE_HTML.as_bytes()).await?;
+    let (page, page_rewritten) =
+        ensure_page_vnode(db, store, PAGE_NAME, HOMEPAGE_HTML.as_bytes()).await?;
     ensure_db_route(db, ROUTE_PATH, page.id, THEME, page_rewritten).await?;
     tracing::info!(page_id = page.id, "kds website: homepage route ready");
+
+    let (privacy_page, privacy_rewritten) = ensure_page_vnode(
+        db,
+        store,
+        PRIVACY_PAGE_NAME,
+        PRIVACY_POLICY_HTML.as_bytes(),
+    )
+    .await?;
+    ensure_db_route(
+        db,
+        PRIVACY_ROUTE_PATH,
+        privacy_page.id,
+        THEME,
+        privacy_rewritten,
+    )
+    .await?;
+    tracing::info!(
+        page_id = privacy_page.id,
+        "kds website: privacy policy route ready"
+    );
     Ok(())
 }
 
@@ -172,6 +196,7 @@ async fn ensure_custom_theme(db: &DatabaseConnection, store: &DynFilestore) -> a
 async fn ensure_page_vnode(
     db: &DatabaseConnection,
     store: &DynFilestore,
+    name: &str,
     html: &[u8],
 ) -> anyhow::Result<(lariv_rs::plugins::filesystem::entities::VNode, bool)> {
     let segments = ["website".into(), "pages".into()];
@@ -189,7 +214,7 @@ async fn ensure_page_vnode(
         None => None,
     };
 
-    ensure_file_vnode(db, store, parent_id, parent.as_ref(), PAGE_NAME, html).await
+    ensure_file_vnode(db, store, parent_id, parent.as_ref(), name, html).await
 }
 
 /// Seeds blobs under `/website/static/{name}` so homepage `media_url(...)` calls
@@ -358,6 +383,34 @@ mod tests {
         assert!(
             !HOMEPAGE_HTML.contains("<title>KDS and Tagore Pvt. Ltd."),
             "homepage.html must not hardcode the document title"
+        );
+    }
+
+    #[test]
+    fn privacy_policy_pulls_title_and_pwa_head_from_plugin() {
+        assert!(
+            PRIVACY_POLICY_HTML.contains("<title>{{ title }}</title>"),
+            "privacy-policy.html must use {{{{ title }}}} from the PWA plugin"
+        );
+        assert!(
+            PRIVACY_POLICY_HTML.contains("{{ pwa_head() }}"),
+            "privacy-policy.html must call {{{{ pwa_head() }}}} from the PWA plugin"
+        );
+        assert!(
+            PRIVACY_POLICY_HTML.contains("id=\"account-deletion\""),
+            "privacy-policy.html must include an account deletion section"
+        );
+    }
+
+    #[test]
+    fn privacy_policy_links_from_footer() {
+        assert!(
+            HOMEPAGE_HTML.contains(r#"href="/privacy-policy""#),
+            "homepage.html must link to /privacy-policy"
+        );
+        assert!(
+            PRIVACY_POLICY_HTML.contains(r#"href="/privacy-policy""#),
+            "privacy-policy.html must link to itself in navigation/footer"
         );
     }
 
