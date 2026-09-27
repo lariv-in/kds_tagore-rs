@@ -12,9 +12,13 @@ use lariv_rs::{
         FieldRender, FormCtx, FormFieldKey, FormWidget, html_form,
         widgets::{CodeEditor, Duration, Section, Text, Textarea},
     },
+    http::RouteUrl,
     plugins::filesystem::routes::VNodeFileSelectRouteTag,
     plugins::finance_taxes::routes::TaxMultiSelectRouteTag,
 };
+use crate::machinery_schedule::routes::MachineFkSelectRouteTag;
+
+use super::routes::ComponentFkSelectRouteTag;
 use maud::{Markup, PreEscaped, html};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -99,7 +103,7 @@ fn embed_line_tax_picker() -> Markup {
     }
 }
 
-fn embed_input_fkey(url: &'static str, placeholder: &'static str) -> Markup {
+fn embed_input_fkey(url: &str, placeholder: &'static str) -> Markup {
     input_foreign_key(InputForeignKey {
         label: "",
         name: "",
@@ -1105,6 +1109,7 @@ impl FormWidget for MaterialLinesWidget {
                 }}
             }}"#
         );
+        let component_pick_url = ComponentFkSelectRouteTag.url();
 
         html! {
             div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
@@ -1138,7 +1143,7 @@ impl FormWidget for MaterialLinesWidget {
                                 td class="align-middle min-w-[12rem]" {
                                     div class="min-w-0" data-fkey-field="component" x-bind:data-fkey-item-id="item.id"
                                         x-effect="bindFkeyInput($el, item, 'component')" {
-                                        (embed_input_fkey("/work-orders/components/pick", "Select component…"))
+                                        (embed_input_fkey(&component_pick_url, "Select component…"))
                                     }
                                 }
                                 td class="align-middle" {
@@ -1411,6 +1416,7 @@ impl FormWidget for MachineLinesWidget {
                 }}
             }}"#
         );
+        let machine_pick_url = MachineFkSelectRouteTag.url();
 
         html! {
             div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
@@ -1444,7 +1450,7 @@ impl FormWidget for MachineLinesWidget {
                                 td class="align-middle min-w-[12rem]" {
                                     div class="min-w-0" data-fkey-field="machine" x-bind:data-fkey-item-id="item.id"
                                         x-effect="bindFkeyInput($el, item, 'machine')" {
-                                        (embed_input_fkey("/machinery-schedule/machines/pick", "Select machine…"))
+                                        (embed_input_fkey(&machine_pick_url, "Select machine…"))
                                     }
                                 }
                                 td class="align-middle" {
