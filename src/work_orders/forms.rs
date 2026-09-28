@@ -1,3 +1,4 @@
+use crate::machinery_schedule::routes::MachineFkSelectRouteTag;
 use crate::variable_schema_input::VariableSchemaList;
 #[allow(unused_imports)]
 use lariv_rs::html_form::widgets::{ForeignKey, ManyToMany};
@@ -12,11 +13,9 @@ use lariv_rs::{
         FieldRender, FormCtx, FormFieldKey, FormWidget, html_form,
         widgets::{CodeEditor, Duration, Section, Text, Textarea},
     },
-    http::RouteUrl,
     plugins::filesystem::routes::VNodeFileSelectRouteTag,
     plugins::finance_taxes::routes::TaxMultiSelectRouteTag,
 };
-use crate::machinery_schedule::routes::MachineFkSelectRouteTag;
 
 use super::routes::ComponentFkSelectRouteTag;
 use maud::{Markup, PreEscaped, html};

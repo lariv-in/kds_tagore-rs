@@ -293,6 +293,8 @@ async fn ensure_file_vnode(
             data: bytes.to_vec(),
         }),
         parent,
+        None,
+        None,
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
