@@ -1,7 +1,7 @@
 use lariv_rs::components::{attrs::escape_attr, label_hint};
 use lariv_rs::html_form::{
     FieldRender, FormCtx, FormWidget, html_form,
-    widgets::{Duration, ManyToMany, Number, Text, Textarea},
+    widgets::{Duration, Number, Text, Textarea},
 };
 use lariv_rs::plugins::filesystem::routes::VNodeFileSelectRouteTag;
 use maud::{Markup, PreEscaped, html};
