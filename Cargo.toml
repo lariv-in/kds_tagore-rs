@@ -8,23 +8,10 @@ name = "kds-tagore-rs"
 path = "src/main.rs"
 
 [dependencies]
-lariv-rs = { version = "0.1.0",
-	# path = "../../lariv-rs",
-	git = "https://github.com/lariv-in/lariv-rs", rev = "7f6146d715a5e86cd9e368423a50f713ea3c022d",
-	default-features = false, features = [
-		"plugin-users",
-		"plugin-dashboard",
-		"plugin-filesystem",
-		"plugin-website",
-		"plugin-crm",
-		"plugin-tasks",
-		"plugin-finance",
-		"plugin-forms",
-		"plugin-hr",
-		"plugin-otp",
-		"plugin-llm-assistant",
-		"plugin-pwa",
-] }
+lariv-rs = { version = "0.1.0", 
+path = "../../lariv-rs", 
+# git = "https://github.com/lariv-in/lariv-rs", rev = "ec6ed09924a4ac7e760e0050cc3fa8d7769c4000", 
+default-features = false, features = [ "plugin-users", "plugin-dashboard", "plugin-filesystem", "plugin-website", "plugin-crm", "plugin-tasks", "plugin-finance", "plugin-forms", "plugin-hr", "plugin-otp", "plugin-llm-assistant", "plugin-pwa", ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 async-trait = "0.1"
