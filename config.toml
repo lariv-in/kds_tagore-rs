@@ -18,6 +18,19 @@ localDir = "filesystem"
 newPageRootDir = "website/pages"
 assetsDir = "website/assets"
 
+[pwa]
+PWA_APP_NAME = "KDS and Tagore Pvt. Ltd."
+PWA_APP_DESCRIPTION = "Your Trusted Partner for Advanced Laser Cutting, Bending, and Custom Fabrication Solutions."
+PWA_APP_THEME_COLOR = "#050505"
+PWA_APP_BACKGROUND_COLOR = "#050505"
+PWA_APP_DISPLAY = "standalone"
+PWA_APP_SCOPE = "/"
+PWA_APP_ORIENTATION = "any"
+PWA_APP_START_URL = "/"
+PWA_APP_DIR = "ltr"
+PWA_APP_LANG = "en-US"
+faviconPath = "./pwa_static/favicon.ico"
+
 # Embedded moq-relay (QUIC + HTTPS/WebTransport + WebSocket fallback).
 [meets.transport]
 enabled = true

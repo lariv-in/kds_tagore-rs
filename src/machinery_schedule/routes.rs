@@ -9,6 +9,7 @@ use super::{
 
 lariv_rs::define_plugin_routes! {
     plugin: MachineryScheduleTag;
+    prefix: "/dashboard";
     routes: [
         get JobDefaultRouteTag, "/machinery-schedule", handlers::jobs::hub, fragment(JobHubTableKey);
         get JobCreateGetRouteTag, "/machinery-schedule/jobs/create", handlers::jobs::create_get, modal;

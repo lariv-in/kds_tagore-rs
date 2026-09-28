@@ -10,7 +10,7 @@ use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, tasks, users, website,
+    llm_assistant, otp, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -45,6 +45,7 @@ fn kds_tagore_registers_forms_app_tile() {
             rt.block_on(async {
                 let app = App::new_web_app();
                 let app = users::install(app);
+                let app = otp::install(app);
                 let app = forms::install(app);
                 let app = filesystem::install(app);
                 let app = llm_assistant::install(app);
@@ -82,6 +83,10 @@ fn kds_tagore_registers_forms_app_tile() {
                     keys.iter().any(|k| *k == "p_tasks"),
                     "expected Tasks tile in apps catalog, got: {keys:?}"
                 );
+                assert!(
+                    keys.iter().any(|k| *k == "p_otp"),
+                    "expected OTP Preferences tile in apps catalog, got: {keys:?}"
+                );
 
                 let visible = catalog.visible_apps("superuser", true, true);
                 let visible_keys: Vec<_> = visible.iter().map(|t| t.key.as_str()).collect();
@@ -92,6 +97,10 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert!(
                     visible_keys.iter().any(|k| *k == "p_tasks"),
                     "expected Tasks tile visible to superuser, got: {visible_keys:?}"
+                );
+                assert!(
+                    visible_keys.iter().any(|k| *k == "p_otp"),
+                    "expected OTP Preferences tile visible to superuser, got: {visible_keys:?}"
                 );
                 assert!(
                     keys.iter().any(|k| *k == "kds_tagore-quotations"),
@@ -105,7 +114,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert_eq!(quotations.verbose_name, "KDS Quotations");
                 assert_eq!(
                     quotations.href.trim_end_matches('/'),
-                    "/work-orders",
+                    "/dashboard/work-orders",
                     "KDS Quotations tile should open the quotation list"
                 );
             });

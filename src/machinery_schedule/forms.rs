@@ -3,6 +3,7 @@ use lariv_rs::html_form::{
     FieldRender, FormCtx, FormWidget, html_form,
     widgets::{Duration, ManyToMany, Number, Text, Textarea},
 };
+use lariv_rs::plugins::filesystem::routes::VNodeFileSelectRouteTag;
 use maud::{Markup, PreEscaped, html};
 
 use crate::variable_schema_input::VariableSchemaList;
@@ -90,7 +91,7 @@ pub struct JobForm {
     #[form(
         label = "Files",
         widget = ManyToMany,
-        url = "/filesystem/file-select/",
+        route = VNodeFileSelectRouteTag,
         swap_key = "ms-job-files",
         placeholder = "Select files…"
     )]

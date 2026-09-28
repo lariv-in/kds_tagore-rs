@@ -25,13 +25,13 @@ use crate::machinery_schedule::{
         delete_completed_job, duplicate_job, format_job_duration, load_job_file_ids,
         load_job_machine_ids,
     },
+    scope::find_completed_job_scoped,
+    state::MachineryScheduleState,
+    templates::{CompletedJobDetailPage, ConfirmBulkDeletePage, ConfirmDeletePage},
     routes::{
         CompletedJobBulkDeletePostRouteTag, CompletedJobDeletePostRouteTag, JobDefaultRouteTag,
         JobDetailRouteTag,
     },
-    scope::find_completed_job_scoped,
-    state::MachineryScheduleState,
-    templates::{CompletedJobDetailPage, ConfirmBulkDeletePage, ConfirmDeletePage},
 };
 
 async fn completed_detail_page(
