@@ -5,7 +5,7 @@ use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
     finance_creditnotes, finance_customer, finance_indian, finance_invoices, finance_products,
-    finance_taxes, forms, hr, llm_assistant, otp, pwa, tasks, users, website,
+    finance_taxes, forms, hr, llm_assistant, otp, pwa, tasks, users, website, signing
 };
 use tracing_subscriber::EnvFilter;
 
@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let app = pwa::install(app);
     let app = website_seed::install(app);
     let app = documents::install(app);
+    let app = signing::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

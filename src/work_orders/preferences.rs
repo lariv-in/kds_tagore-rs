@@ -103,11 +103,17 @@ pub fn quotation_email_body(prefs: &WorkOrdersPreferences) -> &str {
 
 /// Store a custom email template, or `None` when it matches the shipped default.
 pub fn stored_email_template(submitted: &str, default: &str) -> Option<String> {
-    let t = submitted.trim();
-    if t.is_empty() || t == default.trim() {
+    let norm = |s: &str| {
+        s.replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .trim()
+            .to_string()
+    };
+    let t = norm(submitted);
+    if t.is_empty() || t == norm(default) {
         None
     } else {
-        Some(t.to_string())
+        Some(t)
     }
 }
 
