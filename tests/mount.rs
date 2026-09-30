@@ -42,17 +42,17 @@ fn kds_tagore_stack_mounts() {
                 let app = App::new_web_app();
                 let app = users::install(app);
                 let app = otp::install(app);
-                let app = forms::install(app);
                 let app = filesystem::install(app);
+                let app = forms::install(app);
                 let app = llm_assistant::install(app);
                 let app = machinery_schedule::install(app);
                 let app = work_orders::install(app);
                 let app = contacts::install(app);
                 let app = tasks::install(app);
                 let app = crm::install(app);
-                let app = hr::install(app);
                 let app = marketing_sheet::install(app);
                 let app = dashboard::install(app);
+                let app = hr::install(app);
                 let app = website::install(app);
 
                 let path = temp_config(MINIMAL_DB_TOML);

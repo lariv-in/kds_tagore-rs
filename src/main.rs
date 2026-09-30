@@ -26,8 +26,9 @@ async fn main() -> anyhow::Result<()> {
     let app = App::new_web_app();
     let app = users::install(app);
     let app = otp::install(app);
-    let app = forms::install(app);
+    // Before forms: form appearance references filesystem_nodes.
     let app = filesystem::install(app);
+    let app = forms::install(app);
     let app = llm_assistant::install(app);
     let app = machinery_schedule::install(app);
     let app = finance_accounts::install(app);
@@ -36,7 +37,6 @@ async fn main() -> anyhow::Result<()> {
     // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.
     let app = tasks::install(app);
     let app = crm::install(app);
-    let app = hr::install(app);
     let app = marketing_sheet::install(app);
     let app = finance_customer::install(app);
     let app = finance_creditnotes::install(app);
@@ -48,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_invoices::install(app);
     let app = finance_indian::install(app);
     let app = dashboard::install(app);
+    let app = hr::install(app);
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
     let app = pwa::install(app);

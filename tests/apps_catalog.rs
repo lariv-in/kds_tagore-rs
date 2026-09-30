@@ -46,8 +46,8 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = App::new_web_app();
                 let app = users::install(app);
                 let app = otp::install(app);
-                let app = forms::install(app);
                 let app = filesystem::install(app);
+                let app = forms::install(app);
                 let app = llm_assistant::install(app);
                 let app = machinery_schedule::install(app);
                 let app = finance_accounts::install(app);
