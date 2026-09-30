@@ -1,11 +1,11 @@
 #![recursion_limit = "1024"]
 
-use kds_tagore_rs::{machinery_schedule, marketing_sheet, website_seed, work_orders};
+use kds_tagore_rs::{delivery, machinery_schedule, marketing_sheet, website_seed, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
-    contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, otp, pwa, tasks, users, website,
+    contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
+    finance_creditnotes, finance_customer, finance_indian, finance_invoices, finance_products,
+    finance_taxes, forms, hr, llm_assistant, otp, pwa, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -44,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
     // After finance_taxes: work-order line-tax tables reference `taxes`.
     let app = work_orders::install(app);
     let app = finance_products::install(app);
+    let app = delivery::install(app);
     let app = finance_invoices::install(app);
     let app = finance_indian::install(app);
     let app = dashboard::install(app);
@@ -51,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let app = website::install(app);
     let app = pwa::install(app);
     let app = website_seed::install(app);
+    let app = documents::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

@@ -948,13 +948,29 @@ pub async fn render_issued_work_order_pdf(
     })
 }
 
+/// Quotation PDF bytes plus the Minijinja context used to render them.
+pub struct QuotationPdfParts {
+    pub pdf: PdfResult,
+    pub context: serde_json::Value,
+}
+
 /// Render a quotation to PDF bytes using the configured template.
 pub async fn render_quotation_pdf(
     db: &DatabaseConnection,
     fs: Option<&FilesystemState>,
     id: i64,
-    _tz: &str,
+    tz: &str,
 ) -> Result<PdfResult, PdfError> {
+    Ok(render_quotation_pdf_parts(db, fs, id, tz).await?.pdf)
+}
+
+/// Render a quotation PDF and return the template context alongside the bytes.
+pub async fn render_quotation_pdf_parts(
+    db: &DatabaseConnection,
+    fs: Option<&FilesystemState>,
+    id: i64,
+    _tz: &str,
+) -> Result<QuotationPdfParts, PdfError> {
     let inv = quotation::Entity::find_by_id(id)
         .one(db)
         .await
@@ -1090,11 +1106,20 @@ pub async fn render_quotation_pdf(
         preview: false,
     };
     let ctx = quotation_pdf_context(&root)?;
-    let bytes = compile_pdf(&tmpl_src, ctx, amount_words_from_decimal(grand_total), fs).await?;
+    let bytes = compile_pdf(
+        &tmpl_src,
+        ctx.clone(),
+        amount_words_from_decimal(grand_total),
+        fs,
+    )
+    .await?;
     let base = pdf_filename_base(Some(&inv.invoice_number), &format!("quotation-{}", inv.id));
-    Ok(PdfResult {
-        bytes,
-        filename_base: base,
+    Ok(QuotationPdfParts {
+        pdf: PdfResult {
+            bytes,
+            filename_base: base,
+        },
+        context: ctx,
     })
 }
 

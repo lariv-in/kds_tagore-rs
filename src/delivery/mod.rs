@@ -1,24 +1,20 @@
-//! KDS Quotations plugin — Rune formula costing, draft work orders, and quotations.
+//! Delivery challans — company preferences, customer documents, and Typst PDFs.
 
 pub mod apps;
-pub mod cascade;
+pub mod challan_number;
 pub mod create_modals;
 pub mod crumbs;
 pub mod entities;
 pub mod forms;
 pub mod handlers;
 pub mod keys;
-pub mod line_vars;
 pub mod migrations;
 pub mod pdf;
 pub mod pdf_templates;
 pub mod preferences;
-pub mod quotation_mail;
-pub mod quotation_number;
+pub mod qty;
 pub mod routes;
-pub mod source_docs;
 pub mod state;
-pub mod tax_assoc;
 pub mod templates;
 
 use frunk::{HCons, hlist::HList};
@@ -34,18 +30,17 @@ use lariv_rs::{
     },
 };
 
-use state::WorkOrdersState;
+use state::DeliveryState;
 
 /// Plugin identity tag.
-pub struct WorkOrdersTag;
+pub struct DeliveryTag;
 
-define_passthrough_cap!(WorkOrdersStateCap, WorkOrdersTag, WorkOrdersState);
+define_passthrough_cap!(DeliveryStateCap, DeliveryTag, DeliveryState);
 
 define_plugin_install! {
-    plugin: WorkOrdersTag;
-    /// Register KDS Quotations migrations, routes, templates, and dashboard tile.
+    plugin: DeliveryTag;
+    /// Register Delivery migrations, routes, templates, and dashboard tile.
     steps: [
-        cap_hook(crate::machinery_schedule::JobSourceDocTag, crate::machinery_schedule::JobSourceDocCap, source_docs::Hook),
         apps(apps::Hook),
         migrations(migrations::Hook),
         templates(templates::Hook),
@@ -62,12 +57,12 @@ pub struct StateHook;
 impl<L, DbIdx, TagProof> AttachState<L, (DbIdx, TagProof)> for StateHook
 where
     L: GetByCapTag<DbTag, DbIdx, Value = DbCap>,
-    L: HList + CapTagAbsent<WorkOrdersTag, TagProof>,
+    L: HList + CapTagAbsent<DeliveryTag, TagProof>,
 {
-    type Output = HCons<WorkOrdersStateCap, L>;
+    type Output = HCons<DeliveryStateCap, L>;
 
     fn attach_state(app: App<L>) -> App<Self::Output> {
         let conn = app.get_capability::<DbTag, DbIdx>().items.conn.clone();
-        app.add_capability(CapStore::with_items(WorkOrdersState::new(conn)))
+        app.add_capability(CapStore::with_items(DeliveryState::new(conn)))
     }
 }

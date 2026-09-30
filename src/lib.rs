@@ -3,6 +3,7 @@
 #![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
+pub mod delivery;
 pub mod formula;
 pub mod machinery_schedule;
 pub mod marketing_sheet;

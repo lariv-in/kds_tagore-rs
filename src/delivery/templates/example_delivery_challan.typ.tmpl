@@ -1,0 +1,102 @@
+{# Minijinja template: output must be valid Typst markup.
+   Context:
+     ID, ChallanNumber, Date, CustomerId,
+     Customer { ID, Name, Address, GSTIN, PAN, Phone, Email, Website },
+     Lines [ { SrNo, ProductId, Product, Qty, QtyKind } ],
+     company_name, company_address, company_phone, company_email, company_gstin,
+     terms_and_conditions,
+     VehicleNo, EwayBill,
+     company_logo_vnode_id, company_signature_vnode_id
+   Address is Typst markup from Delivery preferences.
+   Function: vnodeImage. #}
+#set page(paper: "a4", margin: 1.2cm)
+#set text(font: "Liberation Sans", size: 10pt)
+
+{% set company_name = company_name or CompanyName or "" %}
+{% set company_address = company_address or CompanyAddress or "" %}
+{% set company_phone = company_phone or CompanyPhone or "" %}
+{% set company_email = company_email or CompanyEmail or "" %}
+{% set company_gstin = company_gstin or CompanyGstin or "" %}
+{% set terms_and_conditions = terms_and_conditions or TermsAndConditions or "" %}
+{% set company_logo_vnode_id = company_logo_vnode_id or CompanyLogoVnodeId or 0 %}
+{% set company_signature_vnode_id = company_signature_vnode_id or CompanySignatureVnodeId or 0 %}
+
+#align(center)[
+  #text(size: 14pt, weight: "bold")[DELIVERY CHALLAN]
+]
+
+#v(0.6em)
+#grid(
+  columns: (1fr, auto),
+  column-gutter: 1em,
+  [
+    #text(size: 12pt, weight: "bold")[{{ company_name }}] \
+    {{ company_address }} \
+    {% if company_phone %}Phone: {{ company_phone }} \ {% endif %}
+    {% if company_email %}Email: {{ company_email | replace("@", "\\@") }} \ {% endif %}
+    {% if company_gstin %}GSTIN: {{ company_gstin }}{% endif %}
+  ],
+  [
+    {% if company_logo_vnode_id and company_logo_vnode_id != 0 %}
+    #image("{{ vnodeImage(company_logo_vnode_id) }}", width: 3.2cm)
+    {% endif %}
+  ],
+)
+
+#v(0.8em)
+#table(
+  columns: (1fr, 1fr),
+  [
+    *Delivered to* \
+    {% if Customer.Name %}*{{ Customer.Name }}* \ {% endif %}
+    {% if Customer.Address %}{{ Customer.Address }} \ {% endif %}
+    {% if Customer.GSTIN %}GSTIN: {{ Customer.GSTIN }} \ {% endif %}
+    {% if Customer.Phone %}Phone: {{ Customer.Phone }} \ {% endif %}
+    {% if Customer.Email %}Email: {{ Customer.Email | replace("@", "\\@") }}{% endif %}
+  ],
+  [
+    *Challan No.:* {{ ChallanNumber }} \
+    *Date:* {{ Date }} \
+    {% if VehicleNo %}*Vehicle No.:* {{ VehicleNo }} \ {% endif %}
+    {% if EwayBill %}*E-Way Bill:* {{ EwayBill }}{% endif %}
+  ],
+)
+
+#v(0.8em)
+#table(
+  columns: (auto, 1fr, auto),
+  align: (center, left, right),
+  [*Sr. No.*], [*Product*], [*Qty*],
+  {% for line in Lines %}
+  [{{ line.SrNo }}], [{{ line.Product }}], [{{ line.Qty }}],
+  {% endfor %}
+)
+
+{% if terms_and_conditions %}
+#v(0.8em)
+#text(size: 8.5pt)[
+  *Terms and conditions* \
+  {{ terms_and_conditions }}
+]
+{% endif %}
+
+#v(1.6em)
+#grid(
+  columns: (1fr, auto),
+  [
+    #text(size: 8pt, fill: luma(40))[Goods delivered as above.],
+  ],
+  [
+    {% if company_signature_vnode_id and company_signature_vnode_id != 0 %}
+    #align(center)[
+      #image("{{ vnodeImage(company_signature_vnode_id) }}", height: 1.6cm) \
+      Authorised signatory
+    ]
+    {% else %}
+    #align(center)[
+      #v(1.6cm)
+      Authorised signatory
+    ]
+    {% endif %}
+  ],
+)

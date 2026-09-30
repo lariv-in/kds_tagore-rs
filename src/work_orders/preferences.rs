@@ -11,6 +11,7 @@ use super::pdf_templates::{
     resolved_draft_work_order_pdf_template, resolved_quotation_pdf_template,
     resolved_work_order_pdf_template,
 };
+use super::quotation_mail::{DEFAULT_QUOTATION_EMAIL_BODY, DEFAULT_QUOTATION_EMAIL_SUBJECT};
 use super::quotation_number::DEFAULT_QUOTATION_NUMBER_FORMAT;
 
 /// Load singleton preferences row (`id = 1`), creating it if missing.
@@ -30,6 +31,8 @@ pub async fn load_preferences(
         work_order_pdf_template: Set(None),
         quotation_pdf_template: Set(None),
         quotation_number_format: Set(Some(DEFAULT_QUOTATION_NUMBER_FORMAT.to_string())),
+        quotation_email_subject: Set(None),
+        quotation_email_body: Set(None),
         ..Default::default()
     };
     model.insert(db).await
@@ -52,6 +55,8 @@ pub async fn save_preferences(
     am.place_of_supply = Set(prefs.place_of_supply);
     am.company_logo_vnode_id = Set(prefs.company_logo_vnode_id);
     am.company_signature_vnode_id = Set(prefs.company_signature_vnode_id);
+    am.quotation_email_subject = Set(prefs.quotation_email_subject);
+    am.quotation_email_body = Set(prefs.quotation_email_body);
     am.updated_at = Set(Some(Utc::now()));
     am.update(db).await
 }
@@ -78,6 +83,32 @@ pub fn work_order_pdf_template(prefs: &WorkOrdersPreferences) -> &str {
 /// template) resolve to the current default so company preference fields render.
 pub fn quotation_pdf_template(prefs: &WorkOrdersPreferences) -> &str {
     resolved_quotation_pdf_template(prefs.quotation_pdf_template.as_deref())
+}
+
+/// Return the quotation email subject template, or the default if blank/None.
+pub fn quotation_email_subject(prefs: &WorkOrdersPreferences) -> &str {
+    match prefs.quotation_email_subject.as_deref() {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => DEFAULT_QUOTATION_EMAIL_SUBJECT,
+    }
+}
+
+/// Return the quotation email body template, or the default if blank/None.
+pub fn quotation_email_body(prefs: &WorkOrdersPreferences) -> &str {
+    match prefs.quotation_email_body.as_deref() {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => DEFAULT_QUOTATION_EMAIL_BODY,
+    }
+}
+
+/// Store a custom email template, or `None` when it matches the shipped default.
+pub fn stored_email_template(submitted: &str, default: &str) -> Option<String> {
+    let t = submitted.trim();
+    if t.is_empty() || t == default.trim() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 /// Return the quotation number format, or the default if blank/None.
@@ -125,5 +156,7 @@ pub fn empty_preferences() -> WorkOrdersPreferences {
         place_of_supply: None,
         company_logo_vnode_id: None,
         company_signature_vnode_id: None,
+        quotation_email_subject: None,
+        quotation_email_body: None,
     }
 }

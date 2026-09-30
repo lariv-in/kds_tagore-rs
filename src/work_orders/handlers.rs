@@ -51,7 +51,8 @@ use super::{
     },
     preferences::{
         draft_work_order_pdf_template, empty_preferences, load_preferences, opt_text, opt_vnode_id,
-        quotation_pdf_template, save_preferences, work_order_pdf_template,
+        quotation_email_body, quotation_email_subject, quotation_pdf_template, save_preferences,
+        stored_email_template, work_order_pdf_template,
     },
     quotation_number,
     routes::*,
@@ -3900,6 +3901,8 @@ async fn prefs_page(
             .await
             .unwrap_or_default(),
     };
+    let email_subject = quotation_email_subject(&prefs).to_string();
+    let email_body = quotation_email_body(&prefs).to_string();
     WorkOrdersPreferencesPage {
         draft_work_order_pdf_template: draft_work_order_pdf_template(&prefs).to_string(),
         work_order_pdf_template: work_order_pdf_template(&prefs).to_string(),
@@ -3915,6 +3918,8 @@ async fn prefs_page(
         company_signature_vnode_id: fk_value(prefs.company_signature_vnode_id),
         company_signature_vnode_display: load_vnode_display(db, prefs.company_signature_vnode_id)
             .await,
+        quotation_email_subject: email_subject,
+        quotation_email_body: email_body,
         default_material_tax_items: tax_items_for_ids(db, &mat_ids).await,
         default_machine_tax_items: tax_items_for_ids(db, &mach_ids).await,
         error,
@@ -4014,6 +4019,14 @@ pub async fn preferences_post(
         place_of_supply: opt_text(&form.place_of_supply),
         company_logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
         company_signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
+        quotation_email_subject: stored_email_template(
+            &form.quotation_email_subject,
+            crate::work_orders::quotation_mail::DEFAULT_QUOTATION_EMAIL_SUBJECT,
+        ),
+        quotation_email_body: stored_email_template(
+            &form.quotation_email_body,
+            crate::work_orders::quotation_mail::DEFAULT_QUOTATION_EMAIL_BODY,
+        ),
     };
     match save_preferences(&state.db, prefs.clone()).await {
         Ok(_) => {
@@ -4159,6 +4172,38 @@ pub async fn invoice_pdf(
     }
     match pdf::render_quotation_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
         Ok(result) => pdf_ok_response(result),
+        Err(e) => pdf_error_response(e),
+    }
+}
+
+/// HTTP handler: `get /work-orders/quotations/{id}/mail`.
+///
+/// Returns an unsent `.eml` draft with the quotation PDF attached.
+pub async fn invoice_mail(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(fs): Cap<FilesystemState>,
+    RequireAuth(ctx): RequireAuth,
+    Path(id): Path<i64>,
+) -> Response {
+    if !require_superuser(&ctx) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match crate::work_orders::quotation_mail::build_quotation_eml(&state.db, Some(&fs), id).await {
+        Ok(result) => {
+            let filename = result.filename.replace('"', "'");
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "message/rfc822".to_string()),
+                    (
+                        header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{filename}\""),
+                    ),
+                ],
+                Body::from(result.bytes),
+            )
+                .into_response()
+        }
         Err(e) => pdf_error_response(e),
     }
 }

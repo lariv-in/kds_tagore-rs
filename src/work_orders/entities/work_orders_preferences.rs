@@ -27,6 +27,10 @@ pub struct Model {
     pub place_of_supply: Option<String>,
     pub company_logo_vnode_id: Option<i64>,
     pub company_signature_vnode_id: Option<i64>,
+    /// Jinja2 subject for the quotation email (blank → default).
+    pub quotation_email_subject: Option<String>,
+    /// Jinja2 plain-text body for the quotation email (blank → default).
+    pub quotation_email_body: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

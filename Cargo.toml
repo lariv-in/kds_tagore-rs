@@ -10,8 +10,21 @@ path = "src/main.rs"
 [dependencies]
 lariv-rs = { version = "0.1.0", 
 # path = "../../lariv-rs", 
-git = "https://github.com/lariv-in/lariv-rs", rev = "dc089522e7daed297c2dae26340b5b4870bcbd4c", 
-default-features = false, features = [ "plugin-users", "plugin-dashboard", "plugin-filesystem", "plugin-website", "plugin-crm", "plugin-tasks", "plugin-finance", "plugin-forms", "plugin-hr", "plugin-otp", "plugin-llm-assistant", "plugin-pwa", ] }
+git = "https://github.com/lariv-in/lariv-rs", rev = "08ffe6864431bc129047c794fcbb36e6727ad364", 
+default-features = false, features = [ 
+"plugin-users", 
+"plugin-dashboard", 
+"plugin-filesystem", 
+"plugin-website", 
+"plugin-crm", 
+"plugin-tasks", 
+"plugin-finance", 
+"plugin-forms", 
+"plugin-hr", 
+"plugin-otp", 
+"plugin-llm-assistant", 
+"plugin-documents", 
+"plugin-pwa", ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 async-trait = "0.1"

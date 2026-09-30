@@ -24,6 +24,7 @@ mod m00019_formula_costing;
 mod m00020_quotation_pdf_presentation;
 mod m00021_drop_quotation_duration;
 mod m00022_work_order_pdf_template;
+mod m00023_quotation_email_templates;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -54,6 +55,7 @@ impl MigratorTrait for Migrator {
             Box::new(m00020_quotation_pdf_presentation::Migration),
             Box::new(m00021_drop_quotation_duration::Migration),
             Box::new(m00022_work_order_pdf_template::Migration),
+            Box::new(m00023_quotation_email_templates::Migration),
         ]
     }
 }

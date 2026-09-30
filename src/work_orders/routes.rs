@@ -72,6 +72,7 @@ lariv_rs::define_plugin_routes! {
         get WorkOrderPdfRouteTag, "/work-orders/orders/{id}/pdf/file", bare handlers::work_order_pdf, file;
         get InvoicePdfModalRouteTag, "/work-orders/quotations/{id}/pdf", bare handlers::invoice_pdf_modal, modal;
         get InvoicePdfRouteTag, "/work-orders/quotations/{id}/pdf/file", bare handlers::invoice_pdf, file;
+        get InvoiceMailRouteTag, "/work-orders/quotations/{id}/mail", bare handlers::invoice_mail, file;
         post WorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/work-order", bare handlers::work_order_pdf_preview_post, modal;
         post IssuedWorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/issued-work-order", bare handlers::issued_work_order_pdf_preview_post, modal;
         post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/quotation", bare handlers::invoice_pdf_preview_post, modal;

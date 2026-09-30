@@ -31,6 +31,7 @@ use crate::machinery_schedule::{
         completed_job_id_for_job, format_job_duration, jobs_for_machine, machine_free_on,
         machine_remaining_duration,
     },
+    routes::{CompletedJobDetailRouteTag, JobDetailRouteTag, MachineDetailRouteTag},
     scope::{
         apply_name_filter, apply_name_sort_or_id_desc, find_machine_scoped, scope_superuser,
         sort_jobs_by_column,
@@ -40,7 +41,6 @@ use crate::machinery_schedule::{
         ConfirmDeletePage, MachineCreateModalPage, MachineDetailPage, MachineEditModalPage,
         MachineJobRow, MachineListPage, MachineRow, MachineSelectPage,
     },
-    routes::{CompletedJobDetailRouteTag, JobDetailRouteTag, MachineDetailRouteTag},
 };
 
 #[derive(Debug, serde::Deserialize, Default)]

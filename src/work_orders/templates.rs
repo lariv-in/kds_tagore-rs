@@ -1521,6 +1521,14 @@ impl InvoiceDetailPage {
     fn body(&self) -> Markup {
         let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
         let create_wo_url = InvoiceCreateWorkOrderGetRouteTag::new(self.invoice.id).url();
+        let mail_href = InvoiceMailRouteTag::new(self.invoice.id).path();
+        let eml_name = format!(
+            "{}.eml",
+            crate::work_orders::pdf::pdf_filename_base(
+                Some(self.invoice.invoice_number.as_str()),
+                &format!("quotation-{}", self.invoice.id),
+            )
+        );
         let actions = html! {
             (button_modal_form(ButtonModalForm {
                 label: "Create Work Order",
@@ -1547,6 +1555,14 @@ impl InvoiceDetailPage {
                 "PDF",
                 "btn-outline btn-sm",
             ))
+            a href=(mail_href)
+                download=(eml_name)
+                class="btn btn-outline btn-sm"
+                hx-boost="false"
+                title="Download a draft message with the quotation PDF attached. Open it to send from your mail client."
+            {
+                "Send mail"
+            }
         };
 
         let date_str = self.invoice.date.to_string();
@@ -2359,6 +2375,8 @@ pub struct WorkOrdersPreferencesPage {
     pub company_logo_vnode_display: String,
     pub company_signature_vnode_id: String,
     pub company_signature_vnode_display: String,
+    pub quotation_email_subject: String,
+    pub quotation_email_body: String,
     pub default_material_tax_items: Vec<ManyToManyItem>,
     pub default_machine_tax_items: Vec<ManyToManyItem>,
     pub error: String,
@@ -2453,6 +2471,14 @@ impl WorkOrdersPreferencesPage {
             .display(
                 WorkOrdersPreferencesFormField::CompanySignatureVnodeId,
                 self.company_signature_vnode_display.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::QuotationEmailSubject,
+                self.quotation_email_subject.as_str(),
+            )
+            .value(
+                WorkOrdersPreferencesFormField::QuotationEmailBody,
+                self.quotation_email_body.as_str(),
             );
         let tax_fields = html! {
             @for spec in WorkOrdersPreferencesForm::field_specs() {
@@ -2493,6 +2519,23 @@ impl WorkOrdersPreferencesPage {
                 }
             }
         };
+        let email_fields = html! {
+            @for spec in WorkOrdersPreferencesForm::field_specs() {
+                @if spec.name == WorkOrdersPreferencesFormField::SectionEmail.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::QuotationEmailSubject.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::QuotationEmailBody.html_name()
+                {
+                    @let field = FieldRender {
+                        name: spec.name,
+                        label: ctx.label_of(spec),
+                        value: ctx.value_of(spec.name),
+                        required: spec.required,
+                        spec,
+                    };
+                    ((spec.render)(&ctx, &field))
+                }
+            }
+        };
         form(
             &CsrfToken::current(),
             lariv_rs::components::FormOpts {
@@ -2500,7 +2543,7 @@ impl WorkOrdersPreferencesPage {
                     &WorkOrdersPrefsPostRouteTag.url(),
                 ),
                 title: "KDS Quotations Preferences",
-                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. Templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF.",
+                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, the quotation email subject and body, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. PDF templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF. The email templates are plain-text Jinja2.",
                 form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                 inputs: html! {
                     (label_hint(
@@ -2516,6 +2559,7 @@ impl WorkOrdersPreferencesPage {
                     ))
                     (tax_fields)
                     (company_fields)
+                    (email_fields)
                     (pdf_template_editor(
                         "Draft Work Order PDF Template",
                         "draft_work_order_pdf_template",

@@ -1777,6 +1777,25 @@ pub struct WorkOrdersPreferencesForm {
     )]
     pub company_signature_vnode_id: String,
 
+    #[form(widget = Section, label = "Quotation email")]
+    _section_email: (),
+
+    #[form(
+        label = "Email subject",
+        widget = OptionalText,
+        placeholder = "Quotation {{ invoice_number }}",
+        hint = "Jinja2 template for the subject line. Leave blank to use the default."
+    )]
+    pub quotation_email_subject: String,
+
+    #[form(
+        label = "Email body",
+        widget = Textarea,
+        rows = 8,
+        hint = crate::work_orders::quotation_mail::QUOTATION_EMAIL_TEMPLATE_HINT
+    )]
+    pub quotation_email_body: String,
+
     #[form(widget = Section, label = "Draft Work Order PDF")]
     _section_wo: (),
 

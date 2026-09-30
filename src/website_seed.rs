@@ -113,13 +113,8 @@ async fn ensure_homepage_state(
     ensure_db_route(db, ROUTE_PATH, page.id, THEME, page_rewritten).await?;
     tracing::info!(page_id = page.id, "kds website: homepage route ready");
 
-    let (privacy_page, privacy_rewritten) = ensure_page_vnode(
-        db,
-        store,
-        PRIVACY_PAGE_NAME,
-        PRIVACY_POLICY_HTML.as_bytes(),
-    )
-    .await?;
+    let (privacy_page, privacy_rewritten) =
+        ensure_page_vnode(db, store, PRIVACY_PAGE_NAME, PRIVACY_POLICY_HTML.as_bytes()).await?;
     ensure_db_route(
         db,
         PRIVACY_ROUTE_PATH,

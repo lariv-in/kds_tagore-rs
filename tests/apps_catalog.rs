@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use kds_tagore_rs::{machinery_schedule, marketing_sheet, website_seed, work_orders};
+use kds_tagore_rs::{delivery, machinery_schedule, marketing_sheet, website_seed, work_orders};
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
@@ -62,6 +62,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = finance_taxes::install(app);
                 let app = work_orders::install(app);
                 let app = finance_products::install(app);
+                let app = delivery::install(app);
                 let app = finance_invoices::install(app);
                 let app = finance_indian::install(app);
                 let app = dashboard::install(app);
@@ -116,6 +117,21 @@ fn kds_tagore_registers_forms_app_tile() {
                     quotations.href.trim_end_matches('/'),
                     "/dashboard/work-orders",
                     "KDS Quotations tile should open the quotation list"
+                );
+                assert!(
+                    keys.iter().any(|k| *k == "kds_tagore-delivery"),
+                    "expected Delivery tile in apps catalog, got: {keys:?}"
+                );
+                let delivery_tile = catalog
+                    .apps()
+                    .iter()
+                    .find(|t| t.key == "kds_tagore-delivery")
+                    .expect("Delivery tile");
+                assert_eq!(delivery_tile.verbose_name, "Delivery");
+                assert_eq!(
+                    delivery_tile.href.trim_end_matches('/'),
+                    "/dashboard/delivery",
+                    "Delivery tile should open the challan list"
                 );
             });
         })
