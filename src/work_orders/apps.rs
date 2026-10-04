@@ -6,5 +6,5 @@ lariv_rs::define_register_apps! {
     name: "KDS Quotations";
     href: WorkOrdersDefaultRouteTag.url();
     icon: "wrench-screwdriver";
-    roles: ["superuser"];
+    roles: [crate::hr_role::Hr];
 }

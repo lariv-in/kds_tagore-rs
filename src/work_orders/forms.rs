@@ -764,7 +764,7 @@ pub struct ComponentForm {
         label = "Variables",
         widget = VariableSchemaList,
         placeholder = "Variable name",
-        hint = "Name plus type for each formula variable. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
+        hint = "Names must start with a letter and contain only letters and digits. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
     )]
     pub variables: Vec<String>,
 

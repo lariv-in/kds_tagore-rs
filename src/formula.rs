@@ -129,18 +129,27 @@ const RUNE_KEYWORDS: &[&str] = &[
     "use", "where", "while", "yield", "select", "is", "not", "and", "or",
 ];
 
-pub fn is_valid_ident(name: &str) -> bool {
+/// Letters and digits only, with a letter first. Underscores are not allowed.
+fn is_alphanumeric_ident(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;
     };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
+    first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+pub fn is_valid_ident(name: &str) -> bool {
+    is_alphanumeric_ident(name) && !RUNE_KEYWORDS.contains(&name)
+}
+
+fn ident_rejection(name: &str) -> Option<&'static str> {
+    if !is_alphanumeric_ident(name) {
+        return Some("must start with a letter and contain only letters and digits");
     }
-    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return false;
+    if RUNE_KEYWORDS.contains(&name) {
+        return Some("is a reserved word");
     }
-    !RUNE_KEYWORDS.contains(&name)
+    None
 }
 
 pub fn parse_schema(value: &serde_json::Value) -> Result<VariableSchema, FormulaError> {
@@ -150,10 +159,8 @@ pub fn parse_schema(value: &serde_json::Value) -> Result<VariableSchema, Formula
     let mut out = VariableSchema::new();
     for (name, ty) in obj {
         let name = name.trim();
-        if !is_valid_ident(name) {
-            return Err(FormulaError::msg(format!(
-                "variable name `{name}` is not a valid Rune identifier"
-            )));
+        if let Some(reason) = ident_rejection(name) {
+            return Err(FormulaError::msg(format!("variable name `{name}` {reason}")));
         }
         let ty_s = ty
             .as_str()
@@ -632,11 +639,20 @@ mod tests {
     #[test]
     fn ident_validation() {
         assert!(is_valid_ident("length"));
-        assert!(is_valid_ident("_x"));
+        assert!(is_valid_ident("qty2"));
+        assert!(!is_valid_ident("_x"));
+        assert!(!is_valid_ident("a_b"));
         assert!(!is_valid_ident(""));
         assert!(!is_valid_ident("1x"));
         assert!(!is_valid_ident("let"));
         assert!(!is_valid_ident("fn"));
+    }
+
+    #[test]
+    fn parse_schema_rejects_non_alphanumeric_names() {
+        let value = serde_json::json!({ "a_b": "length", "1x": "quantity" });
+        let err = parse_schema(&value).unwrap_err().to_string();
+        assert!(err.contains("must start with a letter and contain only letters and digits"));
     }
 
     #[test]

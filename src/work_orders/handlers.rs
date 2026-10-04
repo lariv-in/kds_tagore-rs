@@ -16,8 +16,7 @@ use lariv_rs::{
     picker::respond_picker_select,
     plugins::{
         filesystem::{entities::VNodeEntity, state::FilesystemState},
-        finance_common::require_superuser,
-        users::middleware::{OptionalAuth, RequireAuth, RequireStaff},
+        users::middleware::{OptionalAuth, RequireAuth},
     },
     template::RenderAppPane,
     web::{
@@ -3943,11 +3942,16 @@ async fn load_vnode_display(db: &sea_orm::DatabaseConnection, id: Option<i64>) -
         .unwrap_or_default()
 }
 
+fn quotation_staff(ctx: &lariv_rs::plugins::users::state::AuthContext) -> bool {
+    lariv_rs::plugins::users::roles::Superuser::matches(&ctx.role)
+        || ctx.role == crate::hr_role::HR_ROLE
+}
+
 /// HTTP handler: `get /work-orders/preferences`.
 pub async fn preferences_get(
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    RequireStaff(ctx): RequireStaff,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
 ) -> Response {
     let slot_ctx = SlotCtx::from_auth(&ctx);
@@ -3973,10 +3977,13 @@ pub async fn preferences_get(
 pub async fn preferences_post(
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    RequireStaff(ctx): RequireStaff,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Response {
+    if !lariv_rs::plugins::users::roles::Superuser::matches(&ctx.role) {
+        return Redirect::to(&WorkOrdersDefaultRouteTag.url()).into_response();
+    }
     let slot_ctx = SlotCtx::from_auth(&ctx);
     let quotation_number_format = {
         let t = form.quotation_number_format.trim();
@@ -4062,7 +4069,7 @@ pub async fn work_order_pdf_modal(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_pdf_modal_error("Forbidden");
     }
     let Some(order) = draft_work_order::Entity::find_by_id(id)
@@ -4087,7 +4094,7 @@ pub async fn work_order_pdf(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match pdf::render_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
@@ -4102,7 +4109,7 @@ pub async fn issued_work_order_pdf_modal(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_pdf_modal_error("Forbidden");
     }
     let Some(order) = work_order::Entity::find_by_id(id)
@@ -4127,7 +4134,7 @@ pub async fn issued_work_order_pdf(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match pdf::render_issued_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
@@ -4142,7 +4149,7 @@ pub async fn invoice_pdf_modal(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_pdf_modal_error("Forbidden");
     }
     let Some(inv) = quotation::Entity::find_by_id(id)
@@ -4167,7 +4174,7 @@ pub async fn invoice_pdf(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match pdf::render_quotation_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
@@ -4185,7 +4192,7 @@ pub async fn invoice_mail(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match crate::work_orders::quotation_mail::build_quotation_eml(&state.db, Some(&fs), id).await {
@@ -4227,7 +4234,7 @@ pub async fn work_order_pdf_preview_post(
     RequireAuth(ctx): RequireAuth,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_preview_modal("", Some("Forbidden"));
     }
     cleanup_stale_previews(3600);
@@ -4266,7 +4273,7 @@ pub async fn issued_work_order_pdf_preview_post(
     RequireAuth(ctx): RequireAuth,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_preview_modal("", Some("Forbidden"));
     }
     cleanup_stale_previews(3600);
@@ -4305,7 +4312,7 @@ pub async fn invoice_pdf_preview_post(
     RequireAuth(ctx): RequireAuth,
     HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return render_preview_modal("", Some("Forbidden"));
     }
     cleanup_stale_previews(3600);
@@ -4333,7 +4340,7 @@ pub async fn invoice_pdf_preview_post(
 
 /// HTTP handler: `get /work-orders/pdf/preview/{token}`.
 pub async fn preview_pdf_get(RequireAuth(ctx): RequireAuth, Path(token): Path<String>) -> Response {
-    if !require_superuser(&ctx) {
+    if !quotation_staff(&ctx) {
         return StatusCode::FORBIDDEN.into_response();
     }
     if !is_valid_preview_token(&token) {

@@ -33,8 +33,8 @@ use crate::machinery_schedule::{
     },
     routes::{CompletedJobDetailRouteTag, JobDetailRouteTag, MachineDetailRouteTag},
     scope::{
-        apply_name_filter, apply_name_sort_or_id_desc, find_machine_scoped, scope_superuser,
-        sort_jobs_by_column,
+        apply_name_filter, apply_name_sort_or_id_desc, can_manage, find_machine_scoped,
+        scope_superuser, sort_jobs_by_column,
     },
     state::MachineryScheduleState,
     templates::{
@@ -159,7 +159,7 @@ pub async fn list(
         filter_name: q.name.clone().unwrap_or_default(),
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
     if htmx.targets::<MachineTableKey>() {
@@ -226,7 +226,7 @@ pub async fn detail(
         formula_label: m.formula_label(),
         variables_label: schema_entries_for(&m).join(", "),
         name: m.name,
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
         jobs,
         free_on,
         sort,
@@ -243,7 +243,7 @@ pub async fn create_get(
     RequireAuth(ctx): RequireAuth,
     Query(q): Query<ModalNameQuery>,
 ) -> maud::Markup {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return maud::html! { div class="alert alert-error" { "Forbidden" } };
     }
     let page = MachineCreateModalPage {
@@ -266,7 +266,7 @@ pub async fn create_post(
     Query(q): Query<ModalNameQuery>,
     HtmlFormBody(form): HtmlFormBody<MachineForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     }
@@ -327,7 +327,7 @@ pub async fn edit_get(
     Path(id): Path<i64>,
     Query(q): Query<ModalNameQuery>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     }
@@ -356,7 +356,7 @@ pub async fn edit_post(
     Query(q): Query<ModalNameQuery>,
     HtmlFormBody(form): HtmlFormBody<MachineForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&crate::machinery_schedule::routes::MachineDefaultRouteTag.url())
             .into_response();
     }
@@ -432,7 +432,7 @@ pub async fn delete_post(
     Path(id): Path<i64>,
 ) -> Response {
     let list_url = crate::machinery_schedule::routes::MachineDefaultRouteTag.url();
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&list_url).into_response();
     }
     match MachineEntity::delete_by_id(id).exec(&state.db).await {
@@ -466,7 +466,7 @@ pub async fn select(
         sort: q.filter.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
         target_input: q.target_input.clone().unwrap_or_else(|| "Machines".into()),
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
         multi: query_is_multi(q.multi.as_deref()),
     };
     respond_picker_select::<MachineSelectTableKey, MachineSelectModalKey, _>(&htmx, &page)

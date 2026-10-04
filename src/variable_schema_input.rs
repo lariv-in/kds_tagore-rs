@@ -255,11 +255,34 @@ moveDown(idx) {
     arr[idx] = tmp;
     this.items = arr;
 },
+sanitizeName(raw) {
+    return String(raw || '').replace(/[^A-Za-z0-9]/g, '').replace(/^[^A-Za-z]+/, '');
+},
+onNameInput(event, item) {
+    const cleaned = this.sanitizeName(event.target.value);
+    if (event.target.value !== cleaned) event.target.value = cleaned;
+    item.name = cleaned;
+},
+onNamePaste(event, item) {
+    event.preventDefault();
+    const text = (event.clipboardData && event.clipboardData.getData('text')) || '';
+    const input = event.target;
+    const current = String(item.name || '');
+    const start = input.selectionStart == null ? current.length : input.selectionStart;
+    const end = input.selectionEnd == null ? start : input.selectionEnd;
+    item.name = this.sanitizeName(current.slice(0, start) + text + current.slice(end));
+},
 onNameKey(e, idx) {
     if (e.key === 'Enter') {
         e.preventDefault();
         if (idx === this.items.length - 1) this.add();
+        return;
     }
+    if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+    const input = e.target;
+    const start = input.selectionStart == null ? 0 : input.selectionStart;
+    const ok = start === 0 ? /^[A-Za-z]$/.test(e.key) : /^[A-Za-z0-9]$/.test(e.key);
+    if (!ok) e.preventDefault();
 }"#
 }
 
@@ -306,7 +329,7 @@ pub fn input_variable_schema(opts: InputVariableSchema<'_>) -> Markup {
                         }
                         (PreEscaped(format!(
                             r#"<input type="hidden" name="{name}" :value="encoded(item)">
-                            <input type="text" class="input input-bordered w-full min-w-0 h-12" x-model="item.name" data-var-name-input @keydown="onNameKey($event, idx)" :placeholder="namePlaceholder" autocomplete="off" spellcheck="false">"#,
+                            <input type="text" class="input input-bordered w-full min-w-0 h-12" x-model="item.name" data-var-name-input @keydown="onNameKey($event, idx)" @paste="onNamePaste($event, item)" @input="onNameInput($event, item)" pattern="[A-Za-z][A-Za-z0-9]*" title="Start with a letter and use only letters and digits" :placeholder="namePlaceholder" autocomplete="off" spellcheck="false">"#,
                             name = lariv_rs::components::attrs::escape_attr(name),
                         )))
                         div class="w-40 shrink-0 min-w-[10rem] [&_.input]:min-h-12 [&_.input]:h-12 [&_.input]:py-0" x-data="typePickerData(item)" x-init="bindForm()" {
@@ -364,6 +387,8 @@ mod tests {
         assert!(html.contains("duration"));
         assert!(html.contains("quantity"));
         assert!(html.contains("Search type"));
+        assert!(html.contains(r#"pattern="[A-Za-z][A-Za-z0-9]*""#));
+        assert!(html.contains("sanitizeName"));
         assert!(html.contains("typePickerData"));
         assert!(
             html.contains(r#"&quot;name&quot;:&quot;length&quot;"#)

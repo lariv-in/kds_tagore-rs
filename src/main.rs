@@ -1,11 +1,13 @@
-#![recursion_limit = "1024"]
+#![recursion_limit = "4096"]
 
-use kds_tagore_rs::{delivery, machinery_schedule, marketing_sheet, website_seed, work_orders};
+use kds_tagore_rs::{
+    delivery, hr_role, machinery_schedule, marketing_sheet, website_seed, work_orders,
+};
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
     finance_creditnotes, finance_customer, finance_indian, finance_invoices, finance_products,
-    finance_taxes, forms, hr, llm_assistant, otp, pwa, tasks, users, website, signing
+    finance_taxes, forms, hr, llm_assistant, otp, pwa, signing, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -55,6 +57,8 @@ async fn main() -> anyhow::Result<()> {
     let app = website_seed::install(app);
     let app = documents::install(app);
     let app = signing::install(app);
+    // After the apps it patches, so `hr` is appended to allowlists those plugins already registered.
+    let app = hr_role::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

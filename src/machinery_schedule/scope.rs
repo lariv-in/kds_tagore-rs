@@ -1,4 +1,4 @@
-use lariv_rs::plugins::users::state::AuthContext;
+use lariv_rs::plugins::users::{roles::Superuser, state::AuthContext};
 use lariv_rs::web::opt_or_log;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder, Select,
@@ -17,11 +17,15 @@ pub fn sql_job_not_completed() -> sea_orm::sea_query::SimpleExpr {
     )
 }
 
+pub fn can_manage(auth: &AuthContext) -> bool {
+    Superuser::matches(&auth.role) || auth.role == crate::hr_role::HR_ROLE
+}
+
 pub fn scope_superuser<T>(query: Select<T>, auth: &AuthContext) -> Select<T>
 where
     T: EntityTrait,
 {
-    if auth.user.is_superuser {
+    if can_manage(auth) {
         return query;
     }
     query.filter(Expr::cust("1 = 0"))

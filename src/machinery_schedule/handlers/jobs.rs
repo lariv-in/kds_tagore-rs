@@ -54,8 +54,8 @@ use crate::machinery_schedule::{
         JobDetailRouteTag,
     },
     scope::{
-        apply_completed_job_hub_sort, apply_name_filter, apply_open_job_hub_sort, find_job_scoped,
-        find_open_job, scope_superuser, sql_job_not_completed,
+        apply_completed_job_hub_sort, apply_name_filter, apply_open_job_hub_sort, can_manage,
+        find_job_scoped, find_open_job, scope_superuser, sql_job_not_completed,
     },
     state::MachineryScheduleState,
     templates::{
@@ -265,7 +265,7 @@ pub async fn hub(
         filter_name: q.name.clone().unwrap_or_default(),
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
     if htmx.targets::<JobHubTableKey>() {
@@ -288,7 +288,7 @@ async fn respond_job_order_move(
     id: i64,
     dir: OrderMove,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     if let Err(e) = move_open_job_order(&state.db, id, &ctx, dir).await {
@@ -301,7 +301,7 @@ async fn respond_job_order_move(
         filter_name: q.name.clone().unwrap_or_default(),
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: hub_list_path(&q),
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
     };
     if htmx.request {
         return page.render_table().into_response();
@@ -382,7 +382,7 @@ pub async fn detail(
         source_doc_type: source_doc.type_label,
         source_doc_name: source_doc.instance_name,
         source_doc_url: source_doc.detail_url,
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
         error: String::new(),
     };
     html_built_page_or_app_layout(&page, &htmx, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
@@ -409,7 +409,7 @@ pub async fn create_get(
     RequireAuth(ctx): RequireAuth,
     Query(q): Query<ModalNameQuery>,
 ) -> maud::Markup {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return maud::html! { div class="alert alert-error" { "Forbidden" } };
     }
     html_built_page_with_slots(&empty_job_form_page(&q), &chrome, &SlotCtx::from_auth(&ctx))
@@ -423,7 +423,7 @@ pub async fn create_post(
     Query(q): Query<ModalNameQuery>,
     HtmlFormBody(form): HtmlFormBody<JobForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     let machines = machine_items_from_ids(&state.db, &form.machines).await;
@@ -508,7 +508,7 @@ pub async fn edit_get(
     Path(id): Path<i64>,
     Query(q): Query<ModalNameQuery>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     let Some(job) = find_open_job(&state.db, id, &ctx).await else {
@@ -540,7 +540,7 @@ pub async fn edit_post(
     Query(q): Query<ModalNameQuery>,
     HtmlFormBody(form): HtmlFormBody<JobForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     let Some(existing) = find_open_job(&state.db, id, &ctx).await else {
@@ -641,7 +641,7 @@ pub async fn delete_post(
     htmx: Htmx,
     Path(id): Path<i64>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     match delete_open_job(&state.db, id, &ctx).await {
@@ -687,7 +687,7 @@ pub async fn duplicate_post(
     htmx: Htmx,
     Path(id): Path<i64>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     match duplicate_job(&state.db, id, &ctx).await {
@@ -744,7 +744,7 @@ pub async fn bulk_delete_post(
     htmx: Htmx,
     HtmlFormBody(form): HtmlFormBody<BulkIdsForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&jobs_tab_url("jobs")).into_response();
     }
     let ids = parse_bulk_ids(&form.ids);
@@ -776,7 +776,7 @@ pub async fn bulk_duplicate_post(
     htmx: Htmx,
     Query(q): Query<BulkIdsQuery>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&jobs_tab_url("jobs")).into_response();
     }
     for id in parse_bulk_ids(q.ids.as_deref().unwrap_or("")) {

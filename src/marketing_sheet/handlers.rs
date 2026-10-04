@@ -12,7 +12,7 @@ use lariv_rs::{
     http::Cap,
     plugins::{
         crm::state::CrmState,
-        users::middleware::{RequireAuth, RequireStaff},
+        users::{middleware::RequireAuth, roles::Superuser},
     },
     web::{Htmx, html_built_page_or_app_layout},
 };
@@ -53,7 +53,7 @@ pub async fn page(
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !Superuser::matches(&ctx.role) {
         return RedirectForbidden.into_response();
     }
     let page = page_from_db(&crm.db, &ctx.timezone, String::new(), None).await;
@@ -76,7 +76,7 @@ pub async fn import_post(
     csrf: CsrfToken,
     multipart: Multipart,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !Superuser::matches(&ctx.role) {
         return RedirectForbidden.into_response();
     }
 
@@ -154,8 +154,8 @@ pub async fn import_post(
     }
 }
 
-pub async fn export_post(Cap(crm): Cap<CrmState>, RequireStaff(ctx): RequireStaff) -> Response {
-    if !ctx.user.is_superuser {
+pub async fn export_post(Cap(crm): Cap<CrmState>, RequireAuth(ctx): RequireAuth) -> Response {
+    if !Superuser::matches(&ctx.role) {
         return RedirectForbidden.into_response();
     }
     let rows = match export_rows(&crm.db, &ctx.timezone).await {

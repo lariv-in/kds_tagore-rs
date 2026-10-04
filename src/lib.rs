@@ -5,6 +5,7 @@
 
 pub mod delivery;
 pub mod formula;
+pub mod hr_role;
 pub mod machinery_schedule;
 pub mod marketing_sheet;
 pub mod variable_schema_input;

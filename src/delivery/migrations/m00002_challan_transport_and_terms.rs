@@ -23,8 +23,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(DeliveryChallans::Table)
-                    .add_column_if_not_exists(ColumnDef::new(DeliveryChallans::VehicleNo).text().null())
-                    .add_column_if_not_exists(ColumnDef::new(DeliveryChallans::EwayBill).text().null())
+                    .add_column_if_not_exists(
+                        ColumnDef::new(DeliveryChallans::VehicleNo).text().null(),
+                    )
+                    .add_column_if_not_exists(
+                        ColumnDef::new(DeliveryChallans::EwayBill).text().null(),
+                    )
                     .to_owned(),
             )
             .await?;

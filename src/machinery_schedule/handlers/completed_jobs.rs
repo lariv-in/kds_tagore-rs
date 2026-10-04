@@ -29,7 +29,7 @@ use crate::machinery_schedule::{
         CompletedJobBulkDeletePostRouteTag, CompletedJobDeletePostRouteTag, JobDefaultRouteTag,
         JobDetailRouteTag,
     },
-    scope::find_completed_job_scoped,
+    scope::{can_manage, find_completed_job_scoped},
     state::MachineryScheduleState,
     templates::{CompletedJobDetailPage, ConfirmBulkDeletePage, ConfirmDeletePage},
 };
@@ -78,7 +78,7 @@ async fn completed_detail_page(
         source_doc_type: source_doc.type_label,
         source_doc_name: source_doc.instance_name,
         source_doc_url: source_doc.detail_url,
-        can_edit: ctx.user.is_superuser,
+        can_edit: can_manage(&ctx),
     })
 }
 
@@ -103,7 +103,7 @@ pub async fn new_job_post(
     htmx: Htmx,
     Path(id): Path<i64>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&JobDefaultRouteTag.url()).into_response();
     }
     let Some(completed) = find_completed_job_scoped(&state.db, id, &ctx).await else {
@@ -146,7 +146,7 @@ pub async fn delete_post(
     htmx: Htmx,
     Path(id): Path<i64>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&jobs_tab_url("completed")).into_response();
     }
     match delete_completed_job(&state.db, id, &ctx).await {
@@ -208,7 +208,7 @@ pub async fn bulk_delete_post(
     htmx: Htmx,
     HtmlFormBody(form): HtmlFormBody<BulkIdsForm>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&jobs_tab_url("completed")).into_response();
     }
     let ids = parse_bulk_ids(&form.ids);
@@ -243,7 +243,7 @@ pub async fn bulk_new_job_post(
     htmx: Htmx,
     Query(q): Query<BulkIdsQuery>,
 ) -> Response {
-    if !ctx.user.is_superuser {
+    if !can_manage(&ctx) {
         return Redirect::to(&jobs_tab_url("completed")).into_response();
     }
     for id in parse_bulk_ids(q.ids.as_deref().unwrap_or("")) {

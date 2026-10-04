@@ -6,5 +6,5 @@ lariv_rs::define_register_apps! {
     name: "Delivery";
     href: DeliveryDefaultRouteTag.url();
     icon: "truck";
-    roles: ["superuser"];
+    roles: [];
 }

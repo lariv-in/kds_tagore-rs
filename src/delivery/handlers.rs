@@ -12,8 +12,10 @@ use lariv_rs::{
     http::Cap,
     plugins::{
         filesystem::{entities::VNodeEntity, state::FilesystemState},
-        finance_common::require_superuser,
-        users::middleware::{OptionalAuth, RequireAuth, RequireStaff},
+        users::{
+            middleware::{OptionalAuth, RequireAuth},
+            roles::Superuser,
+        },
     },
     template::RenderAppPane,
     web::{
@@ -643,9 +645,12 @@ async fn prefs_page(
 pub async fn preferences_get(
     Cap(state): Cap<DeliveryState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    RequireStaff(ctx): RequireStaff,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
 ) -> Response {
+    if !Superuser::matches(&ctx.role) {
+        return Redirect::to(&DeliveryDefaultRouteTag.url()).into_response();
+    }
     let slot_ctx = SlotCtx::from_auth(&ctx);
     let prefs = match load_preferences(&state.db).await {
         Ok(p) => p,
@@ -666,10 +671,13 @@ pub async fn preferences_get(
 pub async fn preferences_post(
     Cap(state): Cap<DeliveryState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    RequireStaff(ctx): RequireStaff,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     HtmlFormBody(form): HtmlFormBody<DeliveryPreferencesForm>,
 ) -> Response {
+    if !Superuser::matches(&ctx.role) {
+        return Redirect::to(&DeliveryDefaultRouteTag.url()).into_response();
+    }
     let slot_ctx = SlotCtx::from_auth(&ctx);
     let challan_number_format = {
         let t = form.challan_number_format.trim();
@@ -715,7 +723,7 @@ pub async fn challan_pdf_modal(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Markup {
-    if !require_superuser(&ctx) {
+    if !Superuser::matches(&ctx.role) {
         return render_pdf_modal_error("Forbidden");
     }
     let Some(challan) = ChallanEntity::find_by_id(id)
@@ -739,7 +747,7 @@ pub async fn challan_pdf(
     RequireAuth(ctx): RequireAuth,
     Path(id): Path<i64>,
 ) -> Response {
-    if !require_superuser(&ctx) {
+    if !Superuser::matches(&ctx.role) {
         return StatusCode::FORBIDDEN.into_response();
     }
     match pdf::render_challan_pdf(&state.db, Some(&fs), id).await {
