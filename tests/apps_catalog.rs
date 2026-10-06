@@ -146,13 +146,29 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert_eq!(
                     hr_keys,
                     vec![
+                        "kds_tagore-delivery".to_string(),
                         "kds_tagore-machinery-schedule".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_finance_accounts".to_string(),
-                        "p_hr".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "hr should see only HR, Accounting, Quotations, Machinery Schedule, and Tasks"
+                    "hr should see Accounting, Quotations, Delivery Challans, Machinery Schedule, and Tasks"
+                );
+
+                let mut employee_keys: Vec<_> = catalog
+                    .visible_apps("employee")
+                    .iter()
+                    .map(|tile| tile.key.clone())
+                    .collect();
+                employee_keys.sort();
+                assert_eq!(
+                    employee_keys,
+                    vec![
+                        "kds_tagore-delivery".to_string(),
+                        "kds_tagore-quotations".to_string(),
+                        "p_finance_accounts".to_string(),
+                    ],
+                    "a verified employee should see Accounting, Quotations, and Delivery Challans"
                 );
             });
         })

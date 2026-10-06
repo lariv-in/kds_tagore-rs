@@ -1,0 +1,21 @@
+[package]
+name = "kds-plugin-marketing-sheet"
+version = "0.1.0"
+edition.workspace = true
+description = "KDS Tagore marketing sheet import and export plugin"
+
+[dependencies]
+lariv-core = { workspace = true }
+lariv-plugin-contacts = { workspace = true }
+lariv-plugin-crm = { workspace = true }
+lariv-plugin-users = { workspace = true }
+axum = { workspace = true }
+calamine = { workspace = true }
+chrono = { workspace = true }
+frunk = { workspace = true }
+frunk_core = { workspace = true }
+serde = { workspace = true }
+maud = { workspace = true }
+rust_xlsxwriter = { workspace = true }
+sea-orm = { workspace = true }
+tracing = { workspace = true }

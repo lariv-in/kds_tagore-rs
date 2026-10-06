@@ -1,31 +1,33 @@
-[package]
-name = "kds_tagore-rs"
-version = "0.1.0"
+[workspace]
+members = [".", "plugins/*"]
+resolver = "2"
+
+[workspace.package]
 edition = "2024"
 
-[[bin]]
-name = "kds-tagore-rs"
-path = "src/main.rs"
-
-[dependencies]
-lariv-rs = { version = "0.1.0", 
-# path = "../../lariv-rs", 
-git = "https://github.com/lariv-in/lariv-rs", rev = "ffbcadf1de3b59320fbe8a256f47c6266e724f80", 
-default-features = false, features = [ 
-"plugin-users", 
-"plugin-dashboard", 
-"plugin-filesystem", 
-"plugin-website", 
-"plugin-crm", 
-"plugin-tasks", 
-"plugin-finance", 
-"plugin-forms", 
-"plugin-hr", 
-"plugin-otp", 
-"plugin-llm-assistant", 
-"plugin-documents", 
-"plugin-signing", 
-"plugin-pwa", ] }
+[workspace.dependencies]
+lariv-core = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-contacts = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-crm = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-customer = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-filesystem = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-accounts = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-common = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-invoices = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-products = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-finance-taxes = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-hr = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-tasks = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-users = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+lariv-plugin-website = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f" }
+kds-plugin-formula = { version = "0.1.0", path = "plugins/formula" }
+kds-plugin-hr-role = { version = "0.1.0", path = "plugins/hr_role" }
+kds-plugin-machinery-schedule = { version = "0.1.0", path = "plugins/machinery_schedule" }
+kds-plugin-work-orders = { version = "0.1.0", path = "plugins/work_orders" }
+kds-plugin-delivery = { version = "0.1.0", path = "plugins/delivery" }
+kds-plugin-marketing-sheet = { version = "0.1.0", path = "plugins/marketing_sheet" }
+kds-plugin-website-seed = { version = "0.1.0", path = "plugins/website_seed" }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 async-trait = "0.1"
@@ -60,10 +62,54 @@ rune = "0.14"
 thiserror = "2"
 minijinja = { version = "2", features = ["loader"] }
 num2words = "1"
+tower = { version = "0.5", features = ["util"] }
+
+[package]
+name = "kds_tagore-rs"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "kds-tagore-rs"
+path = "src/main.rs"
+
+[dependencies]
+lariv-rs = { version = "0.1.0", git = "ssh://git@github.com/lariv-in/lariv-rs.git", rev = "619613880ccf210e9c9bccf8680a1245c994ba4f", default-features = false, features = [
+	"plugin-users",
+	"plugin-dashboard",
+	"plugin-filesystem",
+	"plugin-website",
+	"plugin-crm",
+	"plugin-tasks",
+	"plugin-finance",
+	"plugin-forms",
+	"plugin-hr",
+	"plugin-otp",
+	"plugin-llm-assistant",
+	"plugin-documents",
+	"plugin-signing",
+	"plugin-pwa",
+] }
+kds-plugin-delivery = { workspace = true }
+kds-plugin-formula = { workspace = true }
+kds-plugin-hr-role = { workspace = true }
+kds-plugin-machinery-schedule = { workspace = true }
+kds-plugin-marketing-sheet = { workspace = true }
+kds-plugin-website-seed = { workspace = true }
+kds-plugin-work-orders = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-uuid = { version = "1", features = ["v4"] }
-tower = { version = "0.5", features = ["util"] }
+uuid = { workspace = true }
+tower = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+rust_decimal = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
 
 [profile.release]
 lto = "thin"

@@ -1,0 +1,19 @@
+[package]
+name = "kds-plugin-hr-role"
+version = "0.1.0"
+edition.workspace = true
+description = "KDS Tagore hr deployment role"
+
+[dependencies]
+lariv-core = { workspace = true }
+frunk = { workspace = true }
+frunk_core = { workspace = true }
+lariv-plugin-customer = { workspace = true }
+lariv-plugin-finance-accounts = { workspace = true }
+lariv-plugin-finance-creditnotes = { workspace = true }
+lariv-plugin-finance-invoices = { workspace = true }
+lariv-plugin-finance-products = { workspace = true }
+lariv-plugin-finance-taxes = { workspace = true }
+lariv-plugin-hr = { workspace = true }
+lariv-plugin-tasks = { workspace = true }
+lariv-plugin-users = { workspace = true }

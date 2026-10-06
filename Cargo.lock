@@ -3612,28 +3612,181 @@ dependencies = [
 ]
 
 [[package]]
-name = "kds_tagore-rs"
+name = "kds-plugin-delivery"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "axum",
- "calamine",
  "chrono",
  "frunk",
  "frunk_core",
- "lariv-rs",
+ "kds-plugin-formula",
+ "kds-plugin-hr-role",
+ "lariv-core",
+ "lariv-plugin-customer",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-finance-invoices",
+ "lariv-plugin-finance-products",
+ "lariv-plugin-hr",
+ "lariv-plugin-users",
  "maud",
  "minijinja",
- "num2words",
- "rune",
  "rust_decimal",
- "rust_xlsxwriter",
  "sea-orm",
  "sea-orm-migration",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
+name = "kds-plugin-formula"
+version = "0.1.0"
+dependencies = [
+ "lariv-core",
+ "maud",
+ "rune",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "kds-plugin-hr-role"
+version = "0.1.0"
+dependencies = [
+ "frunk",
+ "frunk_core",
+ "lariv-core",
+ "lariv-plugin-customer",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-finance-creditnotes",
+ "lariv-plugin-finance-invoices",
+ "lariv-plugin-finance-products",
+ "lariv-plugin-finance-taxes",
+ "lariv-plugin-hr",
+ "lariv-plugin-tasks",
+ "lariv-plugin-users",
+]
+
+[[package]]
+name = "kds-plugin-machinery-schedule"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "kds-plugin-formula",
+ "kds-plugin-hr-role",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-hr",
+ "lariv-plugin-users",
+ "maud",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "kds-plugin-marketing-sheet"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "calamine",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "lariv-core",
+ "lariv-plugin-contacts",
+ "lariv-plugin-crm",
+ "lariv-plugin-users",
+ "maud",
+ "rust_xlsxwriter",
+ "sea-orm",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "kds-plugin-website-seed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-website",
+ "sea-orm",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "kds-plugin-work-orders"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "kds-plugin-formula",
+ "kds-plugin-hr-role",
+ "kds-plugin-machinery-schedule",
+ "lariv-core",
+ "lariv-plugin-customer",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-finance-invoices",
+ "lariv-plugin-finance-taxes",
+ "lariv-plugin-hr",
+ "lariv-plugin-users",
+ "maud",
+ "minijinja",
+ "num2words",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kds_tagore-rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "kds-plugin-delivery",
+ "kds-plugin-formula",
+ "kds-plugin-hr-role",
+ "kds-plugin-machinery-schedule",
+ "kds-plugin-marketing-sheet",
+ "kds-plugin-website-seed",
+ "kds-plugin-work-orders",
+ "lariv-rs",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde_json",
  "tokio",
  "tower",
  "tracing",
@@ -3701,58 +3854,570 @@ dependencies = [
 ]
 
 [[package]]
-name = "lariv-rs"
+name = "lariv-core"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "comemo",
+ "cookie",
+ "form_urlencoded",
+ "frunk",
+ "futures-util",
+ "http",
+ "lariv-rs-macros",
+ "libc",
+ "maud",
+ "paste",
+ "phonenumber",
+ "pulldown-cmark",
+ "rand 0.10.2",
+ "reqwest",
+ "rune",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-util",
+ "toml 1.1.6+spec-1.1.0",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "typst",
+ "typst-kit",
+ "typst-pdf",
+ "typst-syntax",
+ "uuid",
+]
+
+[[package]]
+name = "lariv-plugin-contacts"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "phonenumber",
+ "sea-orm",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-crm"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-contacts",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rand 0.10.2",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-customer"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-dashboard"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "axum",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "tokio",
+]
+
+[[package]]
+name = "lariv-plugin-documents"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-llm-assistant",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rune",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-filesystem"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "bitflags 2.13.1",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "futures-util",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "mime_guess",
+ "object_store",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "typst",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "lariv-plugin-finance-accounts"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-finance-common"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "chrono",
+ "lariv-core",
+ "lariv-rs-macros",
+ "maud",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "typst",
+]
+
+[[package]]
+name = "lariv-plugin-finance-creditnotes"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+]
+
+[[package]]
+name = "lariv-plugin-finance-customer"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "lariv-core",
+ "lariv-plugin-customer",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-llm-assistant",
+ "lariv-rs-macros",
+ "maud",
+ "rune",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "lariv-plugin-finance-indian"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "frunk",
+ "frunk_core",
+ "lariv-core",
+ "lariv-plugin-finance-accounts",
+ "lariv-rs-macros",
+ "sea-orm-migration",
+]
+
+[[package]]
+name = "lariv-plugin-finance-invoices"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "form_urlencoded",
+ "frunk",
+ "frunk_core",
+ "hex",
+ "http",
+ "lariv-core",
+ "lariv-plugin-customer",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-finance-creditnotes",
+ "lariv-plugin-finance-customer",
+ "lariv-plugin-finance-products",
+ "lariv-plugin-finance-taxes",
+ "lariv-plugin-llm-assistant",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "minijinja",
+ "num2words",
+ "reqwest",
+ "rune",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tracing",
+ "typst",
+ "zip",
+]
+
+[[package]]
+name = "lariv-plugin-finance-products"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-finance-taxes",
+ "lariv-plugin-llm-assistant",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rune",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-finance-taxes"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rune",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-forms"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rune",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lariv-plugin-hr"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-dashboard",
+ "lariv-plugin-documents",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-forms",
+ "lariv-plugin-otp",
+ "lariv-plugin-users",
+ "lariv-plugin-website",
+ "lariv-rs-macros",
+ "maud",
+ "rand 0.10.2",
+ "rust_decimal",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lariv-plugin-llm-assistant"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
 dependencies = [
  "anyhow",
  "async-imap",
  "async-trait",
  "axum",
- "axum-extra",
  "base64 0.23.1",
- "bitflags 2.13.1",
- "bytes",
  "chrono",
  "chrono-tz",
- "clap",
- "cms",
- "comemo",
  "compress-tools",
- "const-oid 0.9.6",
- "cookie",
- "der 0.7.10",
- "form_urlencoded",
  "frunk",
  "frunk_core",
  "futures-util",
- "google-cloud-auth",
- "google-cloud-kms-v1",
- "hex",
  "html2text",
  "http",
- "jsonwebtoken",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-users",
  "lariv-rs-macros",
  "lettre",
  "libc",
- "lopdf",
  "mailparse",
  "maud",
  "mime_guess",
- "minijinja",
- "num2words",
- "object_store",
- "p256",
- "paste",
- "phonenumber",
- "pulldown-cmark",
- "rand 0.10.2",
- "rcgen",
  "reqwest",
  "rune",
- "rust_decimal",
  "rustls",
  "rustls-native-certs",
- "scrypt",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "typst",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "lariv-plugin-otp"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "lettre",
+ "maud",
+ "rand 0.10.2",
+ "reqwest",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-pwa"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "axum",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-rs-macros",
+ "maud",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-signing"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "bytes",
+ "chrono",
+ "cms",
+ "const-oid 0.9.6",
+ "der 0.7.10",
+ "frunk",
+ "frunk_core",
+ "google-cloud-auth",
+ "google-cloud-kms-v1",
+ "http",
+ "lariv-core",
+ "lariv-plugin-documents",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "lopdf",
+ "maud",
+ "p256",
+ "rcgen",
  "sea-orm",
  "sea-orm-migration",
  "serde",
@@ -3760,31 +4425,134 @@ dependencies = [
  "sha1 0.11.0",
  "sha2 0.11.0",
  "spki 0.7.3",
- "sqlx",
- "subtle",
- "tempfile",
- "thiserror 2.0.20",
  "time",
  "tokio",
- "tokio-rustls",
- "tokio-util",
- "toml 1.1.6+spec-1.1.0",
- "tower",
- "tower-http 0.7.1",
  "tracing",
- "tracing-subscriber",
- "typst",
- "typst-kit",
- "typst-pdf",
- "typst-syntax",
- "uuid",
  "x509-cert",
  "zip",
 ]
 
 [[package]]
+name = "lariv-plugin-tasks"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "rand 0.10.2",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-plugin-users"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "chrono",
+ "clap",
+ "frunk",
+ "frunk_core",
+ "http",
+ "jsonwebtoken",
+ "lariv-core",
+ "lariv-rs-macros",
+ "maud",
+ "phonenumber",
+ "rand 0.10.2",
+ "scrypt",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "subtle",
+ "thiserror 2.0.20",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lariv-plugin-website"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "frunk",
+ "frunk_core",
+ "http",
+ "lariv-core",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-users",
+ "lariv-rs-macros",
+ "maud",
+ "minijinja",
+ "pulldown-cmark",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lariv-rs"
+version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
+dependencies = [
+ "anyhow",
+ "lariv-core",
+ "lariv-plugin-contacts",
+ "lariv-plugin-crm",
+ "lariv-plugin-customer",
+ "lariv-plugin-dashboard",
+ "lariv-plugin-documents",
+ "lariv-plugin-filesystem",
+ "lariv-plugin-finance-accounts",
+ "lariv-plugin-finance-common",
+ "lariv-plugin-finance-creditnotes",
+ "lariv-plugin-finance-customer",
+ "lariv-plugin-finance-indian",
+ "lariv-plugin-finance-invoices",
+ "lariv-plugin-finance-products",
+ "lariv-plugin-finance-taxes",
+ "lariv-plugin-forms",
+ "lariv-plugin-hr",
+ "lariv-plugin-llm-assistant",
+ "lariv-plugin-otp",
+ "lariv-plugin-pwa",
+ "lariv-plugin-signing",
+ "lariv-plugin-tasks",
+ "lariv-plugin-users",
+ "lariv-plugin-website",
+ "lariv-rs-macros",
+ "paste",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lariv-rs-macros"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lariv-in/lariv-rs.git?rev=619613880ccf210e9c9bccf8680a1245c994ba4f#619613880ccf210e9c9bccf8680a1245c994ba4f"
 dependencies = [
  "proc-macro2",
  "quote",

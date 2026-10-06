@@ -1,0 +1,18 @@
+[package]
+name = "kds-plugin-website-seed"
+version = "0.1.0"
+edition.workspace = true
+description = "KDS Tagore public homepage and theme seed"
+
+[dependencies]
+lariv-core = { workspace = true }
+lariv-plugin-filesystem = { workspace = true }
+lariv-plugin-website = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+frunk = { workspace = true }
+frunk_core = { workspace = true }
+chrono = { workspace = true }
+sea-orm = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
