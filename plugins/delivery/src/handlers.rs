@@ -51,13 +51,11 @@ use super::{
 };
 
 fn delivery_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
-    Superuser::matches(&ctx.role)
-        || ctx.role == kds_plugin_hr_role::HR_ROLE
-        || ctx.role == lariv_plugin_hr::roles::Employee::NAME
+    Superuser::matches(&ctx.role) || ctx.role == kds_plugin_hr_role::HR_ROLE
 }
 
 fn preferences_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
-    Superuser::matches(&ctx.role) || ctx.role == lariv_plugin_hr::roles::Employee::NAME
+    Superuser::matches(&ctx.role)
 }
 
 fn path_and_query(uri: &Uri) -> String {

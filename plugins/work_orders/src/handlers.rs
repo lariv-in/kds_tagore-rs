@@ -62,8 +62,8 @@ use crate::cascade::{
     cascade_delete_preview, collect_work_order_cascade, delete_work_order_recursive,
 };
 use crate::entities::work_order::WORK_ORDER_SOURCE_DOC_TYPE;
-use kds_plugin_formula::{
-    parse_schema_list, parse_values_from_json, schema_to_json, values_to_json,
+use lariv_core::formula::{
+    FormulaContext, parse_schema_list, parse_values, schema_to_json, values_to_json,
 };
 use kds_plugin_machinery_schedule::duration::JobDuration;
 use kds_plugin_machinery_schedule::entities::{job, machine};
@@ -439,8 +439,14 @@ async fn resolve_and_compute_line_data(
     let extra_data = extra_data_from_value(extra_data_val);
     let units = line_vars::dim_units_map(&extra_data);
     let schema = comp.variables_schema().map_err(|e| e.to_string())?;
-    let values = parse_values_from_json(&schema, &variables_from_value(variables_val), &units)
-        .map_err(|e| e.to_string())?;
+    let values = parse_values(
+        &schema,
+        &variables_from_value(variables_val),
+        &FormulaContext {
+            length_units: units,
+        },
+    )
+    .map_err(|e| e.to_string())?;
     let final_cost = comp.get_cost(&values).map_err(|e| e.to_string())?;
     Ok((values_to_json(&values), final_cost, extra_data))
 }
@@ -456,10 +462,10 @@ async fn resolve_and_compute_machine_cost(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Machine #{} not found", machine_id))?;
     let schema = mach.variables_schema().map_err(|e| e.to_string())?;
-    let values = parse_values_from_json(
+    let values = parse_values(
         &schema,
         &variables_from_value(variables_val),
-        &HashMap::new(),
+        &FormulaContext::default(),
     )
     .map_err(|e| e.to_string())?;
     let final_cost = mach.get_cost(&values).map_err(|e| e.to_string())?;
@@ -2532,6 +2538,7 @@ async fn invoice_create_error_modal(
         date: form.date.clone(),
         customer_id: (form.customer_id > 0).then_some(form.customer_id),
         customer_name: customer_name_by_id(db, form.customer_id).await,
+        remarks: form.remarks.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
         components_json: components_json(db).await,
@@ -2555,6 +2562,7 @@ async fn invoice_edit_error_modal(
         date: form.date.clone(),
         customer_id: form.customer_id,
         customer_name: customer_name_by_id(db, form.customer_id).await,
+        remarks: form.remarks.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
         components_json: components_json(db).await,
@@ -2580,6 +2588,7 @@ pub async fn invoice_create_get(
         date: today,
         customer_id: None,
         customer_name: String::new(),
+        remarks: String::new(),
         material_lines_json: "[]".into(),
         machine_lines_json: "[]".into(),
         components_json,
@@ -2609,6 +2618,8 @@ pub struct InvoiceFormData {
     pub material_lines: Option<String>,
     #[serde(alias = "machine_lines", default)]
     pub machine_lines: Option<String>,
+    #[serde(alias = "remarks", default)]
+    pub remarks: String,
 }
 
 pub async fn invoice_create_post(
@@ -2676,6 +2687,7 @@ pub async fn invoice_create_post(
         date: Set(date),
         customer_id: Set(form.customer_id),
         invoice_number: Set(invoice_number),
+        remarks: Set(form.remarks.trim().to_string()),
     };
 
     match model.insert(&state.db).await {
@@ -2735,6 +2747,7 @@ pub async fn invoice_edit_get(
         invoice_number: inv.invoice_number,
         date: inv.date.to_string(),
         customer_id: inv.customer_id,
+        remarks: inv.remarks,
         customer_name,
         material_lines_json,
         machine_lines_json,
@@ -2793,6 +2806,7 @@ pub async fn invoice_edit_post(
     am.invoice_number = Set(invoice_number);
     am.date = Set(date);
     am.customer_id = Set(form.customer_id);
+    am.remarks = Set(form.remarks.trim().to_string());
 
     match am.update(&state.db).await {
         Ok(_) => {
@@ -2833,6 +2847,115 @@ pub async fn invoice_delete_post(
 ) -> Response {
     let _ = quotation::Entity::delete_by_id(id).exec(&state.db).await;
     htmx.redirect(&WorkOrdersInvoicesRouteTag.url())
+}
+
+/// Duplicate a quotation, its lines, and their taxes. The copy gets today's date
+/// and a newly assigned quotation number.
+async fn copy_quotation(
+    db: &sea_orm::DatabaseConnection,
+    quotation_id: i64,
+) -> Result<i64, String> {
+    let inv = quotation::Entity::find_by_id(quotation_id)
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Quotation not found".to_string())?;
+
+    let material_lines = quotation_material_line::Entity::find()
+        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
+        .order_by_asc(quotation_material_line::Column::Id)
+        .all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
+    let mat_tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
+        .await
+        .unwrap_or_default();
+
+    let machine_lines = quotation_machine_line::Entity::find()
+        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
+        .order_by_asc(quotation_machine_line::Column::Id)
+        .all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
+    let mach_tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
+        .await
+        .unwrap_or_default();
+
+    let date = chrono::Local::now().date_naive();
+    let invoice_number = quotation_number::resolve_quotation_number(db, "", date)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let now = Utc::now();
+    let txn = db.begin().await.map_err(|e| e.to_string())?;
+    let saved = quotation::ActiveModel {
+        id: Default::default(),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
+        date: Set(date),
+        customer_id: Set(inv.customer_id),
+        invoice_number: Set(invoice_number),
+        remarks: Set(inv.remarks),
+    }
+    .insert(&txn)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for line in material_lines {
+        let copied = quotation_material_line::ActiveModel {
+            id: Default::default(),
+            created_at: Set(Some(now)),
+            updated_at: Set(Some(now)),
+            invoice_id: Set(saved.id),
+            component_id: Set(line.component_id),
+            variables: Set(line.variables),
+            final_cost: Set(line.final_cost),
+            extra_data: Set(line.extra_data),
+        }
+        .insert(&txn)
+        .await
+        .map_err(|e| e.to_string())?;
+        let tax_ids = mat_tax_map.get(&line.id).cloned().unwrap_or_default();
+        tax_assoc::set_quotation_material_line_taxes(&txn, copied.id, &tax_ids)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    for line in machine_lines {
+        let copied = quotation_machine_line::ActiveModel {
+            id: Default::default(),
+            created_at: Set(Some(now)),
+            updated_at: Set(Some(now)),
+            invoice_id: Set(saved.id),
+            machine_id: Set(line.machine_id),
+            name: Set(line.name),
+            variables: Set(line.variables),
+            final_cost: Set(line.final_cost),
+        }
+        .insert(&txn)
+        .await
+        .map_err(|e| e.to_string())?;
+        let tax_ids = mach_tax_map.get(&line.id).cloned().unwrap_or_default();
+        tax_assoc::set_quotation_machine_line_taxes(&txn, copied.id, &tax_ids)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    txn.commit().await.map_err(|e| e.to_string())?;
+    Ok(saved.id)
+}
+
+pub async fn invoice_copy_post(
+    Cap(state): Cap<WorkOrdersState>,
+    htmx: Htmx,
+    Path(id): Path<i64>,
+) -> Response {
+    match copy_quotation(&state.db, id).await {
+        Ok(new_id) => htmx.redirect(&InvoiceDetailRouteTag::new(new_id).url()),
+        Err(_) => htmx.redirect(&InvoiceDetailRouteTag::new(id).url()),
+    }
 }
 
 /// Copy a quotation into a final work order and schedule its machines as a job.
@@ -3658,7 +3781,13 @@ pub async fn calculate_api(
             Ok(s) => s,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
-        let values = match parse_values_from_json(&schema, &raw_vars, &units) {
+        let values = match parse_values(
+            &schema,
+            &raw_vars,
+            &FormulaContext {
+                length_units: units,
+            },
+        ) {
             Ok(v) => v,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
@@ -3689,7 +3818,7 @@ pub async fn calculate_api(
             Ok(s) => s,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
-        let values = match parse_values_from_json(&schema, &raw_vars, &HashMap::new()) {
+        let values = match parse_values(&schema, &raw_vars, &FormulaContext::default()) {
             Ok(v) => v,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
@@ -3933,12 +4062,10 @@ async fn load_vnode_display(db: &sea_orm::DatabaseConnection, id: Option<i64>) -
 fn quotation_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
     lariv_plugin_users::roles::Superuser::matches(&ctx.role)
         || ctx.role == kds_plugin_hr_role::HR_ROLE
-        || ctx.role == lariv_plugin_hr::roles::Employee::NAME
 }
 
 fn preferences_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
     lariv_plugin_users::roles::Superuser::matches(&ctx.role)
-        || ctx.role == lariv_plugin_hr::roles::Employee::NAME
 }
 
 /// HTTP handler: `get /work-orders/preferences`.

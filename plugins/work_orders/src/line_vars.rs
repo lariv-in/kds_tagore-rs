@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 use sea_orm::entity::prelude::Json;
 
-use kds_plugin_formula::{
-    self as formula, VariableSchema, VariableType, VariableValues, parse_schema,
-    parse_values_from_json,
+use lariv_core::formula::{
+    self as formula, FormulaContext, VariableSchema, VariableType, VariableValues, parse_schema,
+    parse_values,
 };
 
 const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -168,9 +168,10 @@ pub fn values_json_for_form(schema_json: &Json, values_json: &Json) -> Json {
 
 pub fn format_variables_display(schema_json: &Json, values_json: &Json, extra: &Json) -> String {
     let schema = resolved_schema(schema_json, values_json, extra);
-    let units = dim_units_map(extra);
-    let values: VariableValues =
-        parse_values_from_json(&schema, values_json, &units).unwrap_or_default();
+    let ctx = FormulaContext {
+        length_units: dim_units_map(extra),
+    };
+    let values: VariableValues = parse_values(&schema, values_json, &ctx).unwrap_or_default();
     if values.is_empty() {
         if let serde_json::Value::Object(m) = values_json {
             if m.is_empty() {
@@ -186,7 +187,7 @@ pub fn format_variables_display(schema_json: &Json, values_json: &Json, extra: &
         }
         return "-".into();
     }
-    formula::format_values_display(&schema, &values, &units)
+    formula::format_values_display(&schema, &values, &ctx)
 }
 
 #[cfg(test)]

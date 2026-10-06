@@ -21,15 +21,11 @@ pub fn can_manage(auth: &AuthContext) -> bool {
     Superuser::matches(&auth.role) || auth.role == kds_plugin_hr_role::HR_ROLE
 }
 
-fn can_read(auth: &AuthContext) -> bool {
-    can_manage(auth) || auth.role == lariv_plugin_hr::roles::Employee::NAME
-}
-
 pub fn scope_superuser<T>(query: Select<T>, auth: &AuthContext) -> Select<T>
 where
     T: EntityTrait,
 {
-    if can_read(auth) {
+    if can_manage(auth) {
         return query;
     }
     query.filter(Expr::cust("1 = 0"))

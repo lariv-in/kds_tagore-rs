@@ -6,7 +6,7 @@ use lariv_core::html_form::{
 use lariv_plugin_filesystem::routes::VNodeFileSelectRouteTag;
 use maud::{Markup, PreEscaped, html};
 
-use kds_plugin_formula::variable_schema_input::VariableSchemaList;
+use lariv_core::formula::variable_schema_input::VariableSchemaList;
 
 use super::routes::MachineFkSelectRouteTag;
 

@@ -6,7 +6,7 @@ use lariv_core::length::{LengthUnit, format_length_label, parse_length_unit};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-use kds_plugin_formula::{VariableType, parse_quantity, parse_weight};
+use lariv_core::formula::{VariableType, parse_quantity, parse_weight};
 
 /// One line's quantity after validation, ready to store.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,7 +30,12 @@ pub struct QtyInput {
 
 pub fn parse_qty(input: &QtyInput) -> Result<ParsedQty, String> {
     let kind = VariableType::parse_name(input.kind.trim())
-        .filter(|k| !matches!(k, VariableType::Duration))
+        .filter(|k| {
+            matches!(
+                k,
+                VariableType::Length | VariableType::Weight | VariableType::Quantity
+            )
+        })
         .ok_or_else(|| "Quantity kind must be length, weight, or number.".to_string())?;
     match kind {
         VariableType::Length => {
@@ -77,7 +82,9 @@ pub fn parse_qty(input: &QtyInput) -> Result<ParsedQty, String> {
                 number: Some(n),
             })
         }
-        VariableType::Duration => unreachable!("duration is rejected above"),
+        VariableType::Duration | VariableType::Decimal | VariableType::Percent => {
+            unreachable!("rejected above")
+        }
     }
 }
 

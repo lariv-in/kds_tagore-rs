@@ -1534,6 +1534,7 @@ impl InvoiceDetailPage {
 
     fn body(&self) -> Markup {
         let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
+        let copy_path = InvoiceCopyPostRouteTag::new(self.invoice.id).path();
         let create_wo_url = InvoiceCreateWorkOrderGetRouteTag::new(self.invoice.id).url();
         let mail_href = InvoiceMailRouteTag::new(self.invoice.id).path();
         let eml_name = format!(
@@ -1561,6 +1562,13 @@ impl InvoiceDetailPage {
                 href: &edit_url,
                 form_post_url: &edit_url,
                 modal_uid: InvoiceEditModalKey::ID,
+                classes: "btn-outline btn-sm",
+                ..Default::default()
+            }))
+            (button_post(ButtonPost {
+                label: "Copy",
+                action: &copy_path,
+                icon_name: Some("document-duplicate"),
                 classes: "btn-outline btn-sm",
                 ..Default::default()
             }))
@@ -1592,6 +1600,7 @@ impl InvoiceDetailPage {
                     (container_row("gap-6", html! {
                         (label("Quotation Date", field_text(FieldText { value: &date_str, classes: "" })))
                         (label("Customer", field_text(FieldText { value: &cust_str, classes: "" })))
+                        (label("Remarks", field_text(FieldText { value: &self.invoice.remarks, classes: "whitespace-pre-wrap" })))
                     }))
 
                     // Machine Lines Table
@@ -2075,6 +2084,7 @@ pub struct InvoiceCreateModalPage {
     pub date: String,
     pub customer_id: Option<i64>,
     pub customer_name: String,
+    pub remarks: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
     pub components_json: String,
@@ -2104,6 +2114,7 @@ impl RenderTemplate for InvoiceCreateModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::Remarks, &self.remarks)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)
@@ -2146,6 +2157,7 @@ pub struct InvoiceEditModalPage {
     pub date: String,
     pub customer_id: i64,
     pub customer_name: String,
+    pub remarks: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
     pub components_json: String,
@@ -2172,6 +2184,7 @@ impl RenderTemplate for InvoiceEditModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::Remarks, &self.remarks)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)

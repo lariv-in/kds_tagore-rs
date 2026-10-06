@@ -13,6 +13,7 @@ pub struct Model {
     pub date: NaiveDate,
     pub customer_id: i64,
     pub invoice_number: String,
+    pub remarks: String,
 }
 
 impl Model {

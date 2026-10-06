@@ -3,3 +3,5 @@
 /filesystem
 *.xlsx
 pwa_static
+# scripts/lariv-source git parks the path overlay here.
+/.cargo/lariv-paths.toml.off

@@ -8,12 +8,11 @@ use super::{
 };
 
 use kds_plugin_hr_role::Hr;
-use lariv_plugin_hr::roles::Employee;
 
 /// Machinery Schedule routes. Allowlist is [`Hr`]; superuser always passes.
 pub struct MachineryScheduleAccess;
 
-/// Machine picker used by quotations. Allowlist is [`Hr`] and [`Employee`].
+/// Machine picker used by quotations. Allowlist is [`Hr`].
 pub struct MachinePickAccess;
 
 lariv_core::define_plugin_routes! {
@@ -51,6 +50,6 @@ lariv_core::define_plugin_routes! {
         post MachineEditPostRouteTag, "/machinery-schedule/machines/{id}/edit", handlers::machines::edit_post, authorize(MachineryScheduleAccess, [Hr]);
         get MachineDeleteGetRouteTag, "/machinery-schedule/machines/{id}/delete", handlers::machines::delete_get, modal, authorize(MachineryScheduleAccess, [Hr]);
         post MachineDeletePostRouteTag, "/machinery-schedule/machines/{id}/delete", bare handlers::machines::delete_post, fragment(MachineDeleteModalKey), authorize(MachineryScheduleAccess, [Hr]);
-        get MachineFkSelectRouteTag, "/machinery-schedule/machines/pick", handlers::machines::select, fk_select(MachineSelectTableKey, MachineSelectModalKey), authorize(MachinePickAccess, [Hr, Employee]);
+        get MachineFkSelectRouteTag, "/machinery-schedule/machines/pick", handlers::machines::select, fk_select(MachineSelectTableKey, MachineSelectModalKey), authorize(MachinePickAccess, [Hr]);
     ]
 }

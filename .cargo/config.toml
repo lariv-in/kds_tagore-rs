@@ -1,0 +1,5 @@
+# Always-on project config. .cargo/lariv-paths.toml is included while it is
+# present. scripts/lariv-source git moves that file aside.
+
+# include = [{ path = "lariv-paths.toml", optional = true }]
+

@@ -151,6 +151,7 @@ struct InvoiceRoot {
     material_lines: Vec<PdfMaterialLine>,
     machine_lines: Vec<PdfMachineLine>,
     grand_total: String,
+    remarks: String,
     #[serde(rename = "company_name")]
     company_name: String,
     #[serde(rename = "company_address")]
@@ -1098,6 +1099,7 @@ pub async fn render_quotation_pdf_parts(
         material_lines: pdf_material_lines,
         machine_lines: pdf_machine_lines,
         grand_total: dec_str(grand_total),
+        remarks: inv.remarks.clone(),
         company_name: company.name,
         company_address: company.address,
         company_phone: company.phone,
@@ -1217,6 +1219,7 @@ fn sample_invoice_root() -> InvoiceRoot {
             line_total: "3363".into(),
         }],
         grand_total: "8378".into(),
+        remarks: "Lead time 10 working days.".into(),
         company_name: company.name,
         company_address: company.address,
         company_phone: company.phone,
@@ -1422,6 +1425,7 @@ mod tests {
         assert!(out.contains("Buyer (Bill to)"));
         assert!(out.contains("www.acme.example"));
         assert!(out.contains("27AAAAA0000A1Z5"));
+        assert!(out.contains("Lead time 10 working days."));
         assert!(!out.contains("[Logo]"));
     }
 

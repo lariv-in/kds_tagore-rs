@@ -15,7 +15,6 @@ use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
 use lariv_plugin_finance_taxes::routes::{FinanceTaxesMutate, FinanceTaxesView};
-use lariv_plugin_hr::roles::Employee;
 use lariv_plugin_hr::routes::{
             ApplicantMutate, AttendanceMutate, AttendanceView, EmployeeMutate, ExEmployeeMutate,
             HolidayMutate, HolidayView, HrPeopleView, JobFormMutate, JobFormView,
@@ -77,7 +76,6 @@ pub struct AppsHook;
 impl AppsRegistrar for AppsHook {
     fn register_apps(self, apps: AppsCapability) -> AppsCapability {
         let apps = grant_tile(apps, ACCOUNTING_APP_KEY, Hr::NAME);
-        let apps = grant_tile(apps, ACCOUNTING_APP_KEY, Employee::NAME);
         grant_tile(apps, TASKS_APP_KEY, Hr::NAME)
     }
 }
@@ -110,27 +108,16 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<AttendanceMutate>(allow_hr)
             .patch::<FinanceAccountsView>(allow_hr)
             .patch::<FinanceAccountsMutate>(allow_hr)
-            .patch::<FinanceAccountsView>(allow_employee)
-            .patch::<FinanceAccountsMutate>(allow_employee)
             // FinanceAccountsPreferencesMutate stays superuser-only.
             .patch::<FinanceInvoicesView>(allow_hr)
             .patch::<FinanceInvoicesMutate>(allow_hr)
-            .patch::<FinanceInvoicesView>(allow_employee)
-            .patch::<FinanceInvoicesMutate>(allow_employee)
             .patch::<FinanceProductsView>(allow_hr)
             .patch::<FinanceProductsMutate>(allow_hr)
-            .patch::<FinanceProductsView>(allow_employee)
-            .patch::<FinanceProductsMutate>(allow_employee)
             .patch::<FinanceTaxesView>(allow_hr)
             .patch::<FinanceTaxesMutate>(allow_hr)
-            .patch::<FinanceTaxesView>(allow_employee)
-            .patch::<FinanceTaxesMutate>(allow_employee)
             .patch::<FinanceCreditNotesView>(allow_hr)
-            .patch::<FinanceCreditNotesView>(allow_employee)
             .patch::<CustomerView>(allow_hr)
             .patch::<CustomerMutate>(allow_hr)
-            .patch::<CustomerView>(allow_employee)
-            .patch::<CustomerMutate>(allow_employee)
             .patch::<TasksView>(allow_hr)
             .patch::<TasksMutate>(allow_hr)
             .patch::<UsersPick>(allow_hr)
@@ -139,10 +126,6 @@ impl RoleAuthorizationRegistrar for RoleHook {
 
 fn allow_hr(roles: &mut Vec<String>) {
     allow_named(roles, Hr::NAME);
-}
-
-fn allow_employee(roles: &mut Vec<String>) {
-    allow_named(roles, Employee::NAME);
 }
 
 fn allow_named(roles: &mut Vec<String>, role: &str) {

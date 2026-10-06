@@ -130,6 +130,7 @@ fn test_invoice_line_totals_and_taxes() {
         date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
         customer_id: 1,
         invoice_number: "Q-1".into(),
+        remarks: String::new(),
     };
     assert_eq!(
         inv.grand_total(&[mat.clone()], &[mach.clone()]),

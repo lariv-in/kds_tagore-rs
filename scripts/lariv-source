@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Switch lariv crates between the pinned git rev in Cargo.toml and a local checkout.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+overlay="$root/.cargo/lariv-paths.toml"
+parked="$root/.cargo/lariv-paths.toml.off"
+
+usage() {
+	cat <<'EOF'
+usage: scripts/lariv-source local|git|status|pin <rev>
+
+  local   build against the sibling lariv-rs checkout (no push)
+  git     build against the git rev pinned in Cargo.toml
+  status  show which source is active
+  pin     set the git rev in Cargo.toml (40-char commit)
+
+Local mode does not edit Cargo.toml. .cargo/config.toml includes
+.cargo/lariv-paths.toml while that file is present. Git mode moves it to
+lariv-paths.toml.off. Cargo.lock will record path sources while the overlay
+is present; switch back to git before committing the lockfile.
+
+Cranelift dev builds: cargo build --profile cranelift
+EOF
+}
+
+status() {
+	if [[ -f "$overlay" ]]; then
+		echo "lariv source: local ($overlay)"
+	else
+		echo "lariv source: git"
+	fi
+}
+
+case "${1:-}" in
+local)
+	if [[ -f "$parked" ]]; then
+		mv "$parked" "$overlay"
+	fi
+	if [[ ! -f "$overlay" ]]; then
+		echo "missing $overlay" >&2
+		exit 1
+	fi
+	status
+	echo "Cargo.lock will switch to path sources. Run scripts/lariv-source git before committing it."
+	;;
+git)
+	if [[ -f "$overlay" ]]; then
+		mv "$overlay" "$parked"
+	fi
+	status
+	;;
+status) status ;;
+pin)
+	rev="${2:-}"
+	if [[ ! "$rev" =~ ^[0-9a-f]{40}$ ]]; then
+		echo "pin expects a full 40-character commit" >&2
+		exit 1
+	fi
+	perl -pi -e 's/(git = "https:\/\/github.com\/lariv-in\/lariv-rs\.git", rev = ")[0-9a-f]+/${1}'"$rev"'/g' "$root/Cargo.toml"
+	echo "pinned lariv-rs to $rev"
+	echo "refresh the lockfile with: cargo update -p lariv-rs"
+	;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac

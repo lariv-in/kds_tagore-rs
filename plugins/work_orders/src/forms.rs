@@ -1,4 +1,4 @@
-use kds_plugin_formula::variable_schema_input::VariableSchemaList;
+use lariv_core::formula::variable_schema_input::VariableSchemaList;
 use kds_plugin_machinery_schedule::routes::MachineFkSelectRouteTag;
 #[allow(unused_imports)]
 use lariv_core::html_form::widgets::{ForeignKey, ManyToMany};
@@ -811,8 +811,8 @@ pub struct ComponentMeta {
 }
 
 pub fn schema_entries_from_json(value: &serde_json::Value) -> Vec<String> {
-    kds_plugin_formula::parse_schema(value)
-        .map(|s| kds_plugin_formula::schema_to_entries(&s))
+    lariv_core::formula::parse_schema(value)
+        .map(|s| lariv_core::formula::schema_to_entries(&s))
         .unwrap_or_default()
 }
 
@@ -1907,6 +1907,9 @@ pub struct InvoiceForm {
         placeholder = "Select customer…"
     )]
     pub customer_id: i64,
+
+    #[form(label = "Remarks", widget = Textarea, rows = 3)]
+    pub remarks: String,
 
     #[form(
         label = "Material Lines",

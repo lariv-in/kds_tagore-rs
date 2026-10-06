@@ -6,5 +6,5 @@ lariv_core::define_register_apps! {
     name: "Delivery";
     href: DeliveryDefaultRouteTag.url();
     icon: "truck";
-    roles: [kds_plugin_hr_role::Hr, lariv_plugin_hr::roles::Employee];
+    roles: [kds_plugin_hr_role::Hr];
 }
