@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use kds_tagore_rs::{
-    delivery, hr_role, machinery_schedule, marketing_sheet, website_seed, work_orders,
+    accountant_role, delivery, machinery_schedule, marketing_sheet, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
@@ -70,7 +70,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = dashboard::install(app);
                 let app = website::install(app);
                 let app = website_seed::install(app);
-                let app = hr_role::install(app);
+                let app = accountant_role::install(app);
 
                 let path = temp_config(MINIMAL_DB_TOML);
                 let app = app.load_config(&path).await.expect("load_config");
@@ -137,38 +137,33 @@ fn kds_tagore_registers_forms_app_tile() {
                     "Delivery tile should open the challan list"
                 );
 
-                let mut hr_keys: Vec<_> = catalog
-                    .visible_apps("hr")
+                let mut accountant_keys: Vec<_> = catalog
+                    .visible_apps("accountant")
                     .iter()
                     .map(|tile| tile.key.clone())
                     .collect();
-                hr_keys.sort();
+                accountant_keys.sort();
                 assert_eq!(
-                    hr_keys,
+                    accountant_keys,
                     vec![
                         "kds_tagore-delivery".to_string(),
                         "kds_tagore-machinery-schedule".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_finance_accounts".to_string(),
+                        "p_hr".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "hr should see Accounting, Quotations, Delivery Challans, Machinery Schedule, and Tasks"
+                    "accountant should see Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR"
                 );
 
-                let mut employee_keys: Vec<_> = catalog
+                let employee_keys: Vec<_> = catalog
                     .visible_apps("employee")
                     .iter()
                     .map(|tile| tile.key.clone())
                     .collect();
-                employee_keys.sort();
-                assert_eq!(
-                    employee_keys,
-                    vec![
-                        "kds_tagore-delivery".to_string(),
-                        "kds_tagore-quotations".to_string(),
-                        "p_finance_accounts".to_string(),
-                    ],
-                    "a verified employee should see Accounting, Quotations, and Delivery Challans"
+                assert!(
+                    employee_keys.is_empty(),
+                    "employee has no dashboard tiles, got: {employee_keys:?}"
                 );
             });
         })

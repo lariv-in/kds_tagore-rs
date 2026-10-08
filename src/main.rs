@@ -1,7 +1,7 @@
 #![recursion_limit = "4096"]
 
 use kds_tagore_rs::{
-    delivery, hr_role, machinery_schedule, marketing_sheet, website_seed, work_orders,
+    accountant_role, delivery, machinery_schedule, marketing_sheet, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
@@ -57,8 +57,8 @@ async fn main() -> anyhow::Result<()> {
     let app = website_seed::install(app);
     let app = documents::install(app);
     let app = signing::install(app);
-    // After the apps it patches, so `hr` is appended to allowlists those plugins already registered.
-    let app = hr_role::install(app);
+    // After the apps it patches, so `accountant` is appended to allowlists those plugins already registered.
+    let app = accountant_role::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

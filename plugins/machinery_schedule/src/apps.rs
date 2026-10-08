@@ -6,5 +6,5 @@ lariv_core::define_register_apps! {
     name: "Machinery Schedule";
     href: JobDefaultRouteTag.url();
     icon: "cog-6-tooth";
-    roles: [kds_plugin_hr_role::Hr];
+    roles: [kds_plugin_accountant_role::Accountant];
 }

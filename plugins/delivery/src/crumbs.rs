@@ -11,7 +11,7 @@ use super::routes::{
 
 fn show_preferences() -> bool {
     lariv_plugin_users::role_authorization::current_auth()
-        .is_none_or(|auth| auth.role != kds_plugin_hr_role::HR_ROLE)
+        .is_none_or(|auth| auth.role != kds_plugin_accountant_role::ACCOUNTANT_ROLE)
 }
 
 pub fn delivery_menu(active: &str) -> Markup {

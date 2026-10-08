@@ -4061,7 +4061,7 @@ async fn load_vnode_display(db: &sea_orm::DatabaseConnection, id: Option<i64>) -
 
 fn quotation_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
     lariv_plugin_users::roles::Superuser::matches(&ctx.role)
-        || ctx.role == kds_plugin_hr_role::HR_ROLE
+        || ctx.role == kds_plugin_accountant_role::ACCOUNTANT_ROLE
 }
 
 fn preferences_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {

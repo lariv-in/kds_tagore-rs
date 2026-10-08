@@ -18,7 +18,7 @@ pub fn sql_job_not_completed() -> sea_orm::sea_query::SimpleExpr {
 }
 
 pub fn can_manage(auth: &AuthContext) -> bool {
-    Superuser::matches(&auth.role) || auth.role == kds_plugin_hr_role::HR_ROLE
+    Superuser::matches(&auth.role) || auth.role == kds_plugin_accountant_role::ACCOUNTANT_ROLE
 }
 
 pub fn scope_superuser<T>(query: Select<T>, auth: &AuthContext) -> Select<T>

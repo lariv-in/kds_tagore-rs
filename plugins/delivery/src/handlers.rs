@@ -51,7 +51,7 @@ use super::{
 };
 
 fn delivery_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
-    Superuser::matches(&ctx.role) || ctx.role == kds_plugin_hr_role::HR_ROLE
+    Superuser::matches(&ctx.role) || ctx.role == kds_plugin_accountant_role::ACCOUNTANT_ROLE
 }
 
 fn preferences_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {

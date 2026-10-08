@@ -5,7 +5,7 @@ edition.workspace = true
 description = "KDS Tagore machinery schedule plugin"
 
 [dependencies]
-kds-plugin-hr-role = { workspace = true }
+kds-plugin-accountant-role = { workspace = true }
 lariv-core = { workspace = true }
 lariv-formula = { workspace = true }
 lariv-plugin-hr = { workspace = true }
