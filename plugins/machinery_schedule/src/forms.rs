@@ -6,7 +6,7 @@ use lariv_core::html_form::{
 use lariv_plugin_filesystem::routes::VNodeFileSelectRouteTag;
 use maud::{Markup, PreEscaped, html};
 
-use lariv_core::formula::variable_schema_input::VariableSchemaList;
+use lariv_formula::variable_schema_input::VariableSchemaList;
 
 use super::routes::MachineFkSelectRouteTag;
 
@@ -60,7 +60,7 @@ pub struct MachineForm {
         label = "Variables",
         widget = VariableSchemaList,
         placeholder = "Variable name",
-        hint = "Names must start with a letter and contain only letters and digits. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
+        hint = "Names must start with a letter and contain only letters and digits. Types: length (mm), weight (kg), duration (seconds), quantity (integer), decimal, percent (type 18 for 18%)."
     )]
     pub variables: Vec<String>,
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use sea_orm::entity::prelude::Json;
 
-use lariv_core::formula::{
+use lariv_formula::{
     self as formula, FormulaContext, VariableSchema, VariableType, VariableValues, parse_schema,
     parse_values,
 };

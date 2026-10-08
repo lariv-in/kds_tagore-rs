@@ -1,3 +1,4 @@
+#![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
 //! Idempotent seed for the KDS Tagore public homepage, static media, and Custom theme.
@@ -26,13 +27,16 @@ use sea_orm::{
 };
 use tokio::io::AsyncReadExt;
 
+pub mod migrations;
+
 /// Hook identity for the deployment-local website seed (distinct from [`WebsiteTag`] state).
 pub struct KdsWebsiteSeedTag;
 
 define_plugin_install! {
     plugin: KdsWebsiteSeedTag;
     /// Queue homepage/media seed for the `seed` CLI command.
-    steps: [seeds(SeedsHook)]
+    /// Invoice bank-account default runs after finance invoices (later install).
+    steps: [migrations(migrations::Hook), seeds(SeedsHook)]
 }
 
 /// Runs [`ensure_homepage`] when seed hooks execute.

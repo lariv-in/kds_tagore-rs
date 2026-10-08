@@ -34,7 +34,7 @@ use lariv_plugin_users::middleware::RequireAuth;
 use maud::{Markup, html};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
 
-use lariv_core::formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
+use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 use kds_plugin_machinery_schedule::entities::machine::{self, Entity as MachineEntity};
 use kds_plugin_machinery_schedule::forms::{
     MachineFilterForm, MachineFilterFormField, MachineForm, MachineFormField,

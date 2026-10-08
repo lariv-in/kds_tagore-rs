@@ -62,7 +62,7 @@ use crate::cascade::{
     cascade_delete_preview, collect_work_order_cascade, delete_work_order_recursive,
 };
 use crate::entities::work_order::WORK_ORDER_SOURCE_DOC_TYPE;
-use lariv_core::formula::{
+use lariv_formula::{
     FormulaContext, parse_schema_list, parse_values, schema_to_json, values_to_json,
 };
 use kds_plugin_machinery_schedule::duration::JobDuration;

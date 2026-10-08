@@ -6,7 +6,7 @@ use lariv_core::length::{LengthUnit, format_length_label, parse_length_unit};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-use lariv_core::formula::{VariableType, parse_quantity, parse_weight};
+use lariv_formula::{VariableType, parse_quantity, parse_weight};
 
 /// One line's quantity after validation, ready to store.
 #[derive(Clone, Debug, PartialEq, Eq)]

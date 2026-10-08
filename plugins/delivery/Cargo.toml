@@ -7,6 +7,7 @@ description = "KDS Tagore delivery challan plugin"
 [dependencies]
 kds-plugin-hr-role = { workspace = true }
 lariv-core = { workspace = true }
+lariv-formula = { workspace = true }
 lariv-plugin-hr = { workspace = true }
 lariv-plugin-customer = { workspace = true }
 lariv-plugin-filesystem = { workspace = true }

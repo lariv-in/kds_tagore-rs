@@ -1,12 +1,13 @@
-use lariv_core::formula::variable_schema_input::VariableSchemaList;
+use lariv_formula::variable_schema_input::VariableSchemaList;
+use lariv_formula::variable_value_input::{VariableValueInput, variable_value_input};
 use kds_plugin_machinery_schedule::routes::MachineFkSelectRouteTag;
 #[allow(unused_imports)]
 use lariv_core::html_form::widgets::{ForeignKey, ManyToMany};
 use lariv_core::{
     components::{
-        InputForeignKey, InputLength,
+        InputForeignKey,
         attrs::{HtmlAttrs, escape_attr},
-        icon, input_foreign_key, input_length, label, label_hint,
+        icon, input_foreign_key, label, label_hint,
         swap::SwapKey,
     },
     html_form::{
@@ -22,16 +23,15 @@ use maud::{Markup, PreEscaped, html};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Embeddable length control (no form `name`) for Alpine lists.
-fn embed_input_length() -> Markup {
-    input_length(InputLength {
-        label: "",
-        name: "",
-        value: "",
-        unit: "mm",
-        required: false,
-        classes: "!my-0",
-        attrs: Default::default(),
+/// Compact formula-variable row bound to Alpine `v` and `item.variables[v.name]`.
+fn line_variable_inputs() -> Markup {
+    variable_value_input(VariableValueInput {
+        row: "v",
+        value: "item.variables[v.name]",
+        on_input: "scheduleRecalc(item)",
+        length_host: "item",
+        debounce_ms: None,
+        compact: true,
     })
 }
 
@@ -770,7 +770,7 @@ pub struct ComponentForm {
         label = "Variables",
         widget = VariableSchemaList,
         placeholder = "Variable name",
-        hint = "Names must start with a letter and contain only letters and digits. Types: length (mm), weight (kg), duration (seconds), quantity (integer)."
+        hint = "Names must start with a letter and contain only letters and digits. Types: length (mm), weight (kg), duration (seconds), quantity (integer), decimal, percent (type 18 for 18%)."
     )]
     pub variables: Vec<String>,
 
@@ -780,7 +780,7 @@ pub struct ComponentForm {
         widget = Textarea,
         rows = 4,
         placeholder = "e.g. length * qty * decimal(\"0.085\")",
-        hint = "Rune expression evaluated with the variables above. Length is mm, weight kg, duration seconds, quantity integer."
+        hint = "Rune expression evaluated with the variables above. Length is mm, weight kg, duration seconds, quantity an integer. Decimal and percent are the numbers typed (18 for 18%)."
     )]
     pub cost_formula: String,
 
@@ -811,8 +811,8 @@ pub struct ComponentMeta {
 }
 
 pub fn schema_entries_from_json(value: &serde_json::Value) -> Vec<String> {
-    lariv_core::formula::parse_schema(value)
-        .map(|s| lariv_core::formula::schema_to_entries(&s))
+    lariv_formula::parse_schema(value)
+        .map(|s| lariv_formula::schema_to_entries(&s))
         .unwrap_or_default()
 }
 
@@ -1158,29 +1158,9 @@ impl FormWidget for MaterialLinesWidget {
                                     (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
                                         <template x-for="v in schemaEntries(schemaOfComp(item.component_id))" :key="v.name">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0" x-text="v.name + ':'"></span>
                                     "#))
-                                    div class="min-w-0" x-show="v.type === 'length'" x-cloak
-                                        x-init="bindLengthInput($el, item, v.name)"
-                                        x-on:input="pullLengthInput($el, item, v.name)"
-                                        x-on:change="pullLengthInput($el, item, v.name)" {
-                                        (embed_input_length())
-                                    }
+                                    (line_variable_inputs())
                                     (PreEscaped(r#"
-                                                <input x-show="v.type === 'weight'" x-cloak type="number" min="0" step="any"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="kg"
-                                                       class="input input-xs input-bordered w-24 text-right font-mono h-7 min-h-0">
-                                                <input x-show="v.type === 'quantity'" x-cloak type="number" step="1"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="qty"
-                                                       class="input input-xs input-bordered w-20 text-right font-mono h-7 min-h-0">
-                                                <input x-show="v.type === 'duration'" x-cloak type="text"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="e.g. 2h 30m"
-                                                       class="input input-xs input-bordered w-28 font-mono h-7 min-h-0">
-                                            </div>
                                         </template>
                                         <template x-if="schemaEntries(schemaOfComp(item.component_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this component</span>
@@ -1468,29 +1448,9 @@ impl FormWidget for MachineLinesWidget {
                                     (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
                                         <template x-for="v in schemaEntries(schemaOfMachine(item.machine_id))" :key="v.name">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-xs font-mono font-medium opacity-80 w-24 text-right shrink-0" x-text="v.name + ':'"></span>
                                     "#))
-                                    div class="min-w-0" x-show="v.type === 'length'" x-cloak
-                                        x-init="bindLengthInput($el, item, v.name)"
-                                        x-on:input="pullLengthInput($el, item, v.name)"
-                                        x-on:change="pullLengthInput($el, item, v.name)" {
-                                        (embed_input_length())
-                                    }
+                                    (line_variable_inputs())
                                     (PreEscaped(r#"
-                                                <input x-show="v.type === 'weight'" x-cloak type="number" min="0" step="any"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="kg"
-                                                       class="input input-xs input-bordered w-24 text-right font-mono h-7 min-h-0">
-                                                <input x-show="v.type === 'quantity'" x-cloak type="number" step="1"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="qty"
-                                                       class="input input-xs input-bordered w-20 text-right font-mono h-7 min-h-0">
-                                                <input x-show="v.type === 'duration'" x-cloak type="text"
-                                                       x-model="item.variables[v.name]" @input="scheduleRecalc(item)"
-                                                       placeholder="e.g. 2h 30m"
-                                                       class="input input-xs input-bordered w-28 font-mono h-7 min-h-0">
-                                            </div>
                                         </template>
                                         <template x-if="schemaEntries(schemaOfMachine(item.machine_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this machine</span>
@@ -1935,3 +1895,18 @@ pub struct InvoiceCreateWorkOrderForm {
 
 pub type InvoiceMaterialLineInput = DraftWorkOrderMaterialLineInput;
 pub type InvoiceMachineLineInput = DraftWorkOrderMachineLineInput;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_variable_inputs_include_decimal_and_percent() {
+        let html = line_variable_inputs().into_string();
+        assert!(html.contains("v.type === 'decimal'"), "{html}");
+        assert!(html.contains("placeholder=\"e.g. 1.5\""), "{html}");
+        assert!(html.contains("v.type === 'percent'"), "{html}");
+        assert!(html.contains("placeholder=\"e.g. 18\""), "{html}");
+        assert!(html.contains("> %</span>") || html.contains(">%</span>"), "{html}");
+    }
+}

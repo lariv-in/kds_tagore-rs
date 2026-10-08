@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use lariv_core::formula::{
+use lariv_formula::{
     FormulaError, VariableSchema, VariableValues, eval_formula, parse_schema, schema_to_json,
     validate_formula,
 };

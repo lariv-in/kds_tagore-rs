@@ -18,7 +18,7 @@ use lariv_core::{
 use lariv_plugin_users::middleware::RequireAuth;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
 
-use lariv_core::formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
+use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 use crate::{
     entities::machine::{self, Entity as MachineEntity},
     forms::MachineForm,

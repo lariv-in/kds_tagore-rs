@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use lariv_core::formula::{
+use lariv_formula::{
     FormulaError, VariableSchema, VariableValues, eval_formula, parse_schema, validate_formula,
 };
 

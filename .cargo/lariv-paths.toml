@@ -6,6 +6,7 @@
 [patch."https://github.com/lariv-in/lariv-rs.git"]
 lariv-rs = { path = "../../lariv-rs" }
 lariv-core = { path = "../../lariv-rs/lariv-core" }
+lariv-formula = { path = "../../lariv-rs/lariv-formula" }
 lariv-plugin-contacts = { path = "../../lariv-rs/plugins/contacts" }
 lariv-plugin-crm = { path = "../../lariv-rs/plugins/crm" }
 lariv-plugin-customer = { path = "../../lariv-rs/plugins/customer" }
