@@ -223,7 +223,7 @@ pub async fn work_order_detail(
     let component_schemas: HashMap<i64, serde_json::Value> =
         comps.into_iter().map(|c| (c.id, c.variables)).collect();
 
-    let customer = lariv_plugin_customer::entities::customer::Entity::find_by_id(order.customer_id)
+    let customer = lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
         .one(&state.db)
         .await
         .ok()
@@ -597,7 +597,7 @@ pub async fn work_order_create_post(
         let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
         let machines_json = fetch_machines_json(&state.db).await;
         let customer_name =
-            lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+            lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                 .one(&state.db)
                 .await
                 .ok()
@@ -628,7 +628,7 @@ pub async fn work_order_create_post(
                 serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
             let machines_json = fetch_machines_json(&state.db).await;
             let customer_name =
-                lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                     .one(&state.db)
                     .await
                     .ok()
@@ -714,7 +714,7 @@ pub async fn work_order_create_post(
         }
         Err(e) => {
             let customer_name =
-                lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                     .one(&state.db)
                     .await
                     .ok()
@@ -779,7 +779,7 @@ pub async fn work_order_edit_get(
         _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
     };
     let customer_name =
-        lariv_plugin_customer::entities::customer::Entity::find_by_id(order.customer_id)
+        lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
             .one(&state.db)
             .await
             .ok()
@@ -854,7 +854,7 @@ pub async fn work_order_edit_post(
         let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
         let machines_json = fetch_machines_json(&state.db).await;
         let customer_name =
-            lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+            lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                 .one(&state.db)
                 .await
                 .ok()
@@ -887,7 +887,7 @@ pub async fn work_order_edit_post(
                 serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
             let machines_json = fetch_machines_json(&state.db).await;
             let customer_name =
-                lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                     .one(&state.db)
                     .await
                     .ok()
@@ -974,7 +974,7 @@ pub async fn work_order_edit_post(
         }
         Err(e) => {
             let customer_name =
-                lariv_plugin_customer::entities::customer::Entity::find_by_id(form.customer_id)
+                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
                     .one(&state.db)
                     .await
                     .ok()
@@ -2330,7 +2330,7 @@ pub async fn invoices_list(
     let mut customer_names = Vec::with_capacity(invoices.len());
     let mut grand_totals = Vec::with_capacity(invoices.len());
     for inv in &invoices {
-        let name = lariv_plugin_customer::entities::customer::Entity::find_by_id(inv.customer_id)
+        let name = lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
             .one(&state.db)
             .await
             .ok()
@@ -2490,7 +2490,7 @@ pub async fn invoice_detail(
     );
 
     let customer_name =
-        lariv_plugin_customer::entities::customer::Entity::find_by_id(inv.customer_id)
+        lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
             .one(&state.db)
             .await
             .ok()
@@ -2515,7 +2515,7 @@ async fn customer_name_by_id(db: &sea_orm::DatabaseConnection, id: i64) -> Strin
     if id <= 0 {
         return String::new();
     }
-    lariv_plugin_customer::entities::customer::Entity::find_by_id(id)
+    lariv_plugin_contacts::entities::company::Entity::find_by_id(id)
         .one(db)
         .await
         .ok()
@@ -2728,7 +2728,7 @@ pub async fn invoice_edit_get(
     };
 
     let customer_name =
-        lariv_plugin_customer::entities::customer::Entity::find_by_id(inv.customer_id)
+        lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
             .one(&state.db)
             .await
             .ok()
@@ -3483,7 +3483,7 @@ pub async fn issued_work_orders_list(
     let mut totals = Vec::with_capacity(orders.len());
     let mut line_counts = Vec::with_capacity(orders.len());
     for o in &orders {
-        let name = lariv_plugin_customer::entities::customer::Entity::find_by_id(o.customer_id)
+        let name = lariv_plugin_contacts::entities::company::Entity::find_by_id(o.customer_id)
             .one(&state.db)
             .await
             .ok()
@@ -3582,7 +3582,7 @@ pub async fn issued_work_order_detail(
     let component_schemas: HashMap<i64, serde_json::Value> =
         comps.into_iter().map(|c| (c.id, c.variables)).collect();
 
-    let customer = lariv_plugin_customer::entities::customer::Entity::find_by_id(order.customer_id)
+    let customer = lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
         .one(&state.db)
         .await
         .ok()

@@ -60,7 +60,13 @@ fn sample_component() -> component::Model {
 fn test_component_get_cost_and_weight_decimal() {
     let c = sample_component();
     let mut vars = VariableValues::new();
-    vars.insert("length".into(), VariableValue::Length(Decimal::from(10)));
+    vars.insert(
+        "length".into(),
+        VariableValue::Length {
+            mm: Decimal::from(10),
+            unit: "mm".into(),
+        },
+    );
     vars.insert("qty".into(), VariableValue::Quantity(3));
     assert_eq!(c.get_cost(&vars).unwrap(), Decimal::from(60));
     assert_eq!(

@@ -11,8 +11,8 @@ use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customer, finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
-    llm_assistant, otp, tasks, users, website,
+    finance_indian, finance_invoices, finance_products, finance_taxes, forms, hr,
+    inventory, llm_assistant, otp, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -57,9 +57,9 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = contacts::install(app);
                 let app = tasks::install(app);
                 let app = crm::install(app);
+                let app = inventory::install(app);
                 let app = hr::install(app);
                 let app = marketing_sheet::install(app);
-                let app = finance_customer::install(app);
                 let app = finance_creditnotes::install(app);
                 let app = finance_taxes::install(app);
                 let app = work_orders::install(app);
@@ -90,6 +90,10 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert!(
                     keys.iter().any(|k| *k == "p_otp"),
                     "expected OTP Preferences tile in apps catalog, got: {keys:?}"
+                );
+                assert!(
+                    keys.iter().any(|k| *k == "p_inventory"),
+                    "expected Inventory tile in apps catalog, got: {keys:?}"
                 );
 
                 let visible = catalog.visible_apps("superuser");
@@ -122,19 +126,8 @@ fn kds_tagore_registers_forms_app_tile() {
                     "KDS Quotations tile should open the quotation list"
                 );
                 assert!(
-                    keys.iter().any(|k| *k == "kds_tagore-delivery"),
-                    "expected Delivery tile in apps catalog, got: {keys:?}"
-                );
-                let delivery_tile = catalog
-                    .apps()
-                    .iter()
-                    .find(|t| t.key == "kds_tagore-delivery")
-                    .expect("Delivery tile");
-                assert_eq!(delivery_tile.verbose_name, "Delivery");
-                assert_eq!(
-                    delivery_tile.href.trim_end_matches('/'),
-                    "/dashboard/delivery",
-                    "Delivery tile should open the challan list"
+                    keys.iter().all(|k| *k != "kds_tagore-delivery"),
+                    "delivery challans should not be a dashboard tile, got: {keys:?}"
                 );
 
                 let mut accountant_keys: Vec<_> = catalog
@@ -146,14 +139,13 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert_eq!(
                     accountant_keys,
                     vec![
-                        "kds_tagore-delivery".to_string(),
                         "kds_tagore-machinery-schedule".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_finance_accounts".to_string(),
                         "p_hr".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR"
+                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, and HR"
                 );
 
                 let employee_keys: Vec<_> = catalog

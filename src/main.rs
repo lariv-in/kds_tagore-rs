@@ -6,8 +6,8 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
-    finance_creditnotes, finance_customer, finance_indian, finance_invoices, finance_products,
-    finance_taxes, forms, hr, llm_assistant, otp, pwa, signing, tasks, users, website,
+    finance_creditnotes, finance_indian, finance_invoices, finance_products,
+    finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -39,13 +39,17 @@ async fn main() -> anyhow::Result<()> {
     // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.
     let app = tasks::install(app);
     let app = crm::install(app);
+    // After CRM: inventory stocks reference `crm_companies`.
+    let app = inventory::install(app);
     let app = marketing_sheet::install(app);
-    let app = finance_customer::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
     // After finance_taxes: work-order line-tax tables reference `taxes`.
     let app = work_orders::install(app);
     let app = finance_products::install(app);
+    // Before invoices drop `customers`. Challans reuse an existing company or
+    // contact for each customer, or create one, and leave `legacy_customer_id`
+    // so invoices point at that same party.
     let app = delivery::install(app);
     let app = finance_invoices::install(app);
     let app = finance_indian::install(app);

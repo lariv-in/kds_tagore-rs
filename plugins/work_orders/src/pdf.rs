@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use lariv_plugin_customer::entities::customer::Entity as CustomerEntity;
+use lariv_plugin_contacts::entities::company::Entity as CustomerEntity;
 use lariv_plugin_filesystem::state::FilesystemState;
 use lariv_plugin_finance_common::typst::{
     typst_address_lines, typst_compile, typst_compile_in, typst_work_dir,

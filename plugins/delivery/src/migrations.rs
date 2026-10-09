@@ -4,6 +4,7 @@ use super::DeliveryTag;
 
 mod m00001_delivery_init;
 mod m00002_challan_transport_and_terms;
+mod m00003_move_challans_to_stock_movements;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -14,6 +15,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m00001_delivery_init::Migration),
             Box::new(m00002_challan_transport_and_terms::Migration),
+            Box::new(m00003_move_challans_to_stock_movements::Migration),
         ]
     }
 }

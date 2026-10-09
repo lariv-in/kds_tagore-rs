@@ -1510,7 +1510,7 @@ pub struct DraftWorkOrderForm {
         label = "Customer",
         required,
         widget = ForeignKey,
-        route = lariv_plugin_customer::routes::CustomerFkSelectRouteTag,
+        route = lariv_plugin_contacts::routes::CompanyFkSelectRouteTag,
         swap_key = "fk-draft-work-order-customer",
         display = "customer",
         placeholder = "Select customer…"
@@ -1859,7 +1859,7 @@ pub struct InvoiceForm {
         label = "Customer",
         required,
         widget = ForeignKey,
-        route = lariv_plugin_customer::routes::CustomerFkSelectRouteTag,
+        route = lariv_plugin_contacts::routes::CompanyFkSelectRouteTag,
         swap_key = "fk-quotation-customer",
         display = "customer",
         placeholder = "Select customer…"

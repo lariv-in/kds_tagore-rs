@@ -2,30 +2,12 @@
 name = "kds-plugin-delivery"
 version = "0.1.0"
 edition.workspace = true
-description = "KDS Tagore delivery challan plugin"
+description = "Migrations that fold delivery challans into inventory stock movements"
 
 [dependencies]
-kds-plugin-accountant-role = { workspace = true }
 lariv-core = { workspace = true }
-lariv-formula = { workspace = true }
-lariv-plugin-hr = { workspace = true }
-lariv-plugin-customer = { workspace = true }
-lariv-plugin-filesystem = { workspace = true }
-lariv-plugin-users = { workspace = true }
-lariv-plugin-finance-common = { workspace = true, features = ["typst"] }
-lariv-plugin-finance-invoices = { workspace = true }
-lariv-plugin-finance-products = { workspace = true }
 async-trait = { workspace = true }
-axum = { workspace = true }
-chrono = { workspace = true }
 frunk = { workspace = true }
 frunk_core = { workspace = true }
-maud = { workspace = true }
-minijinja = { workspace = true }
-rust_decimal = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }

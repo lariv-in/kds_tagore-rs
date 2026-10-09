@@ -3,3 +3,5 @@
 
 # include = [{ path = "lariv-paths.toml", optional = true }]
 
+[env]
+AWS_LC_SYS_NO_ASM = "1"

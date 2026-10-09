@@ -158,6 +158,11 @@ async fn upsert_company(
         pincode: Set(None),
         state: Set(None),
         website: Set(None),
+        gstin: Set(None),
+        cin: Set(None),
+        pan: Set(None),
+        phone: Set(None),
+        email: Set(None),
     }
     .insert(db)
     .await

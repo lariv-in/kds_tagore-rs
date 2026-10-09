@@ -1,11 +1,11 @@
 #![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
-//! Deployment role `accountant`: Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR.
+//! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, and HR.
 //! HR is read-only holidays, punch in and punch out, and the accountant's own leave.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
-use lariv_plugin_customer::routes::{CustomerMutate, CustomerView};
+use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
 use lariv_plugin_finance_accounts::{
     ACCOUNTING_APP_KEY,
     routes::{FinanceAccountsMutate, FinanceAccountsView},
@@ -28,7 +28,7 @@ pub const ACCOUNTANT_ROLE: &str = Accountant::NAME;
 const TASKS_APP_KEY: &str = "p_tasks";
 const HR_APP_KEY: &str = "p_hr";
 
-/// Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR.
+/// Accounting, Quotations, Machinery Schedule, Tasks, and HR.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Accountant;
 
@@ -36,14 +36,14 @@ impl Accountant {
     pub const NAME: &'static str = "accountant";
     pub const TITLE: &'static str = "Accountant";
     pub const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR.";
+        "Accounting, Quotations, Machinery Schedule, Tasks, and HR.";
 }
 
 impl Role for Accountant {
     const NAME: &'static str = "accountant";
     const TITLE: &'static str = "Accountant";
     const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Delivery Challans, Machinery Schedule, Tasks, and HR.";
+        "Accounting, Quotations, Machinery Schedule, Tasks, and HR.";
 }
 
 pub mod migrations;
@@ -110,8 +110,8 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<FinanceTaxesView>(allow_accountant)
             .patch::<FinanceTaxesMutate>(allow_accountant)
             .patch::<FinanceCreditNotesView>(allow_accountant)
-            .patch::<CustomerView>(allow_accountant)
-            .patch::<CustomerMutate>(allow_accountant)
+            .patch::<ContactsView>(allow_accountant)
+            .patch::<ContactsMutate>(allow_accountant)
             .patch::<TasksView>(allow_accountant)
             .patch::<TasksMutate>(allow_accountant)
             .patch::<UsersPick>(allow_accountant)
