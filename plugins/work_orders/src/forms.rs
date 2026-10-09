@@ -343,7 +343,8 @@ const ALPINE_LINE_TAX_BRIDGE: &str = r#"
                     return (item.line_taxes || []).map(t => parseInt(String(t.Key), 10)).filter(id => !isNaN(id) && id > 0);
                 },
                 lineTaxStoreName(item) {
-                    return 'LineTaxes_' + String(item.id);
+                    const kind = this.linesKind || 'line';
+                    return 'LineTaxes_' + kind + '_' + String(item.id);
                 },
                 ensureM2mStore() {
                     if (typeof Alpine === 'undefined' || !Alpine.store) return;
@@ -375,8 +376,12 @@ const ALPINE_LINE_TAX_BRIDGE: &str = r#"
 
 const ALPINE_FKEY_BRIDGE: &str = r#"
                 fkeyRoot(el) {
-                    const results = el.querySelector('.fk-picker-results');
-                    return results ? results.closest('[x-data]') : null;
+                    return el.querySelector('[data-fk-picker]');
+                },
+                fkeyPanel(root) {
+                    if (!root) return null;
+                    const teleport = root.querySelector('template[x-teleport]');
+                    return (teleport && teleport._x_teleport) || null;
                 },
                 fkeyData(el) {
                     const root = this.fkeyRoot(el);
@@ -521,14 +526,8 @@ const ALPINE_FKEY_BRIDGE: &str = r#"
                 bindFkeyInput(el, item, field) {
                     const root = this.fkeyRoot(el);
                     const d = this.fkeyData(el);
-                    if (!root || !d) {
-                        const n = Number(el.dataset.fkeyTries || 0);
-                        if (n > 40) return;
-                        el.dataset.fkeyTries = String(n + 1);
-                        this.$nextTick(() => this.bindFkeyInput(el, item, field));
-                        return;
-                    }
-                    if (!d._woFkeyDom && typeof d.applySelect !== 'function') {
+                    const panel = this.fkeyPanel(root);
+                    if (!root || !d || !panel || typeof d.applySelect !== 'function') {
                         const n = Number(el.dataset.fkeyTries || 0);
                         if (n > 40) return;
                         el.dataset.fkeyTries = String(n + 1);
@@ -554,7 +553,7 @@ const ALPINE_FKEY_BRIDGE: &str = r#"
                     if (item[labelKey] !== label) item[labelKey] = label;
                     const uid = 'fk-dropdown-' + slot;
                     const search = root.querySelector('input[type="search"]');
-                    const results = root.querySelector('.fk-picker-results');
+                    const results = panel.querySelector('.fk-picker-results');
                     const tableBtn = root.querySelector('button[aria-label="Open selection table"]');
                     const setTarget = (node) => {
                         if (!node) return;
@@ -574,14 +573,14 @@ const ALPINE_FKEY_BRIDGE: &str = r#"
                             self.clearLineFkeyItem(this.fieldName);
                         };
                     }
+                    if (search && search.id !== uid + '-q') {
+                        search.id = uid + '-q';
+                        search.setAttribute('hx-target', '#' + uid);
+                        search.setAttribute('aria-controls', uid);
+                    }
+                    if (results && results.id !== uid) results.id = uid;
                     if (!d._woFkeyDom) {
                         d._woFkeyDom = true;
-                        if (search) {
-                            search.id = uid + '-q';
-                            search.setAttribute('hx-target', '#' + uid);
-                            search.setAttribute('aria-controls', uid);
-                        }
-                        if (results) results.id = uid;
                         const itemId = item.id;
                         const syncItem = function(detail) {
                             if (!detail || String(detail.name) !== String(this.fieldName)) return;
@@ -597,38 +596,35 @@ const ALPINE_FKEY_BRIDGE: &str = r#"
                                 display: this.display,
                             }));
                         };
-                        if (typeof d.applySelect === 'function') {
-                            const orig = d.applySelect;
-                            d.applySelect = function(detail) {
-                                orig.call(this, detail);
-                                syncItem.call(this, detail);
-                            };
-                        } else {
-                            d.applySelect = syncItem;
-                        }
+                        const orig = d.applySelect;
+                        d.applySelect = function(detail) {
+                            orig.call(this, detail);
+                            syncItem.call(this, detail);
+                        };
                     }
                     this.associatePickerForm(search, tableBtn, uid + '-form');
-                    if (search) {
-                        setTarget(search);
-                        if (window.htmx) window.htmx.process(search);
-                    }
-                    if (tableBtn) {
-                        setTarget(tableBtn);
-                        if (window.htmx) window.htmx.process(tableBtn);
-                    }
+                    setTarget(search);
+                    setTarget(tableBtn);
+                    if (search && window.htmx) window.htmx.process(search);
+                    if (tableBtn && window.htmx) window.htmx.process(tableBtn);
                     d.fieldName = slot;
                     const nextValue = idVal && Number(idVal) > 0 ? String(idVal) : '';
                     const nextDisplay = label || '';
-                    if (String(d.value || '') !== nextValue) {
-                        d.value = nextValue;
-                    }
+                    const valueChanged = String(d.value || '') !== nextValue;
+                    if (valueChanged) d.value = nextValue;
                     if (!nextValue) {
-                        d.display = '';
-                        d.query = '';
-                        if (search) search.value = '';
-                    } else if (String(d.display || '') !== nextDisplay) {
+                        if (!d.open && (d.display || d.query)) {
+                            d.display = '';
+                            d.query = '';
+                            if (search) search.value = '';
+                        }
+                    } else if (valueChanged || String(d.display || '') !== nextDisplay) {
                         d.display = nextDisplay;
-                        if (!d.open) d.query = nextDisplay;
+                        if (!d.open || valueChanged) {
+                            d.query = nextDisplay;
+                            d.open = false;
+                            if (search) search.value = nextDisplay;
+                        }
                     }
                 },
 "#;
@@ -976,6 +972,7 @@ impl FormWidget for MaterialLinesWidget {
                 default_material_taxes: {default_material_json},
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
+                linesKind: 'material',
                 components: {components_json},
                 items: {rows_json},
                 nextId: {next_id},
@@ -1280,6 +1277,7 @@ impl FormWidget for MachineLinesWidget {
                 default_material_taxes: {default_material_json},
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
+                linesKind: 'machine',
                 machines: {machines_json},
                 items: {rows_json},
                 nextId: {next_id},

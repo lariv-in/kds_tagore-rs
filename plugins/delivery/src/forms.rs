@@ -83,8 +83,12 @@ const ALPINE_LINES: &str = r#"
         });
     },
     fkeyRoot(el) {
-        const results = el.querySelector('.fk-picker-results');
-        return results ? results.closest('[x-data]') : null;
+        return el.querySelector('[data-fk-picker]');
+    },
+    fkeyPanel(root) {
+        if (!root) return null;
+        const teleport = root.querySelector('template[x-teleport]');
+        return (teleport && teleport._x_teleport) || null;
     },
     fkeyData(el) {
         const root = this.fkeyRoot(el);
@@ -135,14 +139,8 @@ const ALPINE_LINES: &str = r#"
     bindFkeyInput(el, item) {
         const root = this.fkeyRoot(el);
         const d = this.fkeyData(el);
-        if (!root || !d) {
-            const n = Number(el.dataset.fkeyTries || 0);
-            if (n > 40) return;
-            el.dataset.fkeyTries = String(n + 1);
-            this.$nextTick(() => this.bindFkeyInput(el, item));
-            return;
-        }
-        if (!d._deliveryFkeyDom && typeof d.applySelect !== 'function') {
+        const panel = this.fkeyPanel(root);
+        if (!root || !d || !panel || typeof d.applySelect !== 'function') {
             const n = Number(el.dataset.fkeyTries || 0);
             if (n > 40) return;
             el.dataset.fkeyTries = String(n + 1);
@@ -155,7 +153,7 @@ const ALPINE_LINES: &str = r#"
         const label = (idVal && Number(idVal) > 0) ? (item.product_label || '') : '';
         const uid = 'fk-dropdown-' + slot;
         const search = root.querySelector('input[type="search"]');
-        const results = root.querySelector('.fk-picker-results');
+        const results = panel.querySelector('.fk-picker-results');
         const tableBtn = root.querySelector('button[aria-label="Open selection table"]');
         const setTarget = (node) => {
             if (!node) return;
@@ -175,14 +173,14 @@ const ALPINE_LINES: &str = r#"
                 self.clearLineFkeyItem(this.fieldName);
             };
         }
+        if (search && search.id !== uid + '-q') {
+            search.id = uid + '-q';
+            search.setAttribute('hx-target', '#' + uid);
+            search.setAttribute('aria-controls', uid);
+        }
+        if (results && results.id !== uid) results.id = uid;
         if (!d._deliveryFkeyDom) {
             d._deliveryFkeyDom = true;
-            if (search) {
-                search.id = uid + '-q';
-                search.setAttribute('hx-target', '#' + uid);
-                search.setAttribute('aria-controls', uid);
-            }
-            if (results) results.id = uid;
             const itemId = item.id;
             const syncItem = function(detail) {
                 if (!detail || String(detail.name) !== String(this.fieldName)) return;
@@ -217,9 +215,11 @@ const ALPINE_LINES: &str = r#"
         const nextValue = idVal && Number(idVal) > 0 ? String(idVal) : '';
         if (String(d.value || '') !== nextValue) d.value = nextValue;
         if (!nextValue) {
-            d.display = '';
-            d.query = '';
-            if (search) search.value = '';
+            if (!d.open) {
+                d.display = '';
+                d.query = '';
+                if (search) search.value = '';
+            }
         } else if (String(d.display || '') !== label) {
             d.display = label;
             if (!d.open) d.query = label;

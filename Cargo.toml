@@ -8,22 +8,22 @@ edition = "2024"
 [workspace.dependencies]
 # Git pin for lariv. Local core work: scripts/lariv-source local
 # Move this rev everywhere at once: scripts/lariv-source pin <40-char commit>
-lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-formula = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-crm = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-customer = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-common = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-hr = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-tasks = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
-lariv-plugin-website = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259" }
+lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-formula = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-crm = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-customer = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-common = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-hr = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-tasks = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
+lariv-plugin-website = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0" }
 kds-plugin-accountant-role = { version = "0.1.0", path = "plugins/accountant_role" }
 kds-plugin-machinery-schedule = { version = "0.1.0", path = "plugins/machinery_schedule" }
 kds-plugin-work-orders = { version = "0.1.0", path = "plugins/work_orders" }
@@ -76,7 +76,7 @@ name = "kds-tagore-rs"
 path = "src/main.rs"
 
 [dependencies]
-lariv-rs = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "2d7b491bcec3d2bf42015172e27eccb5393a0259", default-features = false, features = [
+lariv-rs = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "388f9e8be4363eaf07fa46b6fb602459c04ac0b0", default-features = false, features = [
 	"plugin-users",
 	"plugin-dashboard",
 	"plugin-filesystem",
