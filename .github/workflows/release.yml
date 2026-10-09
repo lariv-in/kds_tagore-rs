@@ -72,6 +72,8 @@ jobs:
           cache-workspace-crates: true
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
+      - run: sudo apt update -y
+      - run: sudo apt upgrade -y
       - run: sudo apt install libarchive-dev
       - name: build release binary
         if: steps.prebuilt.outputs.hit != 'true'
