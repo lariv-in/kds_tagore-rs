@@ -2,7 +2,7 @@
 #![recursion_limit = "1024"]
 
 //! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, and HR.
-//! HR is read-only holidays, punch in and punch out, and the accountant's own leave.
+//! HR is read-only holidays, punch in and punch out, the accountant's own leave, and overtime.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
 use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
@@ -14,7 +14,7 @@ use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
 use lariv_plugin_finance_taxes::routes::{FinanceTaxesMutate, FinanceTaxesView};
-use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView};
+use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView, OvertimeView};
 use lariv_plugin_tasks::routes::{TasksMutate, TasksView};
 use lariv_plugin_users::{
     role_authorization::{RoleAuthorizationRegistrar, RoleAuthorizationRegistry},
@@ -100,6 +100,7 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<HolidayView>(allow_accountant)
             .patch::<AttendanceView>(allow_accountant)
             .patch::<LeaveView>(allow_accountant)
+            .patch::<OvertimeView>(allow_accountant)
             .patch::<FinanceAccountsView>(allow_accountant)
             .patch::<FinanceAccountsMutate>(allow_accountant)
             // FinanceAccountsPreferencesMutate stays superuser-only.
