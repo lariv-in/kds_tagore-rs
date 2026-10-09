@@ -40,6 +40,8 @@ jobs:
           add-rust-environment-hash-key: false
           cache-workspace-crates: true
           cache-on-failure: true
+      - run: sudo apt update -y
+      - run: sudo apt upgrade -y
       - run: sudo apt install libarchive-dev
       - run: cargo build --release
       - uses: actions/upload-artifact@v4
