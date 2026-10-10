@@ -143,9 +143,10 @@ fn kds_tagore_registers_forms_app_tile() {
                         "kds_tagore-quotations".to_string(),
                         "p_finance_accounts".to_string(),
                         "p_hr".to_string(),
+                        "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, and HR"
+                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, and Inventory"
                 );
 
                 let employee_keys: Vec<_> = catalog

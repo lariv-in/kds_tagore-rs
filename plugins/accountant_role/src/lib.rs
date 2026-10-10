@@ -1,7 +1,7 @@
 #![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
-//! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, and HR.
+//! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, HR, and Inventory.
 //! HR is read-only holidays, punch in and punch out, the accountant's own leave, and overtime.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
@@ -15,6 +15,7 @@ use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoic
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
 use lariv_plugin_finance_taxes::routes::{FinanceTaxesMutate, FinanceTaxesView};
 use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView, OvertimeView};
+use lariv_plugin_inventory::routes::{InventoryMutate, InventoryView};
 use lariv_plugin_tasks::routes::{TasksMutate, TasksView};
 use lariv_plugin_users::{
     role_authorization::{RoleAuthorizationRegistrar, RoleAuthorizationRegistry},
@@ -27,8 +28,9 @@ pub const ACCOUNTANT_ROLE: &str = Accountant::NAME;
 
 const TASKS_APP_KEY: &str = "p_tasks";
 const HR_APP_KEY: &str = "p_hr";
+const INVENTORY_APP_KEY: &str = "p_inventory";
 
-/// Accounting, Quotations, Machinery Schedule, Tasks, and HR.
+/// Accounting, Quotations, Machinery Schedule, Tasks, HR, and Inventory.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Accountant;
 
@@ -36,14 +38,14 @@ impl Accountant {
     pub const NAME: &'static str = "accountant";
     pub const TITLE: &'static str = "Accountant";
     pub const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Machinery Schedule, Tasks, and HR.";
+        "Accounting, Quotations, Machinery Schedule, Tasks, HR, and Inventory.";
 }
 
 impl Role for Accountant {
     const NAME: &'static str = "accountant";
     const TITLE: &'static str = "Accountant";
     const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Machinery Schedule, Tasks, and HR.";
+        "Accounting, Quotations, Machinery Schedule, Tasks, HR, and Inventory.";
 }
 
 pub mod migrations;
@@ -77,7 +79,8 @@ impl AppsRegistrar for AppsHook {
     fn register_apps(self, apps: AppsCapability) -> AppsCapability {
         let apps = grant_tile(apps, ACCOUNTING_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, TASKS_APP_KEY, Accountant::NAME);
-        grant_tile(apps, HR_APP_KEY, Accountant::NAME)
+        let apps = grant_tile(apps, HR_APP_KEY, Accountant::NAME);
+        grant_tile(apps, INVENTORY_APP_KEY, Accountant::NAME)
     }
 }
 
@@ -115,6 +118,8 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<ContactsMutate>(allow_accountant)
             .patch::<TasksView>(allow_accountant)
             .patch::<TasksMutate>(allow_accountant)
+            .patch::<InventoryView>(allow_accountant)
+            .patch::<InventoryMutate>(allow_accountant)
             .patch::<UsersPick>(allow_accountant)
     }
 }

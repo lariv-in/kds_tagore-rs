@@ -15,6 +15,7 @@ lariv-plugin-finance-invoices = { workspace = true }
 lariv-plugin-finance-products = { workspace = true }
 lariv-plugin-finance-taxes = { workspace = true }
 lariv-plugin-hr = { workspace = true }
+lariv-plugin-inventory = { workspace = true }
 lariv-plugin-tasks = { workspace = true }
 lariv-plugin-users = { workspace = true }
 async-trait = { workspace = true }

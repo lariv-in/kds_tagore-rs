@@ -3643,6 +3643,7 @@ dependencies = [
  "lariv-plugin-finance-products",
  "lariv-plugin-finance-taxes",
  "lariv-plugin-hr",
+ "lariv-plugin-inventory",
  "lariv-plugin-tasks",
  "lariv-plugin-users",
  "sea-orm-migration",
