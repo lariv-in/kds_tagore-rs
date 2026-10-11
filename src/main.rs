@@ -37,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
     let app = customer::install(app);
     let app = contacts::install(app);
     // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.
+    // Tasks hooks the PWA service worker, so PWA is installed first.
+    let app = pwa::install(app);
     let app = tasks::install(app);
     let app = crm::install(app);
     // After CRM: inventory stocks reference `crm_companies`.
@@ -58,7 +60,6 @@ async fn main() -> anyhow::Result<()> {
     let app = hr::install(app);
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
-    let app = pwa::install(app);
     let app = website_seed::install(app);
     let app = documents::install(app);
     let app = signing::install(app);

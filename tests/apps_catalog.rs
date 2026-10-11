@@ -12,7 +12,7 @@ use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms,
-    hr, inventory, llm_assistant, otp, tasks, users, website,
+    hr, inventory, llm_assistant, otp, pwa, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -55,6 +55,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = finance_accounts::install(app);
                 let app = customer::install(app);
                 let app = contacts::install(app);
+                let app = pwa::install(app);
                 let app = tasks::install(app);
                 let app = crm::install(app);
                 let app = inventory::install(app);
