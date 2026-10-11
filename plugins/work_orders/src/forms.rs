@@ -1,5 +1,3 @@
-use lariv_formula::variable_schema_input::VariableSchemaList;
-use lariv_formula::variable_value_input::{VariableValueInput, variable_value_input};
 use kds_plugin_machinery_schedule::routes::MachineFkSelectRouteTag;
 #[allow(unused_imports)]
 use lariv_core::html_form::widgets::{ForeignKey, ManyToMany};
@@ -15,6 +13,8 @@ use lariv_core::{
         widgets::{CodeEditor, Duration, Section, Text, Textarea},
     },
 };
+use lariv_formula::variable_schema_input::VariableSchemaList;
+use lariv_formula::variable_value_input::{VariableValueInput, variable_value_input};
 use lariv_plugin_filesystem::routes::VNodeFileSelectRouteTag;
 use lariv_plugin_finance_taxes::routes::TaxMultiSelectRouteTag;
 
@@ -1905,6 +1905,9 @@ mod tests {
         assert!(html.contains("placeholder=\"e.g. 1.5\""), "{html}");
         assert!(html.contains("v.type === 'percent'"), "{html}");
         assert!(html.contains("placeholder=\"e.g. 18\""), "{html}");
-        assert!(html.contains("> %</span>") || html.contains(">%</span>"), "{html}");
+        assert!(
+            html.contains("> %</span>") || html.contains(">%</span>"),
+            "{html}"
+        );
     }
 }

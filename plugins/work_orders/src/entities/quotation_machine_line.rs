@@ -12,6 +12,7 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
     pub invoice_id: i64,
     pub machine_id: Option<i64>,
+    pub product_id: i64,
     pub name: String,
     pub variables: Json,
     #[sea_orm(column_type = "Decimal(Some((19, 6)))")]

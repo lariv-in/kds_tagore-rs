@@ -102,6 +102,7 @@ lariv_core::define_register_items! {
         InvoiceCreateModalPageIdx: InvoiceCreateModalPageTag => InvoiceCreateModalPage,
         InvoiceEditModalPageIdx: InvoiceEditModalPageTag => InvoiceEditModalPage,
         InvoiceCreateWorkOrderModalPageIdx: InvoiceCreateWorkOrderModalPageTag => InvoiceCreateWorkOrderModalPage,
+        InvoiceCreateDraftInvoiceModalPageIdx: InvoiceCreateDraftInvoiceModalPageTag => InvoiceCreateDraftInvoiceModalPage,
 
         IssuedWorkOrderListPageIdx: IssuedWorkOrderListPageTag => IssuedWorkOrderListPage,
         IssuedWorkOrderDetailPageIdx: IssuedWorkOrderDetailPageTag => IssuedWorkOrderDetailPage,
@@ -1536,6 +1537,7 @@ impl InvoiceDetailPage {
         let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
         let copy_path = InvoiceCopyPostRouteTag::new(self.invoice.id).path();
         let create_wo_url = InvoiceCreateWorkOrderGetRouteTag::new(self.invoice.id).url();
+        let create_invoice_url = InvoiceCreateDraftInvoiceGetRouteTag::new(self.invoice.id).url();
         let mail_href = InvoiceMailRouteTag::new(self.invoice.id).path();
         let eml_name = format!(
             "{}.eml",
@@ -1545,6 +1547,16 @@ impl InvoiceDetailPage {
             )
         );
         let actions = html! {
+            (button_modal_form(ButtonModalForm {
+                label: "Create Invoice",
+                icon_name: Some("plus"),
+                name: "wo.InvoiceCreateDraftInvoiceForm",
+                href: &create_invoice_url,
+                form_post_url: &create_invoice_url,
+                modal_uid: InvoiceCreateDraftInvoiceModalKey::ID,
+                classes: "btn-outline btn-sm",
+                ..Default::default()
+            }))
             (button_modal_form(ButtonModalForm {
                 label: "Create Work Order",
                 icon_name: Some("plus"),
@@ -2222,6 +2234,49 @@ impl RenderTemplate for InvoiceEditModalPage {
                             ..Default::default()
                         }))
                         (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
+                    },
+                    ..Default::default()
+                }))
+            },
+        )
+    }
+}
+
+#[derive(Clone, Generic)]
+pub struct InvoiceCreateDraftInvoiceModalPage {
+    pub id: i64,
+    pub form_name: String,
+    pub quotation_number: String,
+    pub error: String,
+}
+
+impl RenderTemplate for InvoiceCreateDraftInvoiceModalPage {
+    fn render(&self, _chrome: &ShellChrome) -> Markup {
+        modal_keyed::<InvoiceCreateDraftInvoiceModalKey>(
+            &self.form_name,
+            html! {
+                h3 class="font-bold text-lg mb-4" { "Create Draft Invoice" }
+                p class="text-sm opacity-70 mb-4" {
+                    "Create a draft invoice from quotation "
+                    span class="font-semibold" { (self.quotation_number) }
+                    ". Each machine line and material line becomes an invoice line."
+                }
+                @if !self.error.is_empty() {
+                    div class="alert alert-error text-sm mb-4 shadow-sm" {
+                        span { (self.error) }
+                    }
+                }
+                (form(&CsrfToken::current(), FormOpts {
+                    attrs: lariv_core::components::swap::form_hx_post_url::<InvoiceCreateDraftInvoiceModalKey>(
+                        &modal_edit_post_url(
+                            InvoiceCreateDraftInvoicePostRouteTag::new(self.id),
+                            &self.form_name,
+                        ),
+                    ),
+                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                    inputs: html! {},
+                    actions: html! {
+                        (button_submit(ButtonSubmit { label: "Create Draft Invoice", ..Default::default() }))
                     },
                     ..Default::default()
                 }))

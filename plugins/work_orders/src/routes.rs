@@ -79,6 +79,8 @@ lariv_core::define_plugin_routes! {
         get InvoiceDetailRouteTag, "/work-orders/quotations/{id}", handlers::invoice_detail, authorize(QuotationsAccess, [Accountant]);
         get InvoiceCreateWorkOrderGetRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_get, modal, authorize(QuotationsAccess, [Accountant]);
         post InvoiceCreateWorkOrderPostRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_post, authorize(QuotationsAccess, [Accountant]);
+        get InvoiceCreateDraftInvoiceGetRouteTag, "/work-orders/quotations/{id}/create-invoice", handlers::invoice_create_draft_invoice_get, modal, authorize(QuotationsAccess, [Accountant]);
+        post InvoiceCreateDraftInvoicePostRouteTag, "/work-orders/quotations/{id}/create-invoice", handlers::invoice_create_draft_invoice_post, authorize(QuotationsAccess, [Accountant]);
         get InvoiceEditGetRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
         post InvoiceEditPostRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_post, authorize(QuotationsAccess, [Accountant]);
         get InvoiceDeleteGetRouteTag, "/work-orders/quotations/{id}/delete", handlers::invoice_delete_get, modal, authorize(QuotationsAccess, [Accountant]);

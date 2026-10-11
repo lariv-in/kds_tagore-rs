@@ -71,6 +71,10 @@ lariv_core::swap_key!(
     InvoiceCreateWorkOrderModalKey,
     "wo-invoice-create-work-order-modal"
 );
+lariv_core::swap_key!(
+    InvoiceCreateDraftInvoiceModalKey,
+    "wo-invoice-create-draft-invoice-modal"
+);
 
 lariv_core::swap_key!(IssuedWorkOrderTableKey, "wo-issued-order-table");
 lariv_core::swap_key!(

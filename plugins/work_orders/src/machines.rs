@@ -34,7 +34,6 @@ use lariv_plugin_users::middleware::RequireAuth;
 use maud::{Markup, html};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
 
-use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 use kds_plugin_machinery_schedule::entities::machine::{self, Entity as MachineEntity};
 use kds_plugin_machinery_schedule::forms::{
     MachineFilterForm, MachineFilterFormField, MachineForm, MachineFormField,
@@ -48,6 +47,7 @@ use kds_plugin_machinery_schedule::scope::{
     apply_name_filter, apply_name_sort_or_id_desc, can_manage, find_machine_scoped,
     scope_superuser, sort_jobs_by_column,
 };
+use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 
 use super::crumbs::{machine_crumbs, machines_list_crumbs, wo_menu};
 use super::keys::{

@@ -11,6 +11,7 @@ pub mod entities;
 pub mod forms;
 pub mod handlers;
 pub mod keys;
+pub mod line_product;
 pub mod line_vars;
 pub mod machines;
 pub mod migrations;

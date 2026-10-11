@@ -26,6 +26,7 @@ mod m00021_drop_quotation_duration;
 mod m00022_work_order_pdf_template;
 mod m00023_quotation_email_templates;
 mod m00024_quotation_remarks;
+mod m00025_line_products;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -58,6 +59,7 @@ impl MigratorTrait for Migrator {
             Box::new(m00022_work_order_pdf_template::Migration),
             Box::new(m00023_quotation_email_templates::Migration),
             Box::new(m00024_quotation_remarks::Migration),
+            Box::new(m00025_line_products::Migration),
         ]
     }
 }

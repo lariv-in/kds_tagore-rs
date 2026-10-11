@@ -62,13 +62,13 @@ use crate::cascade::{
     cascade_delete_preview, collect_work_order_cascade, delete_work_order_recursive,
 };
 use crate::entities::work_order::WORK_ORDER_SOURCE_DOC_TYPE;
-use lariv_formula::{
-    FormulaContext, parse_schema_list, parse_values, schema_to_json, values_to_json,
-};
 use kds_plugin_machinery_schedule::duration::JobDuration;
 use kds_plugin_machinery_schedule::entities::{job, machine};
 use kds_plugin_machinery_schedule::logic::{
     create_open_job, format_job_duration, parse_job_duration, set_job_source_doc,
+};
+use lariv_formula::{
+    FormulaContext, parse_schema_list, parse_values, schema_to_json, values_to_json,
 };
 
 fn path_and_query(uri: &Uri) -> String {
@@ -418,6 +418,7 @@ fn component_from_form_fields(
         created_at: None,
         updated_at: None,
         name,
+        product_id: 0,
         cost_formula,
         weight_formula,
         variables,
@@ -680,6 +681,11 @@ pub async fn work_order_create_post(
                                 item.extra_data.as_ref(),
                             )
                             .await
+                            && let Ok(product_id) = crate::line_product::component_product_id(
+                                &state.db,
+                                item.component_id,
+                            )
+                            .await
                         {
                             let line_am = draft_work_order_material_line::ActiveModel {
                                 id: Default::default(),
@@ -687,6 +693,7 @@ pub async fn work_order_create_post(
                                 updated_at: Set(Some(now)),
                                 draft_work_order_id: Set(saved.id),
                                 component_id: Set(item.component_id),
+                                product_id: Set(product_id),
                                 variables: Set(vars_json),
                                 final_cost: Set(final_cost),
                                 extra_data: Set(extra_data),
@@ -941,6 +948,11 @@ pub async fn work_order_edit_post(
                                 item.extra_data.as_ref(),
                             )
                             .await
+                            && let Ok(product_id) = crate::line_product::component_product_id(
+                                &state.db,
+                                item.component_id,
+                            )
+                            .await
                         {
                             let line_am = draft_work_order_material_line::ActiveModel {
                                 id: Default::default(),
@@ -948,6 +960,7 @@ pub async fn work_order_edit_post(
                                 updated_at: Set(Some(now)),
                                 draft_work_order_id: Set(id),
                                 component_id: Set(item.component_id),
+                                product_id: Set(product_id),
                                 variables: Set(vars_json),
                                 final_cost: Set(final_cost),
                                 extra_data: Set(extra_data),
@@ -1178,11 +1191,37 @@ pub async fn work_order_line_edit_post(
     .await
     {
         Ok((vars_json, final_cost, extra_data)) => {
+            let Ok(product_id) =
+                crate::line_product::component_product_id(&state.db, form.component_id).await
+            else {
+                let order = draft_work_order::Entity::find_by_id(target_order_id)
+                    .one(&state.db)
+                    .await
+                    .ok()
+                    .flatten();
+                let label = order
+                    .map(|o| format!("{} (#{})", o.order_number, o.id))
+                    .unwrap_or_else(|| format!("#{}", target_order_id));
+                let page = WorkOrderLineEditModalPage {
+                    id,
+                    draft_work_order_id: target_order_id,
+                    draft_work_order_label: label,
+                    form_name: q.form_name(),
+                    component_id: form.component_id,
+                    component_label: comp_label,
+                    variables: form.variables,
+                    extra_data: form.extra_data.unwrap_or_default(),
+                    tax_items: tax_items_for_ids(&state.db, &form.taxes).await,
+                    error: "Could not link this line to a product.".into(),
+                };
+                return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+            };
             let now = Utc::now();
             let mut am: draft_work_order_material_line::ActiveModel = existing.clone().into();
             am.updated_at = Set(Some(now));
             am.draft_work_order_id = Set(target_order_id);
             am.component_id = Set(form.component_id);
+            am.product_id = Set(product_id);
             am.variables = Set(vars_json);
             am.final_cost = Set(final_cost);
             am.extra_data = Set(extra_data);
@@ -1505,8 +1544,19 @@ async fn sync_machine_lines(
         if line.machine_id <= 0 {
             continue;
         }
-        let Ok((vars_json, final_cost, _)) =
+        let Ok((vars_json, final_cost, machine_name)) =
             resolve_and_compute_machine_cost(db, line.machine_id, line.variables.as_ref()).await
+        else {
+            continue;
+        };
+        let Ok(product_id) = crate::line_product::save_machine_line_product(
+            db,
+            0,
+            Some(line.machine_id),
+            &machine_name,
+            final_cost,
+        )
+        .await
         else {
             continue;
         };
@@ -1516,6 +1566,7 @@ async fn sync_machine_lines(
             updated_at: Set(Some(now)),
             draft_work_order_id: Set(order_id),
             machine_id: Set(line.machine_id),
+            product_id: Set(product_id),
             variables: Set(vars_json),
             final_cost: Set(final_cost),
         };
@@ -1627,6 +1678,8 @@ async fn sync_invoice_material_lines(
             item.extra_data.as_ref(),
         )
         .await
+            && let Ok(product_id) =
+                crate::line_product::component_product_id(db, item.component_id).await
         {
             let line_am = quotation_material_line::ActiveModel {
                 id: Default::default(),
@@ -1634,6 +1687,7 @@ async fn sync_invoice_material_lines(
                 updated_at: Set(Some(now)),
                 invoice_id: Set(invoice_id),
                 component_id: Set(item.component_id),
+                product_id: Set(product_id),
                 variables: Set(vars_json),
                 final_cost: Set(final_cost),
                 extra_data: Set(extra_data),
@@ -1676,12 +1730,24 @@ async fn sync_invoice_machine_lines(
         else {
             continue;
         };
+        let Ok(product_id) = crate::line_product::save_machine_line_product(
+            db,
+            0,
+            Some(line.machine_id),
+            &machine_name,
+            final_cost,
+        )
+        .await
+        else {
+            continue;
+        };
         let am = quotation_machine_line::ActiveModel {
             id: Default::default(),
             created_at: Set(Some(now)),
             updated_at: Set(Some(now)),
             invoice_id: Set(invoice_id),
             machine_id: Set(Some(line.machine_id)),
+            product_id: Set(product_id),
             name: Set(machine_name),
             variables: Set(vars_json),
             final_cost: Set(final_cost),
@@ -1827,11 +1893,40 @@ pub async fn work_order_machine_line_edit_post(
         }
     };
 
+    let product_id = match crate::line_product::save_machine_line_product(
+        &state.db,
+        existing.product_id,
+        Some(form.machine_id),
+        &machine_label,
+        final_cost,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            return late_render_edit_error(
+                &state.db,
+                &chrome,
+                &slot_ctx,
+                &q,
+                id,
+                target_order_id,
+                e,
+                form.machine_id,
+                machine_label,
+                vars_raw,
+                form.taxes.clone(),
+            )
+            .await;
+        }
+    };
+
     let now = Utc::now();
     let mut am: draft_work_order_machine_line::ActiveModel = existing.into();
     am.updated_at = Set(Some(now));
     am.draft_work_order_id = Set(target_order_id);
     am.machine_id = Set(form.machine_id);
+    am.product_id = Set(product_id);
     am.variables = Set(vars_json);
     am.final_cost = Set(final_cost);
 
@@ -2135,11 +2230,35 @@ pub async fn component_create_post(
     }
 
     let now = Utc::now();
+    let product_id = match crate::line_product::save_component_product(
+        &state.db,
+        0,
+        form.name.trim(),
+        &variables,
+        &form.cost_formula,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            let page = empty_component_create_page(
+                &q,
+                form.name,
+                probe.cost_formula,
+                probe.weight_formula,
+                form.variables,
+                e,
+            );
+            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+        }
+    };
+
     let model = component::ActiveModel {
         id: Default::default(),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
         name: Set(form.name.trim().to_string()),
+        product_id: Set(product_id),
         cost_formula: Set(form.cost_formula),
         weight_formula: Set(form.weight_formula),
         variables: Set(variables),
@@ -2256,10 +2375,35 @@ pub async fn component_edit_post(
         return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
     }
 
+    let product_id = match crate::line_product::save_component_product(
+        &state.db,
+        existing.product_id,
+        form.name.trim(),
+        &variables,
+        &form.cost_formula,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            let page = empty_component_edit_page(
+                id,
+                &q,
+                form.name,
+                form.cost_formula,
+                form.weight_formula,
+                form.variables,
+                e,
+            );
+            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+        }
+    };
+
     let now = Utc::now();
     let mut am: component::ActiveModel = existing.into();
     am.updated_at = Set(Some(now));
     am.name = Set(form.name.trim().to_string());
+    am.product_id = Set(product_id);
     am.cost_formula = Set(form.cost_formula);
     am.weight_formula = Set(form.weight_formula);
     am.variables = Set(variables);
@@ -2910,6 +3054,7 @@ async fn copy_quotation(
             updated_at: Set(Some(now)),
             invoice_id: Set(saved.id),
             component_id: Set(line.component_id),
+            product_id: Set(line.product_id),
             variables: Set(line.variables),
             final_cost: Set(line.final_cost),
             extra_data: Set(line.extra_data),
@@ -2930,6 +3075,7 @@ async fn copy_quotation(
             updated_at: Set(Some(now)),
             invoice_id: Set(saved.id),
             machine_id: Set(line.machine_id),
+            product_id: Set(line.product_id),
             name: Set(line.name),
             variables: Set(line.variables),
             final_cost: Set(line.final_cost),
@@ -2955,6 +3101,182 @@ pub async fn invoice_copy_post(
     match copy_quotation(&state.db, id).await {
         Ok(new_id) => htmx.redirect(&InvoiceDetailRouteTag::new(new_id).url()),
         Err(_) => htmx.redirect(&InvoiceDetailRouteTag::new(id).url()),
+    }
+}
+
+fn quotation_invoice_line(
+    product_id: i64,
+    variables: serde_json::Value,
+    tax_ids: Vec<i64>,
+) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftLinePending, String> {
+    if product_id <= 0 {
+        return Err("a quotation line is not linked to a product".into());
+    }
+    Ok(
+        lariv_plugin_finance_invoices::logic::draft::DraftLinePending {
+            product_id,
+            rate: None,
+            quantity: "1".into(),
+            variables: Some(variables),
+            tax_ids: Some(tax_ids),
+            remarks: None,
+        },
+    )
+}
+
+/// Copy quotation lines onto a new draft invoice for the same company.
+async fn create_draft_invoice_from_quotation(
+    db: &sea_orm::DatabaseConnection,
+    quotation_id: i64,
+) -> Result<i64, String> {
+    use lariv_plugin_finance_invoices::logic::bill_to::BillTo;
+    use lariv_plugin_finance_invoices::logic::draft::{CreateDraftInput, create_draft_invoice};
+    use lariv_plugin_finance_invoices::logic::draft_payment_term::{
+        default_payment_term_lines_json, parse_payment_term_lines_json,
+    };
+    use lariv_plugin_finance_invoices::logic::preferences::load_invoice_preferences;
+
+    let inv = quotation::Entity::find_by_id(quotation_id)
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Quotation not found".to_string())?;
+
+    let material_lines = quotation_material_line::Entity::find()
+        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
+        .order_by_asc(quotation_material_line::Column::Id)
+        .all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
+    let mat_tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
+        .await
+        .unwrap_or_default();
+
+    let machine_lines = quotation_machine_line::Entity::find()
+        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
+        .order_by_asc(quotation_machine_line::Column::Id)
+        .all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
+    let mach_tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
+        .await
+        .unwrap_or_default();
+
+    let mut lines = Vec::new();
+    for line in machine_lines {
+        lines.push(quotation_invoice_line(
+            line.product_id,
+            line.variables,
+            mach_tax_map.get(&line.id).cloned().unwrap_or_default(),
+        )?);
+    }
+    for line in material_lines {
+        lines.push(quotation_invoice_line(
+            line.product_id,
+            line.variables,
+            mat_tax_map.get(&line.id).cloned().unwrap_or_default(),
+        )?);
+    }
+    if lines.is_empty() {
+        return Err("This quotation has no lines to invoice.".into());
+    }
+
+    let prefs = load_invoice_preferences(db).await;
+    let datetime = inv
+        .date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| "invalid quotation date".to_string())?
+        .and_utc();
+    let reference = {
+        let number = inv.invoice_number.trim();
+        if number.is_empty() {
+            None
+        } else {
+            Some(number.to_string())
+        }
+    };
+    let remarks = {
+        let text = inv.remarks.trim();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        }
+    };
+
+    let draft = create_draft_invoice(
+        db,
+        CreateDraftInput {
+            number: None,
+            reference,
+            payment_reference: None,
+            bank_account: prefs.default_bank_account,
+            remarks,
+            datetime,
+            delivery_date: None,
+            bill_to: BillTo::new(false, None, Some(inv.customer_id)),
+            payment_term_lines: parse_payment_term_lines_json(&default_payment_term_lines_json())?,
+            header_tax_ids: Vec::new(),
+            lines,
+        },
+        "UTC",
+    )
+    .await?;
+    Ok(draft.id)
+}
+
+pub async fn invoice_create_draft_invoice_get(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    auth: OptionalAuth,
+    Query(q): Query<ModalFormQuery>,
+    Path(id): Path<i64>,
+) -> Response {
+    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
+    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
+        Ok(Some(i)) => i,
+        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
+    };
+    let page = InvoiceCreateDraftInvoiceModalPage {
+        id,
+        form_name: q.form_name(),
+        quotation_number: inv.invoice_number,
+        error: String::new(),
+    };
+    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
+}
+
+pub async fn invoice_create_draft_invoice_post(
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    auth: OptionalAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    Path(id): Path<i64>,
+) -> Response {
+    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
+    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
+        Ok(Some(i)) => i,
+        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
+    };
+
+    match create_draft_invoice_from_quotation(&state.db, id).await {
+        Ok(draft_id) => respond_create_modal_done::<InvoiceCreateDraftInvoiceModalKey>(
+            &htmx,
+            &q.refresh_table(),
+            &lariv_plugin_finance_invoices::routes::DraftInvoiceDetailRouteTag::new(draft_id).url(),
+        ),
+        Err(e) => {
+            let page = InvoiceCreateDraftInvoiceModalPage {
+                id,
+                form_name: q.form_name(),
+                quotation_number: inv.invoice_number,
+                error: e,
+            };
+            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
+        }
     }
 }
 
@@ -3036,6 +3358,7 @@ async fn create_work_order_from_quotation(
             updated_at: Set(Some(now)),
             work_order_id: Set(saved.id),
             component_id: Set(ql.component_id),
+            product_id: Set(ql.product_id),
             variables: Set(ql.variables.clone()),
             final_cost: Set(ql.final_cost),
             extra_data: Set(ql.extra_data.clone()),
@@ -3056,6 +3379,7 @@ async fn create_work_order_from_quotation(
             updated_at: Set(Some(now)),
             work_order_id: Set(saved.id),
             machine_id: Set(ql.machine_id.filter(|id| *id > 0)),
+            product_id: Set(ql.product_id),
             name: Set(ql.name.clone()),
             variables: Set(ql.variables.clone()),
             final_cost: Set(ql.final_cost),
@@ -3238,6 +3562,7 @@ async fn convert_draft_to_work_order(
             updated_at: Set(Some(now)),
             work_order_id: Set(saved.id),
             component_id: Set(line.component_id),
+            product_id: Set(line.product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
             extra_data: Set(line.extra_data.clone()),
@@ -3268,6 +3593,7 @@ async fn convert_draft_to_work_order(
                 None
             }),
             name: Set(name),
+            product_id: Set(line.product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
         }
@@ -3356,6 +3682,7 @@ async fn new_draft_from_work_order(
             updated_at: Set(Some(now)),
             draft_work_order_id: Set(saved.id),
             component_id: Set(line.component_id),
+            product_id: Set(line.product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
             extra_data: Set(line.extra_data.clone()),
@@ -3379,6 +3706,7 @@ async fn new_draft_from_work_order(
             updated_at: Set(Some(now)),
             draft_work_order_id: Set(saved.id),
             machine_id: Set(machine_id),
+            product_id: Set(line.product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
         }

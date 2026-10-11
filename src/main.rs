@@ -7,6 +7,7 @@ use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
     finance_creditnotes, finance_indian, finance_invoices, finance_products,
+    finance_purchases,
     finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;
@@ -44,14 +45,15 @@ async fn main() -> anyhow::Result<()> {
     let app = marketing_sheet::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
-    // After finance_taxes: work-order line-tax tables reference `taxes`.
-    let app = work_orders::install(app);
     let app = finance_products::install(app);
+    // After finance_taxes (line taxes) and finance_products (line products).
+    let app = work_orders::install(app);
     // Before invoices drop `customers`. Challans reuse an existing company or
     // contact for each customer, or create one, and leave `legacy_customer_id`
     // so invoices point at that same party.
     let app = delivery::install(app);
     let app = finance_invoices::install(app);
+    let app = finance_purchases::install(app);
     let app = finance_indian::install(app);
     let app = dashboard::install(app);
     let app = hr::install(app);
