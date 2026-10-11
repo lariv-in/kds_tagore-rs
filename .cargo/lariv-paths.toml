@@ -16,6 +16,7 @@ lariv-plugin-finance-common = { path = "../../lariv-rs/plugins/finance_common" }
 lariv-plugin-finance-creditnotes = { path = "../../lariv-rs/plugins/finance_creditnotes" }
 lariv-plugin-finance-invoices = { path = "../../lariv-rs/plugins/finance_invoices" }
 lariv-plugin-finance-products = { path = "../../lariv-rs/plugins/finance_products" }
+lariv-plugin-finance-purchases = { path = "../../lariv-rs/plugins/finance_purchases" }
 lariv-plugin-finance-taxes = { path = "../../lariv-rs/plugins/finance_taxes" }
 lariv-plugin-hr = { path = "../../lariv-rs/plugins/hr" }
 lariv-plugin-tasks = { path = "../../lariv-rs/plugins/tasks" }
