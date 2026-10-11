@@ -11,8 +11,8 @@ use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms, hr,
-    inventory, llm_assistant, otp, tasks, users, website,
+    finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms,
+    hr, inventory, llm_assistant, otp, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -126,27 +126,9 @@ fn kds_tagore_registers_forms_app_tile() {
                     "/dashboard/work-orders",
                     "KDS Quotations tile should open the quotation list"
                 );
-                let purchases = catalog
-                    .apps()
-                    .iter()
-                    .find(|t| t.key == "kds_tagore-purchases")
-                    .expect("Purchases tile");
-                assert_eq!(purchases.verbose_name, "Purchases");
-                assert_eq!(
-                    purchases.href.trim_end_matches('/'),
-                    "/dashboard/finance-purchases",
-                    "Purchases tile should open the purchases list"
-                );
-                let payments = catalog
-                    .apps()
-                    .iter()
-                    .find(|t| t.key == "kds_tagore-payments")
-                    .expect("Payments tile");
-                assert_eq!(payments.verbose_name, "Payments");
-                assert_eq!(
-                    payments.href.trim_end_matches('/'),
-                    "/dashboard/finance-invoices/payments",
-                    "Payments tile should open the payments list"
+                assert!(
+                    keys.iter().all(|k| *k != "kds_tagore-purchases" && *k != "kds_tagore-payments"),
+                    "purchases and payments belong in Accounting, not the apps grid, got: {keys:?}"
                 );
                 assert!(
                     keys.iter().all(|k| *k != "kds_tagore-delivery"),
@@ -163,8 +145,6 @@ fn kds_tagore_registers_forms_app_tile() {
                     accountant_keys,
                     vec![
                         "kds_tagore-machinery-schedule".to_string(),
-                        "kds_tagore-payments".to_string(),
-                        "kds_tagore-purchases".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_contacts".to_string(),
                         "p_finance_accounts".to_string(),
@@ -172,7 +152,7 @@ fn kds_tagore_registers_forms_app_tile() {
                         "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Payments, Purchases, Quotations, Machinery Schedule, Tasks, HR, Inventory, and Contacts"
+                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, and Contacts"
                 );
 
                 let employee_keys: Vec<_> = catalog

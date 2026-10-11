@@ -6,8 +6,7 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
-    finance_creditnotes, finance_indian, finance_invoices, finance_products,
-    finance_purchases,
+    finance_creditnotes, finance_indian, finance_invoices, finance_products, finance_purchases,
     finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks, users, website,
 };
 use tracing_subscriber::EnvFilter;

@@ -29,8 +29,7 @@ use lariv_core::{
     app::App,
     capability::CapStore,
     db::{DbCap, DbTag},
-    define_passthrough_cap,
-    define_plugin_install,
+    define_passthrough_cap, define_plugin_install,
     hooks::AttachState,
     traits::{
         add::{AddCapability, CapTagAbsent},

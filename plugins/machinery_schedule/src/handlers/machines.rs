@@ -18,7 +18,6 @@ use lariv_core::{
 use lariv_plugin_users::middleware::RequireAuth;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
 
-use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 use crate::{
     entities::machine::{self, Entity as MachineEntity},
     forms::MachineForm,
@@ -42,6 +41,7 @@ use crate::{
         MachineJobRow, MachineListPage, MachineRow, MachineSelectPage,
     },
 };
+use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 
 #[derive(Debug, serde::Deserialize, Default)]
 pub struct MachineListQuery {
@@ -210,8 +210,7 @@ pub async fn detail(
     Query(q): Query<MachineDetailQuery>,
 ) -> Response {
     let Some(m) = find_machine_scoped(&state.db, id, &ctx).await else {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     };
     let sort = machine_detail_sort(q.sort.as_deref());
     let jobs = load_machine_jobs(&state.db, m.id, Some(&sort)).await;
@@ -267,8 +266,7 @@ pub async fn create_post(
     HtmlFormBody(form): HtmlFormBody<MachineForm>,
 ) -> Response {
     if !can_manage(&ctx) {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     }
     let parsed = parse_machine_form(&form);
     let (name, cost_formula, variables) = match parsed {
@@ -328,12 +326,10 @@ pub async fn edit_get(
     Query(q): Query<ModalNameQuery>,
 ) -> Response {
     if !can_manage(&ctx) {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     }
     let Some(m) = find_machine_scoped(&state.db, id, &ctx).await else {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     };
     let variables = schema_entries_for(&m);
     let page = MachineEditModalPage {
@@ -357,12 +353,10 @@ pub async fn edit_post(
     HtmlFormBody(form): HtmlFormBody<MachineForm>,
 ) -> Response {
     if !can_manage(&ctx) {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     }
     let Some(existing) = find_machine_scoped(&state.db, id, &ctx).await else {
-        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url())
-            .into_response();
+        return Redirect::to(&crate::routes::MachineDefaultRouteTag.url()).into_response();
     };
     let parsed = parse_machine_form(&form);
     let (name, cost_formula, variables) = match parsed {
@@ -443,8 +437,7 @@ pub async fn delete_post(
                 modal_uid: MachineDeleteModalKey::ID.to_string(),
                 message: "Are you sure you want to delete this machine?".into(),
                 form_name: "kds_ms.MachineDeleteForm".into(),
-                post_url: crate::routes::MachineDeletePostRouteTag::new(id)
-                    .url(),
+                post_url: crate::routes::MachineDeletePostRouteTag::new(id).url(),
                 error: e.to_string(),
             };
             html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx)).into_response()

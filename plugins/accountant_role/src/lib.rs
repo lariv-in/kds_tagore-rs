@@ -4,7 +4,7 @@
 //! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, and Contacts.
 //! HR is read-only holidays, punch in and punch out, the accountant's own leave, and overtime.
 
-use lariv_core::apps::{AppTile, AppsCapability, AppsRegistrar, PluginType};
+use lariv_core::apps::{AppsCapability, AppsRegistrar};
 use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
 use lariv_plugin_finance_accounts::{
     ACCOUNTING_APP_KEY,
@@ -13,7 +13,7 @@ use lariv_plugin_finance_accounts::{
 use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
-use lariv_plugin_finance_purchases::routes::{FinancePurchasesMutate, FinancePurchasesView, PurchaseDefaultRouteTag};
+use lariv_plugin_finance_purchases::routes::{FinancePurchasesMutate, FinancePurchasesView};
 use lariv_plugin_finance_taxes::routes::{FinanceTaxesMutate, FinanceTaxesView};
 use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView, OvertimeView};
 use lariv_plugin_inventory::routes::{InventoryMutate, InventoryView};
@@ -79,22 +79,6 @@ pub struct AppsHook;
 
 impl AppsRegistrar for AppsHook {
     fn register_apps(self, apps: AppsCapability) -> AppsCapability {
-        let apps = apps.register(AppTile {
-            key: "kds_tagore-payments".into(),
-            verbose_name: "Payments".into(),
-            href: lariv_plugin_finance_invoices::routes::PaymentListRouteTag.url(),
-            icon: "banknotes".into(),
-            plugin_type: PluginType::App,
-            roles: vec![Accountant::NAME.into()],
-        });
-        let apps = apps.register(AppTile {
-            key: "kds_tagore-purchases".into(),
-            verbose_name: "Purchases".into(),
-            href: PurchaseDefaultRouteTag.url(),
-            icon: "document-text".into(),
-            plugin_type: PluginType::App,
-            roles: vec![Accountant::NAME.into()],
-        });
         let apps = grant_tile(apps, ACCOUNTING_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, TASKS_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, HR_APP_KEY, Accountant::NAME);

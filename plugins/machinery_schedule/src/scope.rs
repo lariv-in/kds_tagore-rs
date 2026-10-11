@@ -1,5 +1,5 @@
-use lariv_plugin_users::{roles::Superuser, state::AuthContext};
 use lariv_core::web::opt_or_log;
+use lariv_plugin_users::{roles::Superuser, state::AuthContext};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder, Select,
     sea_query::{Expr, SimpleExpr},

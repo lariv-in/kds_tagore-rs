@@ -16,7 +16,9 @@ use lariv_core::{
         respond_create_modal_done, respond_edit_modal_done,
     },
 };
-use lariv_plugin_filesystem::entities::filesystem_node::{Column as VNodeColumn, Entity as VNodeEntity};
+use lariv_plugin_filesystem::entities::filesystem_node::{
+    Column as VNodeColumn, Entity as VNodeEntity,
+};
 use lariv_plugin_users::middleware::RequireAuth;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, JoinType, PaginatorTrait,
