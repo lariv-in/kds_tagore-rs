@@ -95,6 +95,7 @@ fn test_machine_get_cost_duration_seconds() {
         created_at: None,
         updated_at: None,
         name: "Lathe".into(),
+        product_id: 1,
         cost_formula: "duration / 3600 * 950".into(),
         variables: kds_tagore_rs::formula::schema_to_json(&schema),
     };
@@ -120,6 +121,7 @@ fn test_invoice_line_totals_and_taxes() {
         variables: serde_json::json!({"qty": 1}),
         final_cost: pretax,
         extra_data: serde_json::json!({}),
+        remarks: String::new(),
     };
     let mach = quotation_machine_line::Model {
         id: 1,
@@ -131,6 +133,7 @@ fn test_invoice_line_totals_and_taxes() {
         name: "Milling".into(),
         variables: serde_json::json!({}),
         final_cost: pretax,
+        remarks: String::new(),
     };
     let inv = quotation::Model {
         id: 10,

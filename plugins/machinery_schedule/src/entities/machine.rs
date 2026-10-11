@@ -15,6 +15,7 @@ pub struct Model {
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
     pub name: String,
+    pub product_id: i64,
     pub cost_formula: String,
     pub variables: Json,
 }

@@ -1544,19 +1544,12 @@ async fn sync_machine_lines(
         if line.machine_id <= 0 {
             continue;
         }
-        let Ok((vars_json, final_cost, machine_name)) =
+        let Ok((vars_json, final_cost, _machine_name)) =
             resolve_and_compute_machine_cost(db, line.machine_id, line.variables.as_ref()).await
         else {
             continue;
         };
-        let Ok(product_id) = crate::line_product::save_machine_line_product(
-            db,
-            0,
-            Some(line.machine_id),
-            &machine_name,
-            final_cost,
-        )
-        .await
+        let Ok(product_id) = crate::line_product::machine_product_id(db, line.machine_id).await
         else {
             continue;
         };
@@ -1598,6 +1591,21 @@ async fn components_json(db: &sea_orm::DatabaseConnection) -> String {
     serde_json::to_string(&components).unwrap_or_else(|_| "[]".into())
 }
 
+async fn machine_line_remarks_text(
+    db: &sea_orm::DatabaseConnection,
+    submitted: &str,
+    product_id: i64,
+) -> String {
+    if !submitted.trim().is_empty() {
+        return submitted.trim().to_string();
+    }
+    let remarks = crate::line_product::product_remarks_by_id(db, &[product_id]).await;
+    crate::line_product::remarks_with_product_default(
+        submitted,
+        remarks.get(&product_id).map(String::as_str),
+    )
+}
+
 async fn invoice_material_lines_json(db: &sea_orm::DatabaseConnection, invoice_id: i64) -> String {
     let lines = quotation_material_line::Entity::find()
         .filter(quotation_material_line::Column::InvoiceId.eq(invoice_id))
@@ -1633,18 +1641,26 @@ async fn invoice_machine_lines_json(db: &sea_orm::DatabaseConnection, invoice_id
         .await
         .unwrap_or_default();
     let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
+    let product_ids: Vec<i64> = lines.iter().map(|l| l.product_id).collect();
     let tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &ids)
         .await
         .unwrap_or_default();
+    let product_remarks = crate::line_product::product_remarks_by_id(db, &product_ids).await;
     let rows: Vec<serde_json::Value> = lines
         .into_iter()
         .map(|l| {
+            let remarks = crate::line_product::remarks_with_product_default(
+                &l.remarks,
+                product_remarks.get(&l.product_id).map(String::as_str),
+            );
             serde_json::json!({
                 "id": l.id,
                 "db_id": l.id,
                 "machine_id": l.machine_id,
+                "product_id": l.product_id,
                 "variables": l.variables,
                 "tax_ids": tax_map.get(&l.id).cloned().unwrap_or_default(),
+                "remarks": remarks,
             })
         })
         .collect();
@@ -1691,6 +1707,7 @@ async fn sync_invoice_material_lines(
                 variables: Set(vars_json),
                 final_cost: Set(final_cost),
                 extra_data: Set(extra_data),
+                remarks: Set(item.remarks.trim().to_string()),
             };
             if let Ok(saved) = line_am.insert(db).await {
                 let _ = tax_assoc::set_quotation_material_line_taxes(
@@ -1730,17 +1747,11 @@ async fn sync_invoice_machine_lines(
         else {
             continue;
         };
-        let Ok(product_id) = crate::line_product::save_machine_line_product(
-            db,
-            0,
-            Some(line.machine_id),
-            &machine_name,
-            final_cost,
-        )
-        .await
+        let Ok(product_id) = crate::line_product::machine_product_id(db, line.machine_id).await
         else {
             continue;
         };
+        let remarks = machine_line_remarks_text(db, &line.remarks, product_id).await;
         let am = quotation_machine_line::ActiveModel {
             id: Default::default(),
             created_at: Set(Some(now)),
@@ -1751,6 +1762,7 @@ async fn sync_invoice_machine_lines(
             name: Set(machine_name),
             variables: Set(vars_json),
             final_cost: Set(final_cost),
+            remarks: Set(remarks),
         };
         let line_id = match am.insert(db).await {
             Ok(saved) => Some(saved.id),
@@ -1893,14 +1905,7 @@ pub async fn work_order_machine_line_edit_post(
         }
     };
 
-    let product_id = match crate::line_product::save_machine_line_product(
-        &state.db,
-        existing.product_id,
-        Some(form.machine_id),
-        &machine_label,
-        final_cost,
-    )
-    .await
+    let product_id = match crate::line_product::machine_product_id(&state.db, form.machine_id).await
     {
         Ok(id) => id,
         Err(e) => {
@@ -2609,11 +2614,17 @@ pub async fn invoice_detail(
             })
             .collect();
 
+    let product_ids: Vec<i64> = machine_lines_raw.iter().map(|l| l.product_id).collect();
+    let product_remarks = crate::line_product::product_remarks_by_id(&state.db, &product_ids).await;
     let machine_lines: Vec<(quotation_machine_line::Model, String, String, Decimal)> =
         machine_lines_raw
             .iter()
             .cloned()
-            .map(|l| {
+            .map(|mut l| {
+                l.remarks = crate::line_product::remarks_with_product_default(
+                    &l.remarks,
+                    product_remarks.get(&l.product_id).map(String::as_str),
+                );
                 let m_name = l
                     .machine_id
                     .and_then(|id| machine_map.get(&id).cloned())
@@ -3058,6 +3069,7 @@ async fn copy_quotation(
             variables: Set(line.variables),
             final_cost: Set(line.final_cost),
             extra_data: Set(line.extra_data),
+            remarks: Set(line.remarks),
         }
         .insert(&txn)
         .await
@@ -3079,6 +3091,7 @@ async fn copy_quotation(
             name: Set(line.name),
             variables: Set(line.variables),
             final_cost: Set(line.final_cost),
+            remarks: Set(line.remarks),
         }
         .insert(&txn)
         .await
@@ -3108,10 +3121,19 @@ fn quotation_invoice_line(
     product_id: i64,
     variables: serde_json::Value,
     tax_ids: Vec<i64>,
+    remarks: &str,
 ) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftLinePending, String> {
     if product_id <= 0 {
         return Err("a quotation line is not linked to a product".into());
     }
+    let remarks = {
+        let text = remarks.trim();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        }
+    };
     Ok(
         lariv_plugin_finance_invoices::logic::draft::DraftLinePending {
             product_id,
@@ -3119,7 +3141,7 @@ fn quotation_invoice_line(
             quantity: "1".into(),
             variables: Some(variables),
             tax_ids: Some(tax_ids),
-            remarks: None,
+            remarks,
         },
     )
 }
@@ -3170,6 +3192,7 @@ async fn create_draft_invoice_from_quotation(
             line.product_id,
             line.variables,
             mach_tax_map.get(&line.id).cloned().unwrap_or_default(),
+            &line.remarks,
         )?);
     }
     for line in material_lines {
@@ -3177,6 +3200,7 @@ async fn create_draft_invoice_from_quotation(
             line.product_id,
             line.variables,
             mat_tax_map.get(&line.id).cloned().unwrap_or_default(),
+            &line.remarks,
         )?);
     }
     if lines.is_empty() {
@@ -3373,13 +3397,17 @@ async fn create_work_order_from_quotation(
     }
 
     for ql in machine_lines {
+        let product_id = match ql.machine_id.filter(|id| *id > 0) {
+            Some(machine_id) => crate::line_product::machine_product_id(&txn, machine_id).await?,
+            None => ql.product_id,
+        };
         let line = work_order_machine_line::ActiveModel {
             id: Default::default(),
             created_at: Set(Some(now)),
             updated_at: Set(Some(now)),
             work_order_id: Set(saved.id),
             machine_id: Set(ql.machine_id.filter(|id| *id > 0)),
-            product_id: Set(ql.product_id),
+            product_id: Set(product_id),
             name: Set(ql.name.clone()),
             variables: Set(ql.variables.clone()),
             final_cost: Set(ql.final_cost),
@@ -3582,6 +3610,11 @@ async fn convert_draft_to_work_order(
             .cloned()
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| format!("Machine #{}", line.machine_id));
+        let product_id = if line.machine_id > 0 {
+            crate::line_product::machine_product_id(&txn, line.machine_id).await?
+        } else {
+            line.product_id
+        };
         let copied = work_order_machine_line::ActiveModel {
             id: Default::default(),
             created_at: Set(Some(now)),
@@ -3593,7 +3626,7 @@ async fn convert_draft_to_work_order(
                 None
             }),
             name: Set(name),
-            product_id: Set(line.product_id),
+            product_id: Set(product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
         }
@@ -3700,13 +3733,14 @@ async fn new_draft_from_work_order(
         let Some(machine_id) = line.machine_id.filter(|id| *id > 0) else {
             continue;
         };
+        let product_id = crate::line_product::machine_product_id(&txn, machine_id).await?;
         let copied = draft_work_order_machine_line::ActiveModel {
             id: Default::default(),
             created_at: Set(Some(now)),
             updated_at: Set(Some(now)),
             draft_work_order_id: Set(saved.id),
             machine_id: Set(machine_id),
-            product_id: Set(line.product_id),
+            product_id: Set(product_id),
             variables: Set(line.variables.clone()),
             final_cost: Set(line.final_cost),
         }

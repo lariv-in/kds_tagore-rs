@@ -112,6 +112,7 @@ fn parse_machine_form(form: &MachineForm) -> Result<(String, String, serde_json:
         created_at: None,
         updated_at: None,
         name: name.clone(),
+        product_id: 0,
         cost_formula: cost_formula.clone(),
         variables: variables.clone(),
     };
@@ -285,12 +286,37 @@ pub async fn create_post(
                 .into_response();
         }
     };
+    let product_id = match crate::machine_product::save_machine_product(
+        &state.db,
+        0,
+        &name,
+        &variables,
+        &cost_formula,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(error) => {
+            let page = MachineCreateModalPage {
+                form_name: q.form_name(),
+                refresh_table: q.refresh_table(),
+                target_input: q.target_input(),
+                name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
+                error,
+            };
+            return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+                .into_response();
+        }
+    };
     let now = Utc::now();
     let model = machine::ActiveModel {
         id: Default::default(),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
         name: Set(name),
+        product_id: Set(product_id),
         cost_formula: Set(cost_formula),
         variables: Set(variables),
     };
@@ -374,10 +400,34 @@ pub async fn edit_post(
                 .into_response();
         }
     };
+    let product_id = match crate::machine_product::save_machine_product(
+        &state.db,
+        existing.product_id,
+        &name,
+        &variables,
+        &cost_formula,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(error) => {
+            let page = MachineEditModalPage {
+                id,
+                form_name: q.form_name(),
+                name: form.name,
+                cost_formula: form.cost_formula,
+                variables: form.variables,
+                error,
+            };
+            return html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+                .into_response();
+        }
+    };
     let now = Utc::now();
     let mut am: machine::ActiveModel = existing.into();
     am.updated_at = Set(Some(now));
     am.name = Set(name);
+    am.product_id = Set(product_id);
     am.cost_formula = Set(cost_formula);
     am.variables = Set(variables);
     match am.update(&state.db).await {

@@ -17,6 +17,7 @@ pub struct Model {
     pub variables: Json,
     #[sea_orm(column_type = "Decimal(Some((19, 6)))")]
     pub final_cost: Decimal,
+    pub remarks: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

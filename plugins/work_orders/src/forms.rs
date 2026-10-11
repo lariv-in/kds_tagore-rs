@@ -39,12 +39,47 @@ fn line_variable_inputs() -> Markup {
 #[derive(Copy, Clone)]
 pub enum LineEditorDisplayKey {
     TaxesData,
+    ShowRemarks,
 }
 
 impl FormFieldKey for LineEditorDisplayKey {
     fn html_name(self) -> &'static str {
-        "taxes_data"
+        match self {
+            Self::TaxesData => "taxes_data",
+            Self::ShowRemarks => "show_line_remarks",
+        }
     }
+}
+
+fn show_line_remarks(ctx: &FormCtx<'_>) -> bool {
+    ctx.display_of("show_line_remarks") == "1"
+}
+
+fn line_remarks_header(show: bool) -> Markup {
+    if !show {
+        return html! {};
+    }
+    html! { th class="min-w-[10rem]" { "Remarks" } }
+}
+
+fn line_remarks_cell(show: bool) -> Markup {
+    if !show {
+        return html! {};
+    }
+    html! {
+        td class="align-middle min-w-[10rem]" {
+            (PreEscaped(r#"<textarea class="textarea textarea-bordered textarea-xs w-full min-h-14" rows="2" placeholder="Remarks" x-model="item.remarks"></textarea>"#))
+        }
+    }
+}
+
+fn json_str(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
+    obj.get(key)
+        .and_then(|v| match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 fn line_tax_catalog(ctx: &FormCtx<'_>) -> (String, String, String, String, String) {
@@ -942,6 +977,7 @@ impl FormWidget for MaterialLinesWidget {
                         "extra_data": extra_data,
                         "tax_ids": parse_tax_ids_from_obj(&obj),
                         "line_taxes": [],
+                        "remarks": json_str(&obj, "remarks"),
                     }));
                 }
             }
@@ -959,6 +995,9 @@ impl FormWidget for MaterialLinesWidget {
         let tax_bridge = alpine_line_tax_bridge();
         let tax_pick_base = TaxMultiSelectRouteTag::PATH;
         let calc_bridge = alpine_calc_bridge();
+        let show_remarks = show_line_remarks(ctx);
+        let show_remarks_js = if show_remarks { "true" } else { "false" };
+        let totals_colspan = if show_remarks { "6" } else { "5" };
         let alpine_data = format!(
             r#"{{
                 {ALPINE_LENGTH_BRIDGE}
@@ -972,6 +1011,7 @@ impl FormWidget for MaterialLinesWidget {
                 default_material_taxes: {default_material_json},
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
+                showLineRemarks: {show_remarks_js},
                 linesKind: 'material',
                 components: {components_json},
                 items: {rows_json},
@@ -1038,6 +1078,7 @@ impl FormWidget for MaterialLinesWidget {
                             extra_data: extra,
                             tax_ids: Array.isArray(obj.tax_ids) ? obj.tax_ids : [],
                             line_taxes: Array.isArray(obj.line_taxes) ? obj.line_taxes : [],
+                            remarks: obj.remarks == null ? '' : String(obj.remarks),
                         }};
                     }});
                     this.items = rebuilt;
@@ -1068,7 +1109,8 @@ impl FormWidget for MaterialLinesWidget {
                         final_cost: '',
                         extra_data: {{}},
                         tax_ids: line_taxes.map(t => parseInt(t.Key, 10)),
-                        line_taxes
+                        line_taxes,
+                        remarks: ''
                     }};
                     this.items.push(it);
                     this.syncLineTaxStore(it);
@@ -1102,13 +1144,15 @@ impl FormWidget for MaterialLinesWidget {
                         .map(it => {{
                             const extra = this.parseExtra(it.extra_data);
                             extra.dim_units = it.dim_units || {{}};
-                            return {{
+                            const row = {{
                                 id: it.db_id || null,
                                 component_id: parseInt(it.component_id, 10),
                                 variables: it.variables || {{}},
                                 extra_data: extra,
                                 tax_ids: this.taxIdsOf(it)
                             }};
+                            if (this.showLineRemarks) row.remarks = it.remarks || '';
+                            return row;
                         }});
                     return JSON.stringify(valid);
                 }}
@@ -1135,6 +1179,7 @@ impl FormWidget for MaterialLinesWidget {
                                 th class="w-7 text-center" { "#" }
                                 th class="w-40 min-w-[140px]" { "Component" }
                                 th class="min-w-[240px]" { "Variables" }
+                                (line_remarks_header(show_remarks))
                                 th class="min-w-[8rem]" { "Taxes" }
                                 th class="text-right w-24" { "Pre-tax (₹)" }
                                 th class="text-right w-24" { "Total (₹)" }
@@ -1166,6 +1211,7 @@ impl FormWidget for MaterialLinesWidget {
                                     </div>
                                     "#))
                                 }
+                                (line_remarks_cell(show_remarks))
                                 (embed_line_tax_picker())
                                 td class="align-middle text-right font-mono text-xs" {
                                     (PreEscaped(r#"<span x-text="formatMoney(lineUntaxedNumber(item))"></span>"#))
@@ -1181,7 +1227,7 @@ impl FormWidget for MaterialLinesWidget {
                         }
                         tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
                             tr {
-                                td colspan="5" class="align-middle text-right font-medium py-2" { "Final Grand Total (₹):" }
+                                td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Final Grand Total (₹):" }
                                 td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
                                     (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
                                 }
@@ -1241,12 +1287,14 @@ impl FormWidget for MachineLinesWidget {
                         "db_id": db_id,
                         "machine_id": machine_id,
                         "machine_label": machine_label,
+                        "product_id": json_i64_id(obj.get("product_id")),
                         "variables": variables,
                         "dim_units": {},
                         "final_cost": final_cost,
                         "tax_ids": parse_tax_ids_from_obj(&obj),
                         "line_taxes": [],
                         "total": 0,
+                        "remarks": json_str(&obj, "remarks"),
                     }));
                 }
             }
@@ -1264,6 +1312,9 @@ impl FormWidget for MachineLinesWidget {
         let tax_bridge = alpine_line_tax_bridge();
         let tax_pick_base = TaxMultiSelectRouteTag::PATH;
         let calc_bridge = alpine_calc_bridge();
+        let show_remarks = show_line_remarks(ctx);
+        let show_remarks_js = if show_remarks { "true" } else { "false" };
+        let totals_colspan = if show_remarks { "6" } else { "5" };
         let alpine_data = format!(
             r#"{{
                 {ALPINE_LENGTH_BRIDGE}
@@ -1277,6 +1328,7 @@ impl FormWidget for MachineLinesWidget {
                 default_material_taxes: {default_material_json},
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
+                showLineRemarks: {show_remarks_js},
                 linesKind: 'machine',
                 machines: {machines_json},
                 items: {rows_json},
@@ -1327,12 +1379,14 @@ impl FormWidget for MachineLinesWidget {
                         db_id: obj.id != null ? obj.id : (obj.db_id != null ? obj.db_id : null),
                         machine_id: parseInt(obj.machine_id, 10) || 0,
                         machine_label: obj.machine_label || obj.name || '',
+                        product_id: parseInt(obj.product_id, 10) || 0,
                         variables: this.parseVariables(obj.variables),
                         dim_units: {{}},
                         final_cost: obj.final_cost != null ? String(obj.final_cost) : '',
                         tax_ids: Array.isArray(obj.tax_ids) ? obj.tax_ids : [],
                         line_taxes: Array.isArray(obj.line_taxes) ? obj.line_taxes : [],
                         total: 0,
+                        remarks: obj.remarks == null ? '' : String(obj.remarks),
                     }}));
                     this.items = rebuilt;
                     this.nextId = rebuilt.reduce((m, it) => Math.max(m, it.id), 0) + 1;
@@ -1359,12 +1413,14 @@ impl FormWidget for MachineLinesWidget {
                         db_id: null,
                         machine_id: 0,
                         machine_label: '',
+                        product_id: 0,
                         variables: {{}},
                         dim_units: {{}},
                         final_cost: '',
                         tax_ids: line_taxes.map(t => parseInt(t.Key, 10)),
                         line_taxes,
-                        total: 0
+                        total: 0,
+                        remarks: ''
                     }};
                     this.items.push(it);
                     this.syncLineTaxStore(it);
@@ -1395,12 +1451,19 @@ impl FormWidget for MachineLinesWidget {
                 jsonOutput() {{
                     const valid = this.items
                         .filter(it => it.machine_id && parseInt(it.machine_id, 10) > 0)
-                        .map(it => ({{
-                            id: it.db_id || null,
-                            machine_id: parseInt(it.machine_id, 10),
-                            variables: it.variables || {{}},
-                            tax_ids: this.taxIdsOf(it)
-                        }}));
+                        .map(it => {{
+                            const row = {{
+                                id: it.db_id || null,
+                                machine_id: parseInt(it.machine_id, 10),
+                                variables: it.variables || {{}},
+                                tax_ids: this.taxIdsOf(it)
+                            }};
+                            if (this.showLineRemarks) {{
+                                row.remarks = it.remarks || '';
+                                row.product_id = parseInt(it.product_id, 10) || 0;
+                            }}
+                            return row;
+                        }});
                     return JSON.stringify(valid);
                 }}
             }}"#
@@ -1426,6 +1489,7 @@ impl FormWidget for MachineLinesWidget {
                                 th class="w-7 text-center" { "#" }
                                 th class="min-w-[180px]" { "Machine" }
                                 th class="min-w-[240px]" { "Variables" }
+                                (line_remarks_header(show_remarks))
                                 th class="min-w-[8rem]" { "Taxes" }
                                 th class="text-right w-24" { "Pre-tax (₹)" }
                                 th class="text-right w-24" { "Total (₹)" }
@@ -1457,6 +1521,7 @@ impl FormWidget for MachineLinesWidget {
                                     </div>
                                     "#))
                                 }
+                                (line_remarks_cell(show_remarks))
                                 (embed_line_tax_picker())
                                 td class="align-middle text-right font-mono text-xs" {
                                     (PreEscaped(r#"<span x-text="formatMoney(item.untaxed)"></span>"#))
@@ -1472,7 +1537,7 @@ impl FormWidget for MachineLinesWidget {
                         }
                         tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
                             tr {
-                                td colspan="5" class="align-middle text-right font-medium py-2" { "Machine Grand Total (₹):" }
+                                td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Machine Grand Total (₹):" }
                                 td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
                                     (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
                                 }
@@ -1648,6 +1713,11 @@ pub struct DraftWorkOrderMachineLineInput {
     pub variables: Option<serde_json::Value>,
     #[serde(default, alias = "TaxIds", alias = "taxes")]
     pub tax_ids: Vec<i64>,
+    /// Submitted product id. The saved line uses the machine's product.
+    #[serde(default)]
+    pub product_id: i64,
+    #[serde(default)]
+    pub remarks: String,
 }
 
 pub type WorkOrderMachineLineInput = DraftWorkOrderMachineLineInput;
@@ -1664,6 +1734,8 @@ pub struct DraftWorkOrderMaterialLineInput {
     pub extra_data: Option<serde_json::Value>,
     #[serde(default, alias = "TaxIds", alias = "taxes")]
     pub tax_ids: Vec<i64>,
+    #[serde(default)]
+    pub remarks: String,
 }
 
 pub type DraftWorkOrderLineInput = DraftWorkOrderMaterialLineInput;

@@ -1627,6 +1627,7 @@ impl InvoiceDetailPage {
                                     tr {
                                         th { "Machine" }
                                         th { "Variables" }
+                                        th { "Remarks" }
                                         th { "Taxes" }
                                         th { "Pre-tax" }
                                         th { "Amount" }
@@ -1637,6 +1638,7 @@ impl InvoiceDetailPage {
                                         tr {
                                             td { (machine_name) }
                                             td class="font-mono text-xs" { (self.machine_vars(l)) }
+                                            td class="whitespace-pre-wrap text-xs" { (l.remarks) }
                                             td { (tax_labels) }
                                             td class="font-semibold" { (format!("₹ {:.2}", l.line_total())) }
                                             td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
@@ -1660,6 +1662,7 @@ impl InvoiceDetailPage {
                                     tr {
                                         th { "Component" }
                                         th { "Variables" }
+                                        th { "Remarks" }
                                         th { "Taxes" }
                                         th { "Pre-tax" }
                                         th { "Amount" }
@@ -1670,6 +1673,7 @@ impl InvoiceDetailPage {
                                         tr {
                                             td { (comp_name) }
                                             td class="font-mono text-xs" { (self.material_vars(l)) }
+                                            td class="whitespace-pre-wrap text-xs" { (l.remarks) }
                                             td { (tax_labels) }
                                             td class="font-semibold" { (format!("₹ {:.2}", l.final_cost)) }
                                             td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
@@ -2131,7 +2135,8 @@ impl RenderTemplate for InvoiceCreateModalPage {
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)
             .display(InvoiceFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json);
+            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json)
+            .display(LineEditorDisplayKey::ShowRemarks, "1");
 
         let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
         modal_keyed::<InvoiceCreateModalKey>(
@@ -2201,7 +2206,8 @@ impl RenderTemplate for InvoiceEditModalPage {
             .display(InvoiceFormField::MaterialLines, &self.components_json)
             .value(InvoiceFormField::MachineLines, machine_lines_val)
             .display(InvoiceFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json);
+            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json)
+            .display(LineEditorDisplayKey::ShowRemarks, "1");
         let delete_url = InvoiceDeleteGetRouteTag::new(self.id).url();
 
         let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);

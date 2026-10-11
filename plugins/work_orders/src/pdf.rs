@@ -91,6 +91,7 @@ struct PdfMaterialLine {
     taxes: String,
     tax_items: Vec<PdfTax>,
     pre_tax: String,
+    remarks: String,
 }
 
 #[derive(Serialize)]
@@ -105,6 +106,7 @@ struct PdfMachineLine {
     taxes: String,
     tax_items: Vec<PdfTax>,
     pre_tax: String,
+    remarks: String,
 }
 
 #[derive(Serialize)]
@@ -732,6 +734,7 @@ pub async fn render_work_order_pdf(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 final_cost: dec_str(l.taxed_total(taxes)),
+                remarks: String::new(),
             }
         })
         .collect();
@@ -756,6 +759,7 @@ pub async fn render_work_order_pdf(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 line_total: dec_str(l.taxed_total(taxes)),
+                remarks: String::new(),
             }
         })
         .collect();
@@ -886,6 +890,7 @@ pub async fn render_issued_work_order_pdf(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 final_cost: dec_str(l.taxed_total(taxes)),
+                remarks: String::new(),
             }
         })
         .collect();
@@ -913,6 +918,7 @@ pub async fn render_issued_work_order_pdf(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 line_total: dec_str(l.taxed_total(taxes)),
+                remarks: String::new(),
             }
         })
         .collect();
@@ -1057,10 +1063,13 @@ pub async fn render_quotation_pdf_parts(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 final_cost: dec_str(l.taxed_total(taxes)),
+                remarks: l.remarks.clone(),
             }
         })
         .collect();
 
+    let product_ids: Vec<i64> = machine_lines.iter().map(|l| l.product_id).collect();
+    let product_remarks = crate::line_product::product_remarks_by_id(db, &product_ids).await;
     let pdf_machine_lines = machine_lines
         .iter()
         .map(|l| {
@@ -1084,6 +1093,10 @@ pub async fn render_quotation_pdf_parts(
                 taxes: tax_assoc::tax_labels_display(taxes),
                 tax_items: taxes_to_pdf(taxes),
                 line_total: dec_str(l.taxed_total(taxes)),
+                remarks: crate::line_product::remarks_with_product_default(
+                    &l.remarks,
+                    product_remarks.get(&l.product_id).map(String::as_str),
+                ),
             }
         })
         .collect();
@@ -1165,6 +1178,7 @@ fn sample_work_order_root(dt: DateTime<Utc>, tz: &str) -> WorkOrderRoot {
             taxes: "GST 18%".into(),
             tax_items: vec![sample_gst_tax()],
             final_cost: "351.05".into(),
+            remarks: String::new(),
         }],
         machine_lines: vec![PdfMachineLine {
             id: 1,
@@ -1175,6 +1189,7 @@ fn sample_work_order_root(dt: DateTime<Utc>, tz: &str) -> WorkOrderRoot {
             taxes: "GST 18%".into(),
             tax_items: vec![sample_gst_tax()],
             line_total: "2802.5".into(),
+            remarks: String::new(),
         }],
         total_amount: "3153.55".into(),
         company_name: company.name,
@@ -1207,6 +1222,7 @@ fn sample_invoice_root() -> InvoiceRoot {
             taxes: "GST 18%".into(),
             tax_items: vec![sample_gst_tax()],
             final_cost: "5015".into(),
+            remarks: "Cut to length.".into(),
         }],
         machine_lines: vec![PdfMachineLine {
             id: 1,
@@ -1217,6 +1233,7 @@ fn sample_invoice_root() -> InvoiceRoot {
             taxes: "GST 18%".into(),
             tax_items: vec![sample_gst_tax()],
             line_total: "3363".into(),
+            remarks: "Include tool change.".into(),
         }],
         grand_total: "8378".into(),
         remarks: "Lead time 10 working days.".into(),

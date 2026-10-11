@@ -13,6 +13,7 @@ pub mod handlers;
 pub mod job_source_doc;
 pub mod keys;
 pub mod logic;
+pub mod machine_product;
 pub mod migrations;
 pub mod routes;
 pub mod scope;

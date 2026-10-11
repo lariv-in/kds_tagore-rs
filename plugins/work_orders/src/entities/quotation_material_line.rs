@@ -17,6 +17,7 @@ pub struct Model {
     #[sea_orm(column_type = "Decimal(Some((19, 6)))")]
     pub final_cost: Decimal,
     pub extra_data: Json,
+    pub remarks: String,
 }
 
 impl Model {

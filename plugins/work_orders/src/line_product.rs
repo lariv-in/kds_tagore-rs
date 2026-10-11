@@ -1,12 +1,16 @@
 //! Products backing quotation and work-order lines.
 //!
-//! A component owns one goods product. Each machine line owns a services product.
+//! A component owns one goods product. Each machine owns one services product.
 //! Variable schemas and price formulas live on that product; the line keeps the
 //! values entered for that job.
 
+use std::collections::HashMap;
+
 use chrono::Utc;
 use rust_decimal::Decimal;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+};
 use uuid::Uuid;
 
 use lariv_plugin_finance_products::entities::product::{self, ProductType};
@@ -151,46 +155,56 @@ pub async fn component_product_id<C: ConnectionTrait>(
     ensure_component_product(db, &component).await
 }
 
-/// Create or update the services product for a machine line.
-///
-/// The product takes the machine's variable schema and cost formula. `fallback_cost`
-/// is the sales formula when the machine has no formula.
-pub async fn save_machine_line_product<C: ConnectionTrait>(
+/// Product linked to this machine, creating one when the link is missing.
+pub async fn machine_product_id<C: ConnectionTrait>(
     db: &C,
-    product_id: i64,
-    machine_id: Option<i64>,
-    name: &str,
-    fallback_cost: Decimal,
+    machine_id: i64,
 ) -> Result<i64, String> {
-    let mach = match machine_id.filter(|id| *id > 0) {
-        Some(id) => kds_plugin_machinery_schedule::entities::machine::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(|e| e.to_string())?,
-        None => None,
-    };
-    let display = match name.trim() {
-        "" => mach
-            .as_ref()
-            .map(|m| m.name.clone())
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| "Machine line".into()),
-        other => other.to_string(),
-    };
-    let (schema, formula) = match &mach {
-        Some(m) => (
-            schema_text(&m.variables),
-            formula_text(&m.cost_formula, fallback_cost),
-        ),
-        None => ("{}".into(), formula_text("", fallback_cost)),
-    };
-    write_product(
-        db,
-        product_id,
-        display,
-        ProductType::Services,
-        schema,
-        formula,
-    )
-    .await
+    kds_plugin_machinery_schedule::machine_product::machine_product_id(db, machine_id).await
+}
+
+/// Line text wins. A blank line uses the linked product's remarks.
+pub fn remarks_with_product_default(line_remarks: &str, product_remarks: Option<&str>) -> String {
+    let line = line_remarks.trim();
+    if !line.is_empty() {
+        return line.to_string();
+    }
+    product_remarks.unwrap_or("").trim().to_string()
+}
+
+pub async fn product_remarks_by_id<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+) -> HashMap<i64, String> {
+    let ids: Vec<i64> = ids.iter().copied().filter(|id| *id > 0).collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    let products = product::Entity::find()
+        .filter(product::Column::Id.is_in(ids))
+        .all(db)
+        .await
+        .unwrap_or_default();
+    products
+        .into_iter()
+        .map(|p| (p.id, p.remarks.unwrap_or_default()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remarks_with_product_default;
+
+    #[test]
+    fn blank_line_remarks_use_the_product() {
+        assert_eq!(
+            remarks_with_product_default("  ", Some("  From the product  ")),
+            "From the product"
+        );
+        assert_eq!(
+            remarks_with_product_default(" On the line ", Some("From the product")),
+            "On the line"
+        );
+        assert_eq!(remarks_with_product_default("", None), "");
+    }
 }
