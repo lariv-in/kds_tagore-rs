@@ -66,12 +66,6 @@ pub struct MachineForm {
 }
 
 #[html_form]
-pub struct MachineFilterForm {
-    #[form(label = "Name", widget = Text)]
-    pub name: String,
-}
-
-#[html_form]
 pub struct JobForm {
     #[form(label = "Name", required, widget = Text)]
     pub name: String,
@@ -109,10 +103,4 @@ pub struct JobForm {
         hint = "0–100. Saving at 100% moves this job to Completed."
     )]
     pub progress: i64,
-}
-
-#[html_form]
-pub struct JobFilterForm {
-    #[form(label = "Name", widget = Text)]
-    pub name: String,
 }

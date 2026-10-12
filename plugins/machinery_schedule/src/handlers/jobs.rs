@@ -5,14 +5,12 @@ use axum::{
 };
 use chrono::Utc;
 use lariv_core::{
-    components::{
-        DEFAULT_PAGE_SIZE, ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx, SwapKey,
-    },
+    components::{ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
     html_form::HtmlFormBody,
-    http::{Cap, RouteQueryBuilder},
+    http::Cap,
     template::RenderAppPane,
     web::{
-        Htmx, QueryPage, html_built_page_or_app_layout, html_built_page_with_slots,
+        Htmx, QueryPage, QueryPageSize, html_built_page_or_app_layout, html_built_page_with_slots,
         respond_create_modal_done, respond_edit_modal_done,
     },
 };
@@ -20,6 +18,7 @@ use lariv_plugin_filesystem::entities::filesystem_node::{
     Column as VNodeColumn, Entity as VNodeEntity,
 };
 use lariv_plugin_users::middleware::RequireAuth;
+use sea_orm::sea_query::Condition;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, JoinType, PaginatorTrait,
     QueryFilter, QuerySelect, RelationTrait, TransactionTrait,
@@ -33,6 +32,7 @@ use crate::{
         job_machine,
         machine::{self, Entity as MachineEntity},
     },
+    filters::{job_fields, prepare},
     forms::JobForm,
     handlers::{
         BulkIdsForm, BulkIdsQuery, ModalNameQuery, bulk_delete_message, parse_bulk_ids,
@@ -54,8 +54,8 @@ use crate::{
         JobDetailRouteTag,
     },
     scope::{
-        apply_completed_job_hub_sort, apply_name_filter, apply_open_job_hub_sort, can_manage,
-        find_job_scoped, find_open_job, scope_superuser, sql_job_not_completed,
+        apply_completed_job_hub_sort, apply_open_job_hub_sort, can_manage, find_job_scoped,
+        find_open_job, scope_superuser, sql_job_not_completed,
     },
     state::MachineryScheduleState,
     templates::{
@@ -68,12 +68,12 @@ use crate::{
 pub struct HubQuery {
     #[serde(default)]
     pub tab: Option<String>,
-    #[serde(default, rename = "Name", alias = "name")]
-    pub name: Option<String>,
     #[serde(default)]
     pub sort: Option<String>,
     #[serde(default)]
     pub page: QueryPage,
+    #[serde(default)]
+    pub page_size: QueryPageSize,
 }
 
 fn normalize_tab(tab: Option<&str>) -> &'static str {
@@ -83,19 +83,12 @@ fn normalize_tab(tab: Option<&str>) -> &'static str {
     }
 }
 
-fn hub_list_path(q: &HubQuery) -> String {
-    let mut builder =
-        RouteQueryBuilder::new(JobDefaultRouteTag).query("tab", normalize_tab(q.tab.as_deref()));
-    if let Some(name) = q.name.as_deref().filter(|s| !s.is_empty()) {
-        builder = builder.query("Name", name);
+fn hub_list_path(query: Option<&str>) -> String {
+    let base = JobDefaultRouteTag.url();
+    match query.filter(|q| !q.is_empty()) {
+        Some(q) => format!("{base}?{q}"),
+        None => base,
     }
-    if let Some(sort) = q.sort.as_deref().filter(|s| !s.is_empty()) {
-        builder = builder.query("sort", sort);
-    }
-    if q.page.get() > 1 {
-        builder = builder.query("page", q.page.get());
-    }
-    builder.build()
 }
 
 pub async fn machine_items_from_ids(
@@ -165,15 +158,16 @@ async fn query_jobs_tab(
     db: &sea_orm::DatabaseConnection,
     q: &HubQuery,
     auth: &lariv_plugin_users::state::AuthContext,
+    condition: Condition,
 ) -> ObjectList<JobRow> {
     let tab = normalize_tab(q.tab.as_deref());
     let page = q.page.get();
-    let page_size = DEFAULT_PAGE_SIZE;
+    let page_size = q.page_size.get();
     match tab {
         "completed" => {
             let mut query = completed_job::Entity::find()
                 .join(JoinType::InnerJoin, completed_job::Relation::Job.def());
-            query = apply_name_filter(query, job::Column::Name, q.name.as_deref());
+            query = query.filter(condition.clone());
             query = scope_superuser(query, auth);
             query = apply_completed_job_hub_sort(query, q.sort.as_deref());
             let paginator = query.paginate(db, page_size as u64);
@@ -212,7 +206,7 @@ async fn query_jobs_tab(
         }
         _ => {
             let mut query = JobEntity::find().filter(sql_job_not_completed());
-            query = apply_name_filter(query, job::Column::Name, q.name.as_deref());
+            query = query.filter(condition);
             query = scope_superuser(query, auth);
             query = apply_open_job_hub_sort(query, q.sort.as_deref());
             let paginator = query.paginate(db, page_size as u64);
@@ -258,13 +252,21 @@ pub async fn hub(
     Query(q): Query<HubQuery>,
 ) -> maud::Markup {
     let tab = normalize_tab(q.tab.as_deref()).to_string();
-    let jobs = query_jobs_tab(&state.db, &q, &ctx).await;
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        job_fields(),
+        state.db.get_database_backend(),
+    );
+    let jobs = query_jobs_tab(&state.db, &q, &ctx, prepared.condition).await;
     let page = JobHubPage {
         jobs,
         tab,
-        filter_name: q.name.clone().unwrap_or_default(),
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page_size: q.page_size.get(),
         can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
@@ -284,6 +286,7 @@ async fn respond_job_order_move(
     state: MachineryScheduleState,
     ctx: lariv_plugin_users::state::AuthContext,
     htmx: Htmx,
+    uri: Uri,
     q: HubQuery,
     id: i64,
     dir: OrderMove,
@@ -294,39 +297,50 @@ async fn respond_job_order_move(
     if let Err(e) = move_open_job_order(&state.db, id, &ctx, dir).await {
         tracing::warn!(error = %e, job_id = id, "move job order");
     }
-    let jobs = query_jobs_tab(&state.db, &q, &ctx).await;
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        job_fields(),
+        state.db.get_database_backend(),
+    );
+    let jobs = query_jobs_tab(&state.db, &q, &ctx, prepared.condition).await;
+    let list_path = hub_list_path(uri.query());
     let page = JobHubPage {
         jobs,
         tab: normalize_tab(q.tab.as_deref()).to_string(),
-        filter_name: q.name.clone().unwrap_or_default(),
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
         sort: q.sort.clone().unwrap_or_default(),
-        path_and_query: hub_list_path(&q),
+        path_and_query: list_path.clone(),
+        page_size: q.page_size.get(),
         can_edit: can_manage(&ctx),
     };
     if htmx.request {
         return page.render_table().into_response();
     }
-    Redirect::to(&hub_list_path(&q)).into_response()
+    Redirect::to(&list_path).into_response()
 }
 
 pub async fn move_up_post(
     Cap(state): Cap<MachineryScheduleState>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
+    uri: Uri,
     Query(q): Query<HubQuery>,
     Path(id): Path<i64>,
 ) -> Response {
-    respond_job_order_move(state, ctx, htmx, q, id, OrderMove::Up).await
+    respond_job_order_move(state, ctx, htmx, uri, q, id, OrderMove::Up).await
 }
 
 pub async fn move_down_post(
     Cap(state): Cap<MachineryScheduleState>,
     RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
+    uri: Uri,
     Query(q): Query<HubQuery>,
     Path(id): Path<i64>,
 ) -> Response {
-    respond_job_order_move(state, ctx, htmx, q, id, OrderMove::Down).await
+    respond_job_order_move(state, ctx, htmx, uri, q, id, OrderMove::Down).await
 }
 
 async fn job_detail_links(

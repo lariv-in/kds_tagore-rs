@@ -32,6 +32,11 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use super::filters::{
+    ListQuery, allows_decimal, allows_i64, allows_text, component_fields, draft_work_order_fields,
+    fill_company_fk, issued_work_order_fields, paginate, prepare, quotation_fields,
+    variables_label,
+};
 use super::{
     entities::{
         WorkOrdersPreferences, component, draft_work_order, draft_work_order_machine_line,
@@ -87,8 +92,16 @@ pub async fn work_orders_list(
     auth: OptionalAuth,
     htmx: Htmx,
     uri: Uri,
+    Query(q): Query<ListQuery>,
 ) -> maud::Markup {
+    let mut prepared = prepare(
+        uri.query().unwrap_or(""),
+        draft_work_order_fields(),
+        state.db.get_database_backend(),
+    );
+    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
     let orders = draft_work_order::Entity::find()
+        .filter(prepared.condition.clone())
         .order_by_desc(draft_work_order::Column::Id)
         .all(&state.db)
         .await
@@ -154,11 +167,24 @@ pub async fn work_orders_list(
             let count = lines.len() + machine_lines.len();
             (o, count, total)
         })
+        .filter(|(_, count, total)| {
+            allows_i64(&prepared.post, "lines", *count as i64)
+                && allows_decimal(&prepared.post, "total", *total)
+        })
         .collect();
+    let (orders_with_stats, page_num, num_pages) =
+        paginate(orders_with_stats, q.page.get(), q.page_size.get());
 
     let page = WorkOrderListPage {
         orders: orders_with_stats,
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
+        sort: q.sort.unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page: page_num,
+        num_pages,
+        page_size: q.page_size.get(),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     if htmx.targets::<WorkOrderTableKey>() {
@@ -2075,16 +2101,39 @@ pub async fn components_list(
     auth: OptionalAuth,
     htmx: Htmx,
     uri: Uri,
+    Query(q): Query<ListQuery>,
 ) -> maud::Markup {
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        component_fields(),
+        state.db.get_database_backend(),
+    );
     let comps = component::Entity::find()
+        .filter(prepared.condition)
         .order_by_asc(component::Column::Name)
         .all(&state.db)
         .await
         .unwrap_or_default();
+    let comps: Vec<_> = comps
+        .into_iter()
+        .filter(|comp| {
+            let label = variables_label(&comp.variables);
+            let raw = comp.variables.to_string();
+            allows_text(&prepared.post, "variables", &[label.as_str(), raw.as_str()])
+        })
+        .collect();
+    let (comps, page_num, num_pages) = paginate(comps, q.page.get(), q.page_size.get());
 
     let page = ComponentListPage {
         components: comps,
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
+        sort: q.sort.unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page: page_num,
+        num_pages,
+        page_size: q.page_size.get(),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     if htmx.targets::<ComponentTableKey>() {
@@ -2468,8 +2517,16 @@ pub async fn invoices_list(
     auth: OptionalAuth,
     htmx: Htmx,
     uri: Uri,
+    Query(q): Query<ListQuery>,
 ) -> maud::Markup {
+    let mut prepared = prepare(
+        uri.query().unwrap_or(""),
+        quotation_fields(),
+        state.db.get_database_backend(),
+    );
+    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
     let invoices = quotation::Entity::find()
+        .filter(prepared.condition.clone())
         .order_by_desc(quotation::Column::Date)
         .order_by_desc(quotation::Column::Id)
         .all(&state.db)
@@ -2514,12 +2571,35 @@ pub async fn invoices_list(
             &mach_taxes,
         ));
     }
+    let rows: Vec<_> = invoices
+        .into_iter()
+        .zip(customer_names)
+        .zip(grand_totals)
+        .map(|((invoice, name), total)| (invoice, name, total))
+        .filter(|(_, _, total)| allows_decimal(&prepared.post, "total", *total))
+        .collect();
+    let (rows, page_num, num_pages) = paginate(rows, q.page.get(), q.page_size.get());
+    let mut invoices = Vec::with_capacity(rows.len());
+    let mut customer_names = Vec::with_capacity(rows.len());
+    let mut grand_totals = Vec::with_capacity(rows.len());
+    for (invoice, name, total) in rows {
+        invoices.push(invoice);
+        customer_names.push(name);
+        grand_totals.push(total);
+    }
 
     let page = InvoiceListPage {
         invoices,
         customer_names,
         grand_totals,
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
+        sort: q.sort.unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page: page_num,
+        num_pages,
+        page_size: q.page_size.get(),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     if htmx.targets::<InvoiceTableKey>() {
@@ -3791,8 +3871,16 @@ pub async fn issued_work_orders_list(
     auth: OptionalAuth,
     htmx: Htmx,
     uri: Uri,
+    Query(q): Query<ListQuery>,
 ) -> maud::Markup {
+    let mut prepared = prepare(
+        uri.query().unwrap_or(""),
+        issued_work_order_fields(),
+        state.db.get_database_backend(),
+    );
+    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
     let orders = work_order::Entity::find()
+        .filter(prepared.condition.clone())
         .order_by_desc(work_order::Column::Id)
         .all(&state.db)
         .await
@@ -3873,6 +3961,31 @@ pub async fn issued_work_orders_list(
         ));
         line_counts.push(lines.len() + machine_lines.len());
     }
+    let rows: Vec<_> = orders
+        .into_iter()
+        .zip(customer_names)
+        .zip(job_labels)
+        .zip(line_counts)
+        .zip(totals)
+        .map(|((((order, name), job), count), total)| (order, name, job, count, total))
+        .filter(|(_, _, _, count, total)| {
+            allows_i64(&prepared.post, "lines", *count as i64)
+                && allows_decimal(&prepared.post, "total", *total)
+        })
+        .collect();
+    let (rows, page_num, num_pages) = paginate(rows, q.page.get(), q.page_size.get());
+    let mut orders = Vec::with_capacity(rows.len());
+    let mut customer_names = Vec::with_capacity(rows.len());
+    let mut job_labels = Vec::with_capacity(rows.len());
+    let mut line_counts = Vec::with_capacity(rows.len());
+    let mut totals = Vec::with_capacity(rows.len());
+    for (order, name, job, count, total) in rows {
+        orders.push(order);
+        customer_names.push(name);
+        job_labels.push(job);
+        line_counts.push(count);
+        totals.push(total);
+    }
 
     let page = IssuedWorkOrderListPage {
         orders,
@@ -3880,7 +3993,14 @@ pub async fn issued_work_orders_list(
         job_labels,
         line_counts,
         totals,
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
+        sort: q.sort.unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page: page_num,
+        num_pages,
+        page_size: q.page_size.get(),
     };
     let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     if htmx.targets::<IssuedWorkOrderTableKey>() {

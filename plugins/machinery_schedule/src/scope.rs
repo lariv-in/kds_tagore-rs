@@ -84,17 +84,6 @@ pub async fn find_completed_job_scoped(
     )
 }
 
-pub fn apply_name_filter<E, C>(mut query: Select<E>, col: C, name: Option<&str>) -> Select<E>
-where
-    E: EntityTrait,
-    C: ColumnTrait,
-{
-    if let Some(n) = name.filter(|s| !s.is_empty()) {
-        query = query.filter(col.contains(n));
-    }
-    query
-}
-
 pub fn apply_name_sort_or_id_desc<E>(
     query: Select<E>,
     name_col: E::Column,

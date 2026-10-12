@@ -5,21 +5,22 @@ use axum::{
 };
 use chrono::Utc;
 use lariv_core::{
-    components::{DEFAULT_PAGE_SIZE, ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
+    components::{ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
     html_form::HtmlFormBody,
     http::Cap,
     picker::respond_picker_select,
     template::RenderAppPane,
     web::{
-        Htmx, QueryPage, html_built_page_or_app_layout, html_built_page_with_slots,
+        Htmx, QueryPage, QueryPageSize, html_built_page_or_app_layout, html_built_page_with_slots,
         respond_create_modal_done_fk, respond_edit_modal_done,
     },
 };
 use lariv_plugin_users::middleware::RequireAuth;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait, QueryFilter};
 
 use crate::{
     entities::machine::{self, Entity as MachineEntity},
+    filters::{machine_fields, prepare},
     forms::MachineForm,
     handlers::{ModalNameQuery, path_and_query},
     keys::{
@@ -32,8 +33,8 @@ use crate::{
     },
     routes::{CompletedJobDetailRouteTag, JobDetailRouteTag, MachineDetailRouteTag},
     scope::{
-        apply_name_filter, apply_name_sort_or_id_desc, can_manage, find_machine_scoped,
-        scope_superuser, sort_jobs_by_column,
+        apply_name_sort_or_id_desc, can_manage, find_machine_scoped, scope_superuser,
+        sort_jobs_by_column,
     },
     state::MachineryScheduleState,
     templates::{
@@ -45,12 +46,12 @@ use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_t
 
 #[derive(Debug, serde::Deserialize, Default)]
 pub struct MachineListQuery {
-    #[serde(default, rename = "Name", alias = "name")]
-    pub name: Option<String>,
     #[serde(default)]
     pub sort: Option<String>,
     #[serde(default)]
     pub page: QueryPage,
+    #[serde(default)]
+    pub page_size: QueryPageSize,
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -122,20 +123,15 @@ fn parse_machine_form(form: &MachineForm) -> Result<(String, String, serde_json:
 
 async fn load_machine_rows(
     db: &sea_orm::DatabaseConnection,
-    q: &MachineListQuery,
-    auth: &lariv_plugin_users::state::AuthContext,
+    sort: Option<&str>,
+    page: u32,
     page_size: u32,
+    auth: &lariv_plugin_users::state::AuthContext,
+    condition: sea_orm::sea_query::Condition,
 ) -> ObjectList<MachineRow> {
-    let mut query = MachineEntity::find();
-    query = apply_name_filter(query, machine::Column::Name, q.name.as_deref());
+    let mut query = MachineEntity::find().filter(condition);
     query = scope_superuser(query, auth);
-    query = apply_name_sort_or_id_desc(
-        query,
-        machine::Column::Name,
-        machine::Column::Id,
-        q.sort.as_deref(),
-    );
-    let page = q.page.get();
+    query = apply_name_sort_or_id_desc(query, machine::Column::Name, machine::Column::Id, sort);
     let paginator = query.paginate(db, page_size as u64);
     let total = paginator.num_items().await.unwrap_or(0);
     let models = paginator
@@ -154,12 +150,29 @@ pub async fn list(
     uri: Uri,
     Query(q): Query<MachineListQuery>,
 ) -> maud::Markup {
-    let machines = load_machine_rows(&state.db, &q, &ctx, DEFAULT_PAGE_SIZE).await;
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        machine_fields(),
+        state.db.get_database_backend(),
+    );
+    let page_size = q.page_size.get();
+    let machines = load_machine_rows(
+        &state.db,
+        q.sort.as_deref(),
+        q.page.get(),
+        page_size,
+        &ctx,
+        prepared.condition,
+    )
+    .await;
     let page = MachineListPage {
         machines,
-        filter_name: q.name.clone().unwrap_or_default(),
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page_size,
         can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
@@ -502,12 +515,29 @@ pub async fn select(
     uri: Uri,
     Query(q): Query<MachineSelectQuery>,
 ) -> maud::Markup {
-    let machines = load_machine_rows(&state.db, &q.filter, &ctx, DEFAULT_PAGE_SIZE).await;
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        machine_fields(),
+        state.db.get_database_backend(),
+    );
+    let page_size = q.filter.page_size.get();
+    let machines = load_machine_rows(
+        &state.db,
+        q.filter.sort.as_deref(),
+        q.filter.page.get(),
+        page_size,
+        &ctx,
+        prepared.condition,
+    )
+    .await;
     let page = MachineSelectPage {
         machines,
-        filter_name: q.filter.name.clone().unwrap_or_default(),
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
         sort: q.filter.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page_size,
         target_input: q.target_input.clone().unwrap_or_else(|| "Machines".into()),
         can_edit: can_manage(&ctx),
         multi: query_is_multi(q.multi.as_deref()),

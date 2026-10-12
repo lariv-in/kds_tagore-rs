@@ -8,6 +8,7 @@ pub mod create_modals;
 pub mod crumbs;
 pub mod duration;
 pub mod entities;
+pub mod filters;
 pub mod forms;
 pub mod handlers;
 pub mod job_source_doc;

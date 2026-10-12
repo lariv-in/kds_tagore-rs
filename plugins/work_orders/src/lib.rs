@@ -8,6 +8,7 @@ pub mod cascade;
 pub mod create_modals;
 pub mod crumbs;
 pub mod entities;
+pub mod filters;
 pub mod forms;
 pub mod handlers;
 pub mod keys;

@@ -155,19 +155,50 @@ const ALPINE_LENGTH_BRIDGE: &str = r#"
                     return root && window.Alpine ? Alpine.$data(root) : null;
                 },
                 bindLengthInput(el, target, key) {
-                    this.$nextTick(() => {
+                    const apply = () => {
                         const d = this.lengthData(el);
-                        if (!d) return;
-                        let mm;
+                        if (!d) return false;
                         if (key) {
-                            mm = target.variables ? target.variables[key] : '';
+                            const raw = target.variables ? target.variables[key] : '';
+                            const inUnit = target._lengthInUnit && target._lengthInUnit[key];
+                            if (inUnit || (raw && typeof raw === 'object')) {
+                                let shown = '';
+                                let unit = (target.dim_units && target.dim_units[key]) || 'mm';
+                                if (raw && typeof raw === 'object') {
+                                    shown = (raw.value == null || raw.value === '') ? '' : String(raw.value);
+                                    if (raw.unit) unit = String(raw.unit);
+                                } else {
+                                    shown = (raw == null || raw === '') ? '' : String(raw);
+                                }
+                                d.unit = unit;
+                                d.display = shown;
+                                if (typeof d.syncMm === 'function') d.syncMm(false);
+                                if (!target.variables) target.variables = {};
+                                if (!target.dim_units) target.dim_units = {};
+                                if (!target._lengthInUnit) target._lengthInUnit = {};
+                                target.dim_units[key] = d.unit || unit;
+                                target.variables[key] = shown;
+                                target._lengthInUnit[key] = true;
+                                return true;
+                            }
                             d.unit = (target.dim_units && target.dim_units[key]) || 'mm';
-                        } else {
-                            mm = target.value;
+                            const mm = raw;
+                            d.mm = (mm !== '' && mm !== null && mm !== undefined) ? String(mm) : '';
+                            if (typeof d.mmToDisplay === 'function') d.mmToDisplay();
+                            return true;
                         }
+                        const mm = target.value;
                         d.mm = (mm !== '' && mm !== null && mm !== undefined) ? String(mm) : '';
                         if (typeof d.mmToDisplay === 'function') d.mmToDisplay();
-                    });
+                        return true;
+                    };
+                    const attempt = (left) => {
+                        this.$nextTick(() => {
+                            if (apply() || left <= 0) return;
+                            attempt(left - 1);
+                        });
+                    };
+                    attempt(5);
                 },
                 pullLengthInput(el, target, key) {
                     const d = this.lengthData(el);
@@ -176,9 +207,11 @@ const ALPINE_LENGTH_BRIDGE: &str = r#"
                         if (!target.variables) target.variables = {};
                         if (!target.dim_units) target.dim_units = {};
                         if (!target.dim_inputs) target.dim_inputs = {};
-                        target.variables[key] = d.mm;
+                        if (!target._lengthInUnit) target._lengthInUnit = {};
+                        target.variables[key] = (d.display == null) ? '' : String(d.display);
                         target.dim_units[key] = d.unit || 'mm';
                         target.dim_inputs[key] = d.display;
+                        target._lengthInUnit[key] = true;
                         if (typeof this.recalc === 'function') this.recalc(target);
                     } else {
                         target.value = d.mm;
@@ -677,20 +710,39 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                         type: String(schema[name] || '').toLowerCase()
                     }));
                 },
+                magnitudeOf(val) {
+                    if (val && typeof val === 'object' && !Array.isArray(val) && (Object.prototype.hasOwnProperty.call(val, 'value') || Object.prototype.hasOwnProperty.call(val, 'unit'))) {
+                        return {
+                            value: (val.value == null || val.value === '') ? '' : String(val.value),
+                            unit: val.unit ? String(val.unit) : ''
+                        };
+                    }
+                    return null;
+                },
                 initVarsFromSchema(item, schema) {
                     if (!item.variables || typeof item.variables !== 'object' || Array.isArray(item.variables)) {
                         item.variables = {};
                     }
                     if (!item.dim_units) item.dim_units = {};
+                    if (!item._lengthInUnit) item._lengthInUnit = {};
                     const next = {};
                     for (const name of Object.keys(schema || {})) {
                         let val = (item.variables[name] != null && item.variables[name] !== undefined)
                             ? item.variables[name] : '';
-                        if (String(schema[name]).toLowerCase() === 'duration') {
+                        const ty = String(schema[name] || '').toLowerCase();
+                        const mag = this.magnitudeOf(val);
+                        if (ty === 'duration') {
                             val = this.formatDurationValue(val);
+                        } else if (ty === 'weight' && mag) {
+                            val = mag.value;
+                        } else if (ty === 'length' && mag) {
+                            const unit = mag.unit || item.dim_units[name] || 'mm';
+                            item.dim_units[name] = unit;
+                            item._lengthInUnit[name] = true;
+                            val = mag.value;
                         }
                         next[name] = val;
-                        if (String(schema[name]).toLowerCase() === 'length' && !item.dim_units[name]) {
+                        if (ty === 'length' && !item.dim_units[name]) {
                             item.dim_units[name] = 'mm';
                         }
                     }

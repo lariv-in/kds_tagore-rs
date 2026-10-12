@@ -2,16 +2,19 @@ use frunk::Generic;
 use lariv_core::{
     components::{
         ButtonModalForm, ButtonPost, ButtonSubmit, CodeEditorInput, DeleteConfirmation,
-        DetailHeader, FieldLink, FieldText, FormOpts, HTMX_SWAP_BODY_MODAL, HTMX_TARGET_BODY_MODAL,
-        LayoutMain, LayoutSidebar, ManyToManyItem, ShellChrome, ShellScaffold, SlotCapability,
-        SlotRegistrar, SwapKey, TableColumnHeader, TableRow, attrs::escape_attr, button_modal_form,
-        button_modal_route, button_post, button_submit, code_editor_input, container_column,
-        container_row, data_table_list_refresh, delete_confirmation, detail, detail_header,
-        field_link, field_text, form, form_hx_post_route, label, label_hint, layout_main,
-        layout_sidebar, modal, modal_keyed, row_attr_navigate_route, row_attr_select,
-        row_attr_select_extra, shell_scaffold, table_create_button,
+        DetailHeader, FieldLink, FieldText, FilterClauseView, FormOpts, HTMX_SWAP_BODY_MODAL,
+        HTMX_TARGET_BODY_MODAL, LayoutMain, LayoutSidebar, ListFilterBuilder, ManyToManyItem,
+        PaginationPage, ShellChrome, ShellScaffold, SlotCapability, SlotRegistrar, SwapKey,
+        TableButtonFilter, TableColumnHeader, TablePagination, TableRow, attrs::escape_attr,
+        button_modal_form, button_modal_route, button_post, button_submit, code_editor_input,
+        container_column, container_row, data_table_list_refresh, delete_confirmation, detail,
+        detail_header, field_link, field_text, form, form_hx_get_route, form_hx_post_route, label,
+        label_hint, layout_main, layout_sidebar, list_filter_builder, modal, modal_keyed,
+        pagination_pages, row_attr_navigate_route, row_attr_select, row_attr_select_extra,
+        shell_scaffold, table_button_filter, table_create_button, table_pagination,
     },
-    http::ProvideRequestCaps,
+    http::{FragmentGet, ProvideRequestCaps, RouteUrl},
+    list_filters::{FilterField, FilterRowError},
     picker::{RenderPickerSelect, picker_create_button},
     template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
     web::{modal_create_post_query, modal_edit_post_url},
@@ -47,6 +50,7 @@ use super::machines::{
 };
 use super::routes::*;
 use kds_plugin_machinery_schedule::routes::JobDetailRouteTag;
+use kds_plugin_machinery_schedule::templates::data_table_with_filter_errors;
 
 fn formula_preview(s: &str) -> String {
     let t = s.trim();
@@ -70,6 +74,49 @@ fn schema_label(variables: &serde_json::Value) -> String {
 
 fn order_number_display(s: &str) -> &str {
     if s.trim().is_empty() { "—" } else { s }
+}
+
+fn render_pagination<K: SwapKey>(path_and_query: &str, number: u32, num_pages: u32) -> Markup {
+    let owned = pagination_pages(path_and_query, number, num_pages, true);
+    let pages: Vec<PaginationPage<'_>> = owned
+        .iter()
+        .map(|(ellipsis, url, push_url, active, label)| PaginationPage {
+            ellipsis: *ellipsis,
+            url: url.as_str(),
+            push_url: *push_url,
+            active: *active,
+            label: label.as_str(),
+        })
+        .collect();
+    table_pagination(TablePagination {
+        pages: &pages,
+        hx_target: K::SELECTOR,
+    })
+}
+
+fn list_filter_panel<K, R>(
+    fields: &[FilterField],
+    rows: &[FilterClauseView],
+    page_size: u32,
+    sort: &str,
+    route: R,
+) -> Markup
+where
+    K: SwapKey,
+    R: FragmentGet<K> + RouteUrl + Copy,
+{
+    table_button_filter(TableButtonFilter {
+        panel: list_filter_builder(ListFilterBuilder {
+            fields,
+            rows,
+            page_size,
+            sort,
+            attrs: form_hx_get_route::<K, R>(route),
+            apply_label: "Apply",
+            extra: html! {},
+        }),
+        ..Default::default()
+    })
 }
 
 lariv_core::define_register_items! {
@@ -198,10 +245,17 @@ fn work_order_hub_body(active: &str, table: Markup) -> Markup {
 // 1. WORK ORDERS
 // ==========================================
 
-#[derive(Clone, Generic)]
+#[derive(Generic)]
 pub struct WorkOrderListPage {
     pub orders: Vec<(draft_work_order::Model, usize, Decimal)>,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
+    pub sort: String,
     pub path_and_query: String,
+    pub page: u32,
+    pub num_pages: u32,
+    pub page_size: u32,
 }
 
 impl WorkOrderListPage {
@@ -292,19 +346,27 @@ impl WorkOrderListPage {
             .collect();
 
         let actions = html! {
+            (list_filter_panel::<WorkOrderTableKey, _>(
+                &self.fields,
+                &self.filters,
+                self.page_size,
+                &self.sort,
+                DraftWorkOrdersDefaultRouteTag,
+            ))
             (table_create_button::<WorkOrderTableKey, WorkOrderCreateModalKey>(
                 Some("plus"),
                 "btn-square btn-outline btn-sm",
             ))
         };
 
-        data_table_list_refresh::<WorkOrderTableKey>(
+        data_table_with_filter_errors::<WorkOrderTableKey>(
             "Draft Work Orders",
             actions,
             &headers,
             &rows,
-            html! {},
+            render_pagination::<WorkOrderTableKey>(&self.path_and_query, self.page, self.num_pages),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 
@@ -1050,10 +1112,17 @@ impl RenderTemplate for ComponentSelectPage {
 // 2. COMPONENTS
 // ==========================================
 
-#[derive(Clone, Generic)]
+#[derive(Generic)]
 pub struct ComponentListPage {
     pub components: Vec<component::Model>,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
+    pub sort: String,
     pub path_and_query: String,
+    pub page: u32,
+    pub num_pages: u32,
+    pub page_size: u32,
 }
 
 impl ComponentListPage {
@@ -1125,19 +1194,27 @@ impl ComponentListPage {
             .collect();
 
         let actions = html! {
+            (list_filter_panel::<ComponentTableKey, _>(
+                &self.fields,
+                &self.filters,
+                self.page_size,
+                &self.sort,
+                WorkOrdersComponentsRouteTag,
+            ))
             (table_create_button::<ComponentTableKey, ComponentCreateModalKey>(
                 Some("plus"),
                 "btn-square btn-outline btn-sm",
             ))
         };
 
-        data_table_list_refresh::<ComponentTableKey>(
+        data_table_with_filter_errors::<ComponentTableKey>(
             "Components",
             actions,
             &headers,
             &rows,
-            html! {},
+            render_pagination::<ComponentTableKey>(&self.path_and_query, self.page, self.num_pages),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 }
@@ -1363,12 +1440,19 @@ impl RenderTemplate for ComponentEditModalPage {
     }
 }
 
-#[derive(Clone, Generic)]
+#[derive(Generic)]
 pub struct InvoiceListPage {
     pub invoices: Vec<quotation::Model>,
     pub customer_names: Vec<String>,
     pub grand_totals: Vec<rust_decimal::Decimal>,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
+    pub sort: String,
     pub path_and_query: String,
+    pub page: u32,
+    pub num_pages: u32,
+    pub page_size: u32,
 }
 
 impl InvoiceListPage {
@@ -1454,19 +1538,27 @@ impl InvoiceListPage {
             .collect();
 
         let actions = html! {
+            (list_filter_panel::<InvoiceTableKey, _>(
+                &self.fields,
+                &self.filters,
+                self.page_size,
+                &self.sort,
+                WorkOrdersDefaultRouteTag,
+            ))
             (table_create_button::<InvoiceTableKey, InvoiceCreateModalKey>(
                 Some("plus"),
                 "btn-square btn-outline btn-sm",
             ))
         };
 
-        data_table_list_refresh::<InvoiceTableKey>(
+        data_table_with_filter_errors::<InvoiceTableKey>(
             "Quotations",
             actions,
             &headers,
             &rows,
-            html! {},
+            render_pagination::<InvoiceTableKey>(&self.path_and_query, self.page, self.num_pages),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 }
@@ -1724,14 +1816,21 @@ impl RenderTemplate for InvoiceDetailPage {
     }
 }
 
-#[derive(Clone, Generic)]
+#[derive(Generic)]
 pub struct IssuedWorkOrderListPage {
     pub orders: Vec<work_order::Model>,
     pub customer_names: Vec<String>,
     pub job_labels: Vec<String>,
     pub line_counts: Vec<usize>,
     pub totals: Vec<Decimal>,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
+    pub sort: String,
     pub path_and_query: String,
+    pub page: u32,
+    pub num_pages: u32,
+    pub page_size: u32,
 }
 
 impl IssuedWorkOrderListPage {
@@ -1818,13 +1917,28 @@ impl IssuedWorkOrderListPage {
             })
             .collect();
 
-        data_table_list_refresh::<IssuedWorkOrderTableKey>(
+        let actions = html! {
+            (list_filter_panel::<IssuedWorkOrderTableKey, _>(
+                &self.fields,
+                &self.filters,
+                self.page_size,
+                &self.sort,
+                IssuedWorkOrdersRouteTag,
+            ))
+        };
+
+        data_table_with_filter_errors::<IssuedWorkOrderTableKey>(
             "Work Orders",
-            html! {},
+            actions,
             &headers,
             &rows,
-            html! {},
+            render_pagination::<IssuedWorkOrderTableKey>(
+                &self.path_and_query,
+                self.page,
+                self.num_pages,
+            ),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 

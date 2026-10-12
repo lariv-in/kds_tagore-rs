@@ -1,23 +1,27 @@
 use frunk::Generic;
+use lariv_core::components::table::table_grid_content;
 use lariv_core::{
     components::{
-        ButtonClear, ButtonLink, ButtonModalForm, ButtonSubmit, DeleteConfirmation, DetailHeader,
-        FieldDuration, FieldLink, FieldManyToMany, FieldText, FormOpts, HTMX_SWAP_BODY_MODAL,
-        HTMX_TARGET_BODY_MODAL, HtmlAttrs, LayoutMain, LayoutSidebar, ManyToManyItem, ObjectList,
-        PaginationPage, ShellChrome, ShellScaffold, SidebarMenu, SidebarMenuItem, SlotCapability,
-        SlotRegistrar, SwapKey, TableButtonFilter, TableColumnHeader, TablePagination, TableRow,
-        button_clear, button_link, button_modal_form, button_submit, column_sort_url,
-        container_column, container_error, container_row, data_table_list_refresh,
-        delete_confirmation, detail, detail_header, field_duration, field_link, field_many_to_many,
-        field_text, form, form_hx_get_picker_route, form_hx_get_route, form_hx_post_selector,
-        form_hx_post_url, icon, label, layout_main, layout_sidebar, modal, modal_keyed,
-        pagination_pages, row_attr_navigate, row_attr_navigate_route, row_attr_select_extra,
-        row_attr_select_multi, shell_scaffold, sidebar_menu, sidebar_menu_item_pane,
-        sort_indicator, table_button_filter, table_create_button, table_pagination,
+        ButtonLink, ButtonModalForm, ButtonSubmit, DataTable, DataTableDisplay, DeleteConfirmation,
+        DetailHeader, FieldDuration, FieldLink, FieldManyToMany, FieldText, FilterClauseView,
+        FormOpts, HTMX_SWAP_BODY_MODAL, HTMX_TARGET_BODY_MODAL, HtmlAttrs, LayoutMain,
+        LayoutSidebar, ListFilterBuilder, ManyToManyItem, ObjectList, PaginationPage, ShellChrome,
+        ShellScaffold, SidebarMenu, SidebarMenuItem, SlotCapability, SlotRegistrar, SwapKey,
+        TableButtonFilter, TableColumnHeader, TableListContent, TablePagination, TableRow,
+        button_link, button_modal_form, button_submit, column_sort_url, container_column,
+        container_error, data_table, data_table_list_refresh, delete_confirmation, detail,
+        detail_header, field_duration, field_link, field_many_to_many, field_text,
+        filter_error_banner, form, form_hx_get_picker_route, form_hx_get_route,
+        form_hx_post_selector, form_hx_post_url, icon, label, layout_main, layout_sidebar,
+        list_filter_builder, modal, modal_keyed, pagination_pages, row_attr_navigate,
+        row_attr_navigate_route, row_attr_select_extra, row_attr_select_multi, shell_scaffold,
+        sidebar_menu, sidebar_menu_item_pane, sort_indicator, table_button_columns,
+        table_button_filter, table_create_button, table_list_content, table_pagination,
         table_pagination_picker,
     },
     html_form::{CsrfToken, FormCtx, HtmlForm},
     http::{ProvideRequestCaps, RouteQueryBuilder, RouteUrl},
+    list_filters::{FilterField, FilterRowError},
     picker::{RenderPickerSelect, picker_create_button},
     template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
     web::{modal_create_post_query, modal_edit_post_url},
@@ -28,10 +32,7 @@ use maud::{Markup, PreEscaped, html};
 use super::crumbs::{
     completed_job_crumbs, job_crumbs, jobs_list_crumbs, machine_crumbs, machines_list_crumbs,
 };
-use super::forms::{
-    JobFilterForm, JobFilterFormField, JobForm, JobFormField, MachineFilterForm,
-    MachineFilterFormField, MachineForm, MachineFormField,
-};
+use super::forms::{JobForm, JobFormField, MachineForm, MachineFormField};
 use super::keys::{
     CompletedJobDeleteModalKey, JobCreateModalKey, JobDeleteModalKey, JobDuplicatedModalKey,
     JobEditModalKey, JobHubTableKey, MachineCreateModalKey, MachineDeleteModalKey,
@@ -304,6 +305,63 @@ fn job_form_ctx<'a>(
         .into()
 }
 
+pub fn data_table_with_filter_errors<K: SwapKey>(
+    title: &str,
+    actions: Markup,
+    headers: &[TableColumnHeader<'_>],
+    rows: &[TableRow],
+    pagination: Markup,
+    refresh_url: &str,
+    errors: &[FilterRowError],
+) -> Markup {
+    let list = html! {
+        (filter_error_banner(errors))
+        (table_list_content(TableListContent {
+            headers,
+            rows,
+            hx_target: K::SELECTOR,
+        }))
+    };
+    let grid = html! {
+        (filter_error_banner(errors))
+        (table_grid_content(headers, rows))
+    };
+    let column_keys: Vec<&str> = headers
+        .iter()
+        .map(|header| header.key)
+        .filter(|key| !key.is_empty())
+        .collect();
+    let toolbar = if headers.len() > 1 {
+        html! {
+            (table_button_columns(headers))
+            (actions)
+        }
+    } else {
+        actions
+    };
+    data_table(DataTable {
+        uid: K::ID,
+        title,
+        classes: "w-full",
+        actions: toolbar,
+        displays: vec![
+            DataTableDisplay {
+                name: "Grid".into(),
+                html: grid,
+            },
+            DataTableDisplay {
+                name: "List".into(),
+                html: list,
+            },
+        ],
+        pagination,
+        refresh_url,
+        column_keys: &column_keys,
+        default_view: "List",
+        ..Default::default()
+    })
+}
+
 fn query_suffix(path_and_query: &str) -> String {
     match path_and_query.split_once('?') {
         Some((_, query)) if !query.is_empty() => format!("?{query}"),
@@ -398,9 +456,12 @@ pub struct JobRow {
 pub struct JobHubPage {
     pub jobs: ObjectList<JobRow>,
     pub tab: String,
-    pub filter_name: String,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
     pub sort: String,
     pub path_and_query: String,
+    pub page_size: u32,
     pub can_edit: bool,
 }
 
@@ -635,24 +696,18 @@ impl JobHubPage {
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(&CsrfToken::current(), FormOpts {
+                panel: list_filter_builder(ListFilterBuilder {
+                    fields: &self.fields,
+                    rows: &self.filters,
+                    page_size: self.page_size,
+                    sort: &self.sort,
                     attrs: form_hx_get_route::<JobHubTableKey, JobDefaultRouteTag>(
                         JobDefaultRouteTag,
                     ),
-                    inputs: html! {
+                    apply_label: "Apply",
+                    extra: html! {
                         input type="hidden" name="tab" value=(self.tab) {}
-                        (JobFilterForm::render_inputs(
-                            &FormCtx::form::<JobFilterForm>(CsrfToken::current())
-                                .value(JobFilterFormField::Name, &self.filter_name),
-                        ))
                     },
-                    actions: html! {
-                        (container_row("flex gap-2", html! {
-                            (button_submit(ButtonSubmit { label: "Apply", ..Default::default() }))
-                            (button_clear(ButtonClear { label: "Clear", ..Default::default() }))
-                        }))
-                    },
-                    ..Default::default()
                 }),
                 ..Default::default()
             }))
@@ -672,7 +727,7 @@ impl JobHubPage {
                 (self.bulk_actions())
             };
         }
-        data_table_list_refresh::<JobHubTableKey>(
+        data_table_with_filter_errors::<JobHubTableKey>(
             "Jobs",
             actions,
             &headers,
@@ -683,6 +738,7 @@ impl JobHubPage {
                 self.jobs.num_pages,
             ),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 
@@ -1162,9 +1218,12 @@ pub struct MachineRow {
 #[derive(Generic)]
 pub struct MachineListPage {
     pub machines: ObjectList<MachineRow>,
-    pub filter_name: String,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
     pub sort: String,
     pub path_and_query: String,
+    pub page_size: u32,
     pub can_edit: bool,
 }
 
@@ -1225,18 +1284,16 @@ impl MachineListPage {
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(&CsrfToken::current(), FormOpts {
+                panel: list_filter_builder(ListFilterBuilder {
+                    fields: &self.fields,
+                    rows: &self.filters,
+                    page_size: self.page_size,
+                    sort: &self.sort,
                     attrs: form_hx_get_route::<MachineTableKey, MachineDefaultRouteTag>(
                         MachineDefaultRouteTag,
                     ),
-                    inputs: MachineFilterForm::render_inputs(
-                        &FormCtx::form::<MachineFilterForm>(CsrfToken::current())
-                            .value(MachineFilterFormField::Name, &self.filter_name),
-                    ),
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Apply", ..Default::default() }))
-                    },
-                    ..Default::default()
+                    apply_label: "Apply",
+                    extra: html! {},
                 }),
                 ..Default::default()
             }))
@@ -1250,7 +1307,7 @@ impl MachineListPage {
                 ))
             };
         }
-        data_table_list_refresh::<MachineTableKey>(
+        data_table_with_filter_errors::<MachineTableKey>(
             "Machines",
             actions,
             &headers,
@@ -1261,6 +1318,7 @@ impl MachineListPage {
                 self.machines.num_pages,
             ),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 }
@@ -1566,10 +1624,13 @@ impl RenderTemplate for MachineEditModalPage {
 #[derive(Generic)]
 pub struct MachineSelectPage {
     pub machines: ObjectList<MachineRow>,
-    pub filter_name: String,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
     pub target_input: String,
     pub sort: String,
     pub path_and_query: String,
+    pub page_size: u32,
     pub can_edit: bool,
     pub multi: bool,
 }
@@ -1641,29 +1702,27 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                 ],
             })
             .collect();
+        let target_input = self.target_input.clone();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(&CsrfToken::current(), FormOpts {
+                panel: list_filter_builder(ListFilterBuilder {
+                    fields: &self.fields,
+                    rows: &self.filters,
+                    page_size: self.page_size,
+                    sort: &self.sort,
                     attrs: form_hx_get_picker_route::<
                         MachineSelectTableKey,
                         MachineSelectModalKey,
                         MachineFkSelectRouteTag,
                     >(MachineFkSelectRouteTag)
                     .set("hx-push-url", "false"),
-                    inputs: html! {
-                        (MachineFilterForm::render_inputs(
-                            &FormCtx::form::<MachineFilterForm>(CsrfToken::current())
-                                .value(MachineFilterFormField::Name, &self.filter_name),
-                        ))
-                        input type="hidden" name="target_input" value=(self.target_input) {}
+                    apply_label: "Apply",
+                    extra: html! {
+                        input type="hidden" name="target_input" value=(target_input) {}
                         @if self.multi {
                             input type="hidden" name="multi" value="1" {}
                         }
                     },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Apply", ..Default::default() }))
-                    },
-                    ..Default::default()
                 }),
                 ..Default::default()
             }))
@@ -1678,7 +1737,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                 ))
             };
         }
-        data_table_list_refresh::<MachineSelectTableKey>(
+        data_table_with_filter_errors::<MachineSelectTableKey>(
             "Select machine",
             actions,
             &headers,
@@ -1689,6 +1748,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                 self.machines.num_pages,
             ),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 }

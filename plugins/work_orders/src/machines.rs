@@ -12,41 +12,43 @@ use chrono::Utc;
 use frunk::Generic;
 use lariv_core::{
     components::{
-        ButtonModalForm, ButtonSubmit, DEFAULT_PAGE_SIZE, DetailHeader, FieldDuration, FieldText,
-        FormOpts, LayoutMain, LayoutSidebar, ObjectList, PaginationPage, ShellChrome,
-        ShellScaffold, SwapKey, TableButtonFilter, TableColumnHeader, TablePagination, TableRow,
-        button_modal_form, button_submit, column_sort_url, container_column,
+        ButtonModalForm, ButtonSubmit, DetailHeader, FieldDuration, FieldText, FilterClauseView,
+        FormOpts, LayoutMain, LayoutSidebar, ListFilterBuilder, ObjectList, PaginationPage,
+        ShellChrome, ShellScaffold, SwapKey, TableButtonFilter, TableColumnHeader, TablePagination,
+        TableRow, button_modal_form, button_submit, column_sort_url, container_column,
         data_table_list_refresh, detail as detail_panel, detail_header, field_duration, field_text,
-        form, form_hx_get_route, form_hx_post_url, label, layout_main, layout_sidebar, modal_keyed,
-        pagination_pages, row_attr_navigate, row_attr_navigate_route, shell_scaffold,
-        sort_indicator, table_button_filter, table_create_button, table_pagination,
+        form, form_hx_get_route, form_hx_post_url, label, layout_main, layout_sidebar,
+        list_filter_builder, modal_keyed, pagination_pages, row_attr_navigate,
+        row_attr_navigate_route, shell_scaffold, sort_indicator, table_button_filter,
+        table_create_button, table_pagination,
     },
     html_form::{CsrfToken, FormCtx, HtmlForm},
     http::Cap,
+    list_filters::{FilterField, FilterRowError},
     template::{RenderAppPane, RenderTemplate},
     web::{
-        Htmx, ModalFormQuery, QueryPage, html_built_page_or_app_layout, html_built_page_with_slots,
-        modal_create_post_query, modal_edit_post_url, respond_create_modal_done_fk,
-        respond_edit_modal_done,
+        Htmx, ModalFormQuery, QueryPage, QueryPageSize, html_built_page_or_app_layout,
+        html_built_page_with_slots, modal_create_post_query, modal_edit_post_url,
+        respond_create_modal_done_fk, respond_edit_modal_done,
     },
 };
 use lariv_plugin_users::middleware::RequireAuth;
 use maud::{Markup, html};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait, QueryFilter};
 
 use kds_plugin_machinery_schedule::entities::machine::{self, Entity as MachineEntity};
-use kds_plugin_machinery_schedule::forms::{
-    MachineFilterForm, MachineFilterFormField, MachineForm, MachineFormField,
-};
+use kds_plugin_machinery_schedule::filters::{machine_fields, prepare};
+use kds_plugin_machinery_schedule::forms::{MachineForm, MachineFormField};
 use kds_plugin_machinery_schedule::logic::{
     completed_job_id_for_job, format_job_duration, jobs_for_machine, machine_free_on,
     machine_remaining_duration,
 };
 use kds_plugin_machinery_schedule::routes::{CompletedJobDetailRouteTag, JobDetailRouteTag};
 use kds_plugin_machinery_schedule::scope::{
-    apply_name_filter, apply_name_sort_or_id_desc, can_manage, find_machine_scoped,
-    scope_superuser, sort_jobs_by_column,
+    apply_name_sort_or_id_desc, can_manage, find_machine_scoped, scope_superuser,
+    sort_jobs_by_column,
 };
+use kds_plugin_machinery_schedule::templates::data_table_with_filter_errors;
 use lariv_formula::{parse_schema, parse_schema_list, schema_to_entries, schema_to_json};
 
 use super::crumbs::{machine_crumbs, machines_list_crumbs, wo_menu};
@@ -65,12 +67,12 @@ use super::templates::ConfirmDeleteModalPage;
 
 #[derive(Debug, serde::Deserialize, Default)]
 pub struct MachineListQuery {
-    #[serde(default, rename = "Name", alias = "name")]
-    name: Option<String>,
     #[serde(default)]
     sort: Option<String>,
     #[serde(default)]
     page: QueryPage,
+    #[serde(default)]
+    page_size: QueryPageSize,
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -143,20 +145,15 @@ fn parse_machine_form(form: &MachineForm) -> Result<(String, String, serde_json:
 
 async fn load_machine_rows(
     db: &sea_orm::DatabaseConnection,
-    q: &MachineListQuery,
-    auth: &lariv_plugin_users::state::AuthContext,
+    sort: Option<&str>,
+    page: u32,
     page_size: u32,
+    auth: &lariv_plugin_users::state::AuthContext,
+    condition: sea_orm::sea_query::Condition,
 ) -> ObjectList<MachineRow> {
-    let mut query = MachineEntity::find();
-    query = apply_name_filter(query, machine::Column::Name, q.name.as_deref());
+    let mut query = MachineEntity::find().filter(condition);
     query = scope_superuser(query, auth);
-    query = apply_name_sort_or_id_desc(
-        query,
-        machine::Column::Name,
-        machine::Column::Id,
-        q.sort.as_deref(),
-    );
-    let page = q.page.get();
+    query = apply_name_sort_or_id_desc(query, machine::Column::Name, machine::Column::Id, sort);
     let paginator = query.paginate(db, page_size as u64);
     let total = paginator.num_items().await.unwrap_or(0);
     let models = paginator
@@ -226,9 +223,12 @@ fn render_pagination<K: SwapKey>(path_and_query: &str, number: u32, num_pages: u
 #[derive(Generic)]
 pub struct WorkOrdersMachineListPage {
     pub machines: ObjectList<MachineRow>,
-    pub filter_name: String,
+    pub fields: Vec<FilterField>,
+    pub filters: Vec<FilterClauseView>,
+    pub filter_errors: Vec<FilterRowError>,
     pub sort: String,
     pub path_and_query: String,
+    pub page_size: u32,
     pub can_edit: bool,
 }
 
@@ -289,18 +289,16 @@ impl WorkOrdersMachineListPage {
             .collect();
         let mut actions = html! {
             (table_button_filter(TableButtonFilter {
-                panel: form(&CsrfToken::current(), FormOpts {
+                panel: list_filter_builder(ListFilterBuilder {
+                    fields: &self.fields,
+                    rows: &self.filters,
+                    page_size: self.page_size,
+                    sort: &self.sort,
                     attrs: form_hx_get_route::<WorkOrdersMachineTableKey, WorkOrdersMachinesRouteTag>(
                         WorkOrdersMachinesRouteTag,
                     ),
-                    inputs: MachineFilterForm::render_inputs(
-                        &FormCtx::form::<MachineFilterForm>(CsrfToken::current())
-                            .value(MachineFilterFormField::Name, &self.filter_name),
-                    ),
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Apply", ..Default::default() }))
-                    },
-                    ..Default::default()
+                    apply_label: "Apply",
+                    extra: html! {},
                 }),
                 ..Default::default()
             }))
@@ -314,7 +312,7 @@ impl WorkOrdersMachineListPage {
                 ))
             };
         }
-        data_table_list_refresh::<WorkOrdersMachineTableKey>(
+        data_table_with_filter_errors::<WorkOrdersMachineTableKey>(
             "Machines",
             actions,
             &headers,
@@ -325,6 +323,7 @@ impl WorkOrdersMachineListPage {
                 self.machines.num_pages,
             ),
             &self.path_and_query,
+            &self.filter_errors,
         )
     }
 }
@@ -635,12 +634,29 @@ pub async fn list(
     uri: Uri,
     Query(q): Query<MachineListQuery>,
 ) -> Markup {
-    let machines = load_machine_rows(&state.db, &q, &ctx, DEFAULT_PAGE_SIZE).await;
+    let prepared = prepare(
+        uri.query().unwrap_or(""),
+        machine_fields(),
+        state.db.get_database_backend(),
+    );
+    let page_size = q.page_size.get();
+    let machines = load_machine_rows(
+        &state.db,
+        q.sort.as_deref(),
+        q.page.get(),
+        page_size,
+        &ctx,
+        prepared.condition,
+    )
+    .await;
     let page = WorkOrdersMachineListPage {
         machines,
-        filter_name: q.name.clone().unwrap_or_default(),
+        fields: prepared.fields,
+        filters: prepared.filters,
+        filter_errors: prepared.errors,
         sort: q.sort.clone().unwrap_or_default(),
         path_and_query: path_and_query(&uri),
+        page_size,
         can_edit: can_manage(&ctx),
     };
     let slot_ctx = lariv_core::components::SlotCtx::from_auth(&ctx);
