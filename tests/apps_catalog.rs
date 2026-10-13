@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use kds_tagore_rs::{
-    accountant_role, delivery, machinery_schedule, marketing_sheet, website_seed, work_orders,
+    accountant_role, delivery, laser_programmer_role, machinery_schedule, marketing_sheet,
+    vmc_programmer_role, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
@@ -73,6 +74,8 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = website::install(app);
                 let app = website_seed::install(app);
                 let app = accountant_role::install(app);
+                let app = laser_programmer_role::install(app);
+                let app = vmc_programmer_role::install(app);
 
                 let path = temp_config(MINIMAL_DB_TOML);
                 let app = app.load_config(&path).await.expect("load_config");
@@ -154,6 +157,30 @@ fn kds_tagore_registers_forms_app_tile() {
                         "p_tasks".to_string(),
                     ],
                     "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, and Contacts"
+                );
+
+                let mut laser_programmer_keys: Vec<_> = catalog
+                    .visible_apps("laser_programmer")
+                    .iter()
+                    .map(|tile| tile.key.clone())
+                    .collect();
+                laser_programmer_keys.sort();
+                assert_eq!(
+                    laser_programmer_keys,
+                    vec!["p_hr".to_string(), "p_tasks".to_string()],
+                    "laser programmer should see only HR and Tasks"
+                );
+
+                let mut vmc_programmer_keys: Vec<_> = catalog
+                    .visible_apps("vmc_programmer")
+                    .iter()
+                    .map(|tile| tile.key.clone())
+                    .collect();
+                vmc_programmer_keys.sort();
+                assert_eq!(
+                    vmc_programmer_keys,
+                    vec!["p_hr".to_string(), "p_tasks".to_string()],
+                    "VMC programmer should see only HR and Tasks"
                 );
 
                 let employee_keys: Vec<_> = catalog

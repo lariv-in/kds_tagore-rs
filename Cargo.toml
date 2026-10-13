@@ -26,6 +26,8 @@ lariv-plugin-tasks = { version = "0.1.0", git = "https://github.com/lariv-in/lar
 lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "ee21c5b0a322c216590c8a07ab06c69d03245b83" }
 lariv-plugin-website = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "ee21c5b0a322c216590c8a07ab06c69d03245b83" }
 kds-plugin-accountant-role = { version = "0.1.0", path = "plugins/accountant_role" }
+kds-plugin-laser-programmer-role = { version = "0.1.0", path = "plugins/laser_programmer_role" }
+kds-plugin-vmc-programmer-role = { version = "0.1.0", path = "plugins/vmc_programmer_role" }
 kds-plugin-machinery-schedule = { version = "0.1.0", path = "plugins/machinery_schedule" }
 kds-plugin-work-orders = { version = "0.1.0", path = "plugins/work_orders" }
 kds-plugin-delivery = { version = "0.1.0", path = "plugins/delivery" }
@@ -97,6 +99,8 @@ lariv-core = { workspace = true }
 lariv-formula = { workspace = true }
 kds-plugin-delivery = { workspace = true }
 kds-plugin-accountant-role = { workspace = true }
+kds-plugin-laser-programmer-role = { workspace = true }
+kds-plugin-vmc-programmer-role = { workspace = true }
 kds-plugin-machinery-schedule = { workspace = true }
 kds-plugin-marketing-sheet = { workspace = true }
 kds-plugin-website-seed = { workspace = true }
