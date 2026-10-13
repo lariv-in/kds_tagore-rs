@@ -1,7 +1,7 @@
 //! Copy delivery challans into inventory stock movements, then drop the challan tables.
 //!
 //! Runs while `customers` still exists. Each challan becomes an outward movement
-//! (`movement_type = 'out'`): a delivery challan is stock leaving inventory.
+//! in `inventory_stock_movements_out`: a delivery challan is stock leaving inventory.
 //! The bill-to party is an existing company or contact when one already matches
 //! that customer (GSTIN, then name; for a person, name plus phone and email).
 //! Otherwise the party is created from the customer. `legacy_customer_id` is
@@ -176,10 +176,14 @@ BEGIN
             RAISE EXCEPTION 'delivery challan has % customer(s) missing from customers', missing_party;
         END IF;
 
-        ALTER TABLE inventory_stock_movements ADD COLUMN IF NOT EXISTS legacy_challan_id bigint;
+        IF to_regclass('public.inventory_stock_movements_out') IS NULL THEN
+            RAISE EXCEPTION 'inventory_stock_movements_out is missing; inventory migrations must run first';
+        END IF;
 
-        INSERT INTO inventory_stock_movements (
-            created_at, updated_at, datetime, movement_type, number,
+        ALTER TABLE inventory_stock_movements_out ADD COLUMN IF NOT EXISTS legacy_challan_id bigint;
+
+        INSERT INTO inventory_stock_movements_out (
+            created_at, updated_at, datetime, number,
             bill_to_individual, customer_individual, customer_company,
             vehicle_number, eway_bill, legacy_challan_id
         )
@@ -187,7 +191,6 @@ BEGIN
             dc.created_at,
             dc.updated_at,
             (dc.date::timestamp AT TIME ZONE 'Asia/Kolkata'),
-            'out',
             CASE
                 WHEN btrim(dc.challan_number) = '' THEN 'DC-' || dc.id::text
                 ELSE btrim(dc.challan_number)
@@ -201,7 +204,7 @@ BEGIN
         FROM delivery_challans AS dc
         JOIN challan_party AS p ON p.customer_id = dc.customer_id
         WHERE NOT EXISTS (
-            SELECT 1 FROM inventory_stock_movements AS existing
+            SELECT 1 FROM inventory_stock_movements_out AS existing
             WHERE existing.legacy_challan_id = dc.id
         );
 
@@ -258,8 +261,8 @@ BEGIN
                   AND s.legacy_qty_unit IS NOT DISTINCT FROM src.qty_unit
             );
 
-            INSERT INTO inventory_stock_movement_lines (
-                created_at, updated_at, stock_id, stock_movement_id, qty, qty_unit, qty_type
+            INSERT INTO inventory_stock_movement_out_lines (
+                created_at, updated_at, stock_id, movement_id, qty, qty_unit, qty_type
             )
             SELECT
                 l.created_at,
@@ -270,7 +273,7 @@ BEGIN
                 s.qty_unit,
                 s.qty_type
             FROM delivery_challan_lines AS l
-            JOIN inventory_stock_movements AS m ON m.legacy_challan_id = l.delivery_challan_id
+            JOIN inventory_stock_movements_out AS m ON m.legacy_challan_id = l.delivery_challan_id
             JOIN LATERAL (
                 SELECT
                     CASE l.qty_kind
@@ -325,7 +328,9 @@ BEGIN
         WHERE ip.id = 1 AND dp.id = 1;
     END IF;
 
-    ALTER TABLE inventory_stock_movements DROP COLUMN IF EXISTS legacy_challan_id;
+    IF to_regclass('public.inventory_stock_movements_out') IS NOT NULL THEN
+        ALTER TABLE inventory_stock_movements_out DROP COLUMN IF EXISTS legacy_challan_id;
+    END IF;
     ALTER TABLE inventory_stocks DROP COLUMN IF EXISTS legacy_product_id;
     ALTER TABLE inventory_stocks DROP COLUMN IF EXISTS legacy_qty_unit;
 
