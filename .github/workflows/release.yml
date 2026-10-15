@@ -57,28 +57,6 @@ jobs:
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: install rust nightly
-        if: steps.prebuilt.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2026-08-27
-
-      - name: rust cache
-        if: steps.prebuilt.outputs.hit != 'true'
-        uses: swatinem/rust-cache@v2
-        with:
-          shared-key: Release-Cache
-          add-rust-environment-hash-key: false
-          cache-workspace-crates: true
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
-      - run: sudo apt update -y
-      - run: sudo apt upgrade -y
-      - run: sudo apt install libarchive-dev
-      - name: build release binary
-        if: steps.prebuilt.outputs.hit != 'true'
-        run: cargo build --release
-
       - name: create release
         uses: softprops/action-gh-release@v2
         with:
