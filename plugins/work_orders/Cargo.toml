@@ -11,6 +11,7 @@ lariv-core = { workspace = true }
 lariv-formula = { workspace = true }
 lariv-plugin-hr = { workspace = true }
 lariv-plugin-contacts = { workspace = true }
+lariv-plugin-crm = { workspace = true }
 lariv-plugin-filesystem = { workspace = true }
 lariv-plugin-finance-common = { workspace = true, features = ["typst"] }
 lariv-plugin-finance-invoices = { workspace = true }

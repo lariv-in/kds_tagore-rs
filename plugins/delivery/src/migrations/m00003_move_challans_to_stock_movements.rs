@@ -2,10 +2,12 @@
 //!
 //! Runs while `customers` still exists. Each challan becomes an outward movement
 //! in `inventory_stock_movements_out`: a delivery challan is stock leaving inventory.
-//! The bill-to party is an existing company or contact when one already matches
+//! The billed party is an existing company or contact when one already matches
 //! that customer (GSTIN, then name; for a person, name plus phone and email).
-//! Otherwise the party is created from the customer. `legacy_customer_id` is
-//! stamped on the party so the later invoice migration reuses it.
+//! Otherwise the party is created from the customer, then recorded as a
+//! `crm_customers` row. The outward movement stores that row's `customer_id`.
+//! `legacy_customer_id` is stamped on the company or contact so the later
+//! invoice migration reuses it.
 //! Lines become movement lines, and a stock is created per product, quantity
 //! kind, and the customer's company. Lengths are stored in the line's display
 //! unit (the challan column is millimetres). Weights stay in kilograms. Whole
@@ -182,9 +184,27 @@ BEGIN
 
         ALTER TABLE inventory_stock_movements_out ADD COLUMN IF NOT EXISTS legacy_challan_id bigint;
 
+        INSERT INTO crm_customers (is_individual, company_id, individual_id, created_at, updated_at)
+        SELECT TRUE, NULL, p.contact_id, NOW(), NOW()
+        FROM challan_party AS p
+        WHERE p.bill_to_individual
+          AND NOT EXISTS (
+            SELECT 1 FROM crm_customers AS existing
+            WHERE existing.is_individual AND existing.individual_id = p.contact_id
+          );
+
+        INSERT INTO crm_customers (is_individual, company_id, individual_id, created_at, updated_at)
+        SELECT FALSE, p.company_id, NULL, NOW(), NOW()
+        FROM challan_party AS p
+        WHERE NOT p.bill_to_individual
+          AND NOT EXISTS (
+            SELECT 1 FROM crm_customers AS existing
+            WHERE NOT existing.is_individual AND existing.company_id = p.company_id
+          );
+
         INSERT INTO inventory_stock_movements_out (
             created_at, updated_at, datetime, number,
-            bill_to_individual, customer_individual, customer_company,
+            customer_id,
             vehicle_number, eway_bill, legacy_challan_id
         )
         SELECT
@@ -195,14 +215,15 @@ BEGIN
                 WHEN btrim(dc.challan_number) = '' THEN 'DC-' || dc.id::text
                 ELSE btrim(dc.challan_number)
             END,
-            p.bill_to_individual,
-            p.contact_id,
-            p.company_id,
+            cust.id,
             NULLIF(btrim(dc.vehicle_no), ''),
             NULLIF(btrim(dc.eway_bill), ''),
             dc.id
         FROM delivery_challans AS dc
         JOIN challan_party AS p ON p.customer_id = dc.customer_id
+        JOIN crm_customers AS cust
+          ON (p.bill_to_individual AND cust.is_individual AND cust.individual_id = p.contact_id)
+          OR (NOT p.bill_to_individual AND NOT cust.is_individual AND cust.company_id = p.company_id)
         WHERE NOT EXISTS (
             SELECT 1 FROM inventory_stock_movements_out AS existing
             WHERE existing.legacy_challan_id = dc.id

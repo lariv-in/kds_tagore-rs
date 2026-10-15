@@ -72,9 +72,7 @@ use kds_plugin_machinery_schedule::entities::{job, machine};
 use kds_plugin_machinery_schedule::logic::{
     create_open_job, format_job_duration, parse_job_duration, set_job_source_doc,
 };
-use lariv_formula::{
-    FormulaContext, parse_schema_list, parse_values, schema_to_json, values_to_json,
-};
+use lariv_formula::{parse_schema_list, parse_values, schema_to_json, values_to_json};
 
 fn path_and_query(uri: &Uri) -> String {
     uri.path_and_query()
@@ -464,16 +462,13 @@ async fn resolve_and_compute_line_data(
         .ok_or_else(|| format!("Component #{} not found", component_id))?;
 
     let extra_data = extra_data_from_value(extra_data_val);
-    let units = line_vars::dim_units_map(&extra_data);
     let schema = comp.variables_schema().map_err(|e| e.to_string())?;
-    let values = parse_values(
+    let raw = line_vars::values_with_entered_units(
         &schema,
         &variables_from_value(variables_val),
-        &FormulaContext {
-            length_units: units,
-        },
-    )
-    .map_err(|e| e.to_string())?;
+        &extra_data,
+    );
+    let values = parse_values(&schema, &raw).map_err(|e| e.to_string())?;
     let final_cost = comp.get_cost(&values).map_err(|e| e.to_string())?;
     Ok((values_to_json(&values), final_cost, extra_data))
 }
@@ -482,19 +477,21 @@ async fn resolve_and_compute_machine_cost(
     db: &sea_orm::DatabaseConnection,
     machine_id: i64,
     variables_val: Option<&serde_json::Value>,
+    extra_data_val: Option<&serde_json::Value>,
 ) -> Result<(sea_orm::prelude::Json, Decimal, String), String> {
     let mach = machine::Entity::find_by_id(machine_id)
         .one(db)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Machine #{} not found", machine_id))?;
+    let extra_data = extra_data_from_value(extra_data_val);
     let schema = mach.variables_schema().map_err(|e| e.to_string())?;
-    let values = parse_values(
+    let raw = line_vars::values_with_entered_units(
         &schema,
         &variables_from_value(variables_val),
-        &FormulaContext::default(),
-    )
-    .map_err(|e| e.to_string())?;
+        &extra_data,
+    );
+    let values = parse_values(&schema, &raw).map_err(|e| e.to_string())?;
     let final_cost = mach.get_cost(&values).map_err(|e| e.to_string())?;
     Ok((values_to_json(&values), final_cost, mach.name))
 }
@@ -1570,8 +1567,13 @@ async fn sync_machine_lines(
         if line.machine_id <= 0 {
             continue;
         }
-        let Ok((vars_json, final_cost, _machine_name)) =
-            resolve_and_compute_machine_cost(db, line.machine_id, line.variables.as_ref()).await
+        let Ok((vars_json, final_cost, _machine_name)) = resolve_and_compute_machine_cost(
+            db,
+            line.machine_id,
+            line.variables.as_ref(),
+            line.extra_data.as_ref(),
+        )
+        .await
         else {
             continue;
         };
@@ -1768,8 +1770,13 @@ async fn sync_invoice_machine_lines(
         if line.machine_id <= 0 {
             continue;
         }
-        let Ok((vars_json, final_cost, machine_name)) =
-            resolve_and_compute_machine_cost(db, line.machine_id, line.variables.as_ref()).await
+        let Ok((vars_json, final_cost, machine_name)) = resolve_and_compute_machine_cost(
+            db,
+            line.machine_id,
+            line.variables.as_ref(),
+            line.extra_data.as_ref(),
+        )
+        .await
         else {
             continue;
         };
@@ -1909,7 +1916,7 @@ pub async fn work_order_machine_line_edit_post(
     let machine_label = machine_line_machine_label(&state.db, form.machine_id).await;
     let vars_val = serde_json::Value::String(vars_raw.clone());
     let computed =
-        resolve_and_compute_machine_cost(&state.db, form.machine_id, Some(&vars_val)).await;
+        resolve_and_compute_machine_cost(&state.db, form.machine_id, Some(&vars_val), None).await;
 
     let (vars_json, final_cost) = match computed {
         Ok((v, c, _)) => (v, c),
@@ -3231,7 +3238,6 @@ async fn create_draft_invoice_from_quotation(
     db: &sea_orm::DatabaseConnection,
     quotation_id: i64,
 ) -> Result<i64, String> {
-    use lariv_plugin_finance_invoices::logic::bill_to::BillTo;
     use lariv_plugin_finance_invoices::logic::draft::{CreateDraftInput, create_draft_invoice};
     use lariv_plugin_finance_invoices::logic::draft_payment_term::{
         default_payment_term_lines_json, parse_payment_term_lines_json,
@@ -3310,6 +3316,8 @@ async fn create_draft_invoice_from_quotation(
         }
     };
 
+    let customer_id =
+        lariv_plugin_crm::logic::customer::create_for_party(db, inv.customer_id, 0).await?;
     let draft = create_draft_invoice(
         db,
         CreateDraftInput {
@@ -3320,7 +3328,7 @@ async fn create_draft_invoice_from_quotation(
             remarks,
             datetime,
             delivery_date: None,
-            bill_to: BillTo::new(false, None, Some(inv.customer_id)),
+            customer_id,
             payment_term_lines: parse_payment_term_lines_json(&default_payment_term_lines_json())?,
             header_tax_ids: Vec::new(),
             lines,
@@ -4244,7 +4252,6 @@ pub async fn calculate_api(
     let raw_vars = variables_from_value(Some(&payload.variables));
     if let Some(component_id) = payload.component_id.filter(|id| *id > 0) {
         let extra = extra_data_from_value(payload.extra_data.as_ref());
-        let units = line_vars::dim_units_map(&extra);
         let comp = match component::Entity::find_by_id(component_id)
             .one(&state.db)
             .await
@@ -4263,13 +4270,8 @@ pub async fn calculate_api(
             Ok(s) => s,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
-        let values = match parse_values(
-            &schema,
-            &raw_vars,
-            &FormulaContext {
-                length_units: units,
-            },
-        ) {
+        let raw_for_parse = line_vars::values_with_entered_units(&schema, &raw_vars, &extra);
+        let values = match parse_values(&schema, &raw_for_parse) {
             Ok(v) => v,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
@@ -4300,7 +4302,9 @@ pub async fn calculate_api(
             Ok(s) => s,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };
-        let values = match parse_values(&schema, &raw_vars, &FormulaContext::default()) {
+        let extra = extra_data_from_value(payload.extra_data.as_ref());
+        let raw_for_parse = line_vars::values_with_entered_units(&schema, &raw_vars, &extra);
+        let values = match parse_values(&schema, &raw_for_parse) {
             Ok(v) => v,
             Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
         };

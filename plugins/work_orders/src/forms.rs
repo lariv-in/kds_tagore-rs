@@ -27,9 +27,8 @@ use std::collections::HashMap;
 fn line_variable_inputs() -> Markup {
     variable_value_input(VariableValueInput {
         row: "v",
-        value: "item.variables[v.name]",
+        value: "v.value",
         on_input: "scheduleRecalc(item)",
-        length_host: "item",
         debounce_ms: None,
         compact: true,
     })
@@ -174,11 +173,11 @@ const ALPINE_LENGTH_BRIDGE: &str = r#"
                                 d.display = shown;
                                 if (typeof d.syncMm === 'function') d.syncMm(false);
                                 if (!target.variables) target.variables = {};
-                                if (!target.dim_units) target.dim_units = {};
-                                if (!target._lengthInUnit) target._lengthInUnit = {};
-                                target.dim_units[key] = d.unit || unit;
-                                target.variables[key] = shown;
-                                target._lengthInUnit[key] = true;
+                                target.variables[key] = {
+                                    kind: 'length',
+                                    value: shown,
+                                    unit: d.unit || unit
+                                };
                                 return true;
                             }
                             d.unit = (target.dim_units && target.dim_units[key]) || 'mm';
@@ -205,13 +204,11 @@ const ALPINE_LENGTH_BRIDGE: &str = r#"
                     if (!d) return;
                     if (key) {
                         if (!target.variables) target.variables = {};
-                        if (!target.dim_units) target.dim_units = {};
-                        if (!target.dim_inputs) target.dim_inputs = {};
-                        if (!target._lengthInUnit) target._lengthInUnit = {};
-                        target.variables[key] = (d.display == null) ? '' : String(d.display);
-                        target.dim_units[key] = d.unit || 'mm';
-                        target.dim_inputs[key] = d.display;
-                        target._lengthInUnit[key] = true;
+                        target.variables[key] = {
+                            kind: 'length',
+                            value: (d.display == null) ? '' : String(d.display),
+                            unit: d.unit || 'mm'
+                        };
                         if (typeof this.recalc === 'function') this.recalc(target);
                     } else {
                         target.value = d.mm;
@@ -703,12 +700,48 @@ fn alpine_calc_bridge() -> String {
 
 const ALPINE_CALC_BRIDGE: &str = r#"
                 calcApi: '__CALC_API__',
-                schemaEntries(schema) {
+                specType(spec) {
+                    if (spec && typeof spec === 'object') return String(spec.type || '').toLowerCase();
+                    return String(spec || '').toLowerCase();
+                },
+                fixedUnit(ty) {
+                    if (ty === 'duration') return 's';
+                    if (ty === 'quantity') return 'Number';
+                    if (ty === 'decimal') return 'None';
+                    if (ty === 'percent') return '%';
+                    if (ty === 'weight') return 'kg';
+                    return 'mm';
+                },
+                specAccepted(spec, ty) {
+                    if (spec && typeof spec === 'object' && spec.accepted_unit) return String(spec.accepted_unit);
+                    return this.fixedUnit(ty);
+                },
+                schemaEntries(item, schema) {
                     if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return [];
-                    return Object.keys(schema).sort().map(name => ({
-                        name,
-                        type: String(schema[name] || '').toLowerCase()
-                    }));
+                    if (!item.variable_rows || !Array.isArray(item.variable_rows)) item.variable_rows = [];
+                    const byName = {};
+                    for (const row of item.variable_rows) byName[row.name] = row;
+                    const next = [];
+                    for (const name of Object.keys(schema).sort()) {
+                        const ty = this.specType(schema[name]);
+                        let row = byName[name];
+                        if (!row || row.type !== ty) {
+                            const stored = item.variables ? item.variables[name] : '';
+                            const mag = this.magnitudeOf(stored);
+                            const unit = (mag && mag.unit) || (item.dim_units && item.dim_units[name]) || this.specAccepted(schema[name], ty);
+                            row = {
+                                name,
+                                type: ty,
+                                value: mag ? mag.value : ((stored == null || typeof stored === 'object') ? '' : String(stored)),
+                                unit
+                            };
+                        } else if (!row.unit) {
+                            row.unit = this.specAccepted(schema[name], ty);
+                        }
+                        next.push(row);
+                    }
+                    item.variable_rows = next;
+                    return item.variable_rows;
                 },
                 magnitudeOf(val) {
                     if (val && typeof val === 'object' && !Array.isArray(val) && (Object.prototype.hasOwnProperty.call(val, 'value') || Object.prototype.hasOwnProperty.call(val, 'unit'))) {
@@ -729,7 +762,7 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                     for (const name of Object.keys(schema || {})) {
                         let val = (item.variables[name] != null && item.variables[name] !== undefined)
                             ? item.variables[name] : '';
-                        const ty = String(schema[name] || '').toLowerCase();
+                        const ty = this.specType(schema[name]);
                         const mag = this.magnitudeOf(val);
                         if (ty === 'duration') {
                             val = this.formatDurationValue(val);
@@ -798,6 +831,42 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                     const self = this;
                     item._recalcTimer = setTimeout(() => self.recalc(item), 250);
                 },
+                variablesForFormula(item) {
+                    const rows = item && Array.isArray(item.variable_rows) ? item.variable_rows : [];
+                    if (rows.length) {
+                        const out = {};
+                        for (const row of rows) {
+                            out[row.name] = {
+                                kind: row.type,
+                                value: row.value == null ? '' : String(row.value),
+                                unit: row.unit || this.fixedUnit(row.type)
+                            };
+                        }
+                        return out;
+                    }
+                    const src = (item && item.variables && typeof item.variables === 'object' && !Array.isArray(item.variables))
+                        ? item.variables : {};
+                    const units = (item && item.dim_units && typeof item.dim_units === 'object') ? item.dim_units : {};
+                    const out = {};
+                    for (const name of Object.keys(src)) {
+                        const val = src[name];
+                        const mag = this.magnitudeOf(val);
+                        if (mag) {
+                            out[name] = { kind: mag.kind || 'length', value: mag.value, unit: mag.unit || units[name] || 'mm' };
+                            continue;
+                        }
+                        if (units[name]) {
+                            out[name] = {
+                                kind: 'length',
+                                value: (val == null || val === undefined) ? '' : String(val),
+                                unit: String(units[name])
+                            };
+                            continue;
+                        }
+                        out[name] = val;
+                    }
+                    return out;
+                },
                 postCalculate(kind, id, item) {
                     const seq = (item._calcSeq = (item._calcSeq || 0) + 1);
                     const parsedId = parseInt(id, 10) || 0;
@@ -815,7 +884,7 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                             ? Object.assign({}, item.extra_data) : {});
                     extra.dim_units = item.dim_units || extra.dim_units || {};
                     const body = {
-                        variables: item.variables || {},
+                        variables: this.variablesForFormula(item),
                         extra_data: extra
                     };
                     if (kind === 'machine') body.machine_id = parsedId;
@@ -1199,7 +1268,7 @@ impl FormWidget for MaterialLinesWidget {
                             const row = {{
                                 id: it.db_id || null,
                                 component_id: parseInt(it.component_id, 10),
-                                variables: it.variables || {{}},
+                                variables: this.variablesForFormula(it),
                                 extra_data: extra,
                                 tax_ids: this.taxIdsOf(it)
                             }};
@@ -1251,12 +1320,12 @@ impl FormWidget for MaterialLinesWidget {
                                 td class="align-middle" {
                                     (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
-                                        <template x-for="v in schemaEntries(schemaOfComp(item.component_id))" :key="v.name">
+                                        <template x-for="v in schemaEntries(item, schemaOfComp(item.component_id))" :key="v.name">
                                     "#))
                                     (line_variable_inputs())
                                     (PreEscaped(r#"
                                         </template>
-                                        <template x-if="schemaEntries(schemaOfComp(item.component_id)).length === 0">
+                                        <template x-if="schemaEntries(item, schemaOfComp(item.component_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this component</span>
                                         </template>
                                         <div x-show="item.calc_error" x-cloak class="text-xs text-error" x-text="item.calc_error"></div>
@@ -1504,10 +1573,12 @@ impl FormWidget for MachineLinesWidget {
                     const valid = this.items
                         .filter(it => it.machine_id && parseInt(it.machine_id, 10) > 0)
                         .map(it => {{
+                            const extra = {{ dim_units: it.dim_units || {{}} }};
                             const row = {{
                                 id: it.db_id || null,
                                 machine_id: parseInt(it.machine_id, 10),
-                                variables: it.variables || {{}},
+                                variables: this.variablesForFormula(it),
+                                extra_data: extra,
                                 tax_ids: this.taxIdsOf(it)
                             }};
                             if (this.showLineRemarks) {{
@@ -1561,12 +1632,12 @@ impl FormWidget for MachineLinesWidget {
                                 td class="align-middle" {
                                     (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
-                                        <template x-for="v in schemaEntries(schemaOfMachine(item.machine_id))" :key="v.name">
+                                        <template x-for="v in schemaEntries(item, schemaOfMachine(item.machine_id))" :key="v.name">
                                     "#))
                                     (line_variable_inputs())
                                     (PreEscaped(r#"
                                         </template>
-                                        <template x-if="schemaEntries(schemaOfMachine(item.machine_id)).length === 0">
+                                        <template x-if="schemaEntries(item, schemaOfMachine(item.machine_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this machine</span>
                                         </template>
                                         <div x-show="item.calc_error" x-cloak class="text-xs text-error" x-text="item.calc_error"></div>
@@ -1770,6 +1841,9 @@ pub struct DraftWorkOrderMachineLineInput {
     pub product_id: i64,
     #[serde(default)]
     pub remarks: String,
+    /// Display units for length variables. Used when computing the line; not stored.
+    #[serde(default)]
+    pub extra_data: Option<serde_json::Value>,
 }
 
 pub type WorkOrderMachineLineInput = DraftWorkOrderMachineLineInput;

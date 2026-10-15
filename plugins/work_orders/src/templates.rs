@@ -342,6 +342,7 @@ impl WorkOrderListPage {
                         classes: "font-mono font-semibold",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
 
@@ -965,6 +966,7 @@ impl RenderPickerSelect<WorkOrderSelectTableKey, WorkOrderSelectModalKey> for Wo
                         classes: "font-mono",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
 
@@ -1079,6 +1081,7 @@ impl RenderPickerSelect<ComponentSelectTableKey, ComponentSelectModalKey> for Co
                             classes: "font-mono text-xs",
                         }),
                     ],
+                    ..Default::default()
                 }
             })
             .collect();
@@ -1190,6 +1193,7 @@ impl ComponentListPage {
                         classes: "font-mono text-xs",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
 
@@ -1534,6 +1538,7 @@ impl InvoiceListPage {
                         classes: "font-semibold",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
 
@@ -1914,6 +1919,7 @@ impl IssuedWorkOrderListPage {
                         classes: "font-semibold",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
 

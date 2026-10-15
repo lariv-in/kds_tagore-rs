@@ -29,6 +29,9 @@ mod m00024_quotation_remarks;
 mod m00025_line_products;
 mod m00026_quotation_line_remarks;
 mod m00027_machine_products;
+mod m00028_formula_measure;
+mod m00029_formula_fixed_units;
+mod m00030_decimal_unit_none;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -64,6 +67,9 @@ impl MigratorTrait for Migrator {
             Box::new(m00025_line_products::Migration),
             Box::new(m00026_quotation_line_remarks::Migration),
             Box::new(m00027_machine_products::Migration),
+            Box::new(m00028_formula_measure::Migration),
+            Box::new(m00029_formula_fixed_units::Migration),
+            Box::new(m00030_decimal_unit_none::Migration),
         ]
     }
 }

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use sea_orm::entity::prelude::Json;
 
 use lariv_formula::{
-    self as formula, FormulaContext, VariableSchema, VariableType, VariableValues, parse_schema,
+    self as formula, VariableDef, VariableSchema, VariableType, VariableValues, parse_schema,
     parse_values,
 };
 
@@ -68,6 +68,58 @@ pub fn dim_unit(extra: &Json) -> String {
     "mm".into()
 }
 
+fn explicit_dim_unit(extra: &Json) -> Option<String> {
+    let serde_json::Value::Object(m) = extra else {
+        return None;
+    };
+    let serde_json::Value::String(u) = m.get("dim_unit")? else {
+        return None;
+    };
+    let u = u.trim();
+    if u.is_empty() {
+        None
+    } else {
+        Some(u.to_string())
+    }
+}
+
+/// Attach `dim_units` to bare length numbers so older rows still parse.
+///
+/// A value that is already an object keeps its own unit.
+pub fn values_with_entered_units(schema: &VariableSchema, raw: &Json, extra: &Json) -> Json {
+    let serde_json::Value::Object(src) = raw else {
+        return raw.clone();
+    };
+    let mut units = dim_units_map(extra);
+    let fallback = units.remove("default").or_else(|| explicit_dim_unit(extra));
+    let mut obj = src.clone();
+    for (name, def) in schema {
+        if def.ty != VariableType::Length {
+            continue;
+        }
+        let Some(val) = obj.get(name) else {
+            continue;
+        };
+        if val.is_object() {
+            continue;
+        }
+        let unit = units
+            .get(name)
+            .cloned()
+            .or_else(|| fallback.clone())
+            .unwrap_or_else(|| "mm".to_string());
+        obj.insert(
+            name.clone(),
+            serde_json::json!({
+                "kind": "length",
+                "value": json_display(val),
+                "unit": unit,
+            }),
+        );
+    }
+    serde_json::Value::Object(obj)
+}
+
 fn infer_type_from_name(name: &str) -> Option<VariableType> {
     let lower = name.to_ascii_lowercase();
     if lower.contains("duration") || lower == "time" {
@@ -125,7 +177,7 @@ fn infer_schema_from_stored_values(values_json: &Json, extra: &Json) -> Variable
                 _ => VariableType::Quantity,
             }
         };
-        schema.insert(k.clone(), ty);
+        schema.insert(k.clone(), VariableDef::new(ty));
     }
     schema
 }
@@ -149,17 +201,18 @@ pub fn values_json_for_form(schema_json: &Json, values_json: &Json) -> Json {
     let Some(obj) = out.as_object_mut() else {
         return out;
     };
-    for (name, ty) in &schema {
-        if *ty != VariableType::Duration {
+    for (name, def) in &schema {
+        if def.ty != VariableType::Duration {
             continue;
         }
         let Some(v) = obj.get(name).cloned() else {
             continue;
         };
         if let Some(n) = json_as_i64(&v) {
+            let nanos = n.saturating_mul(1_000_000_000);
             obj.insert(
                 name.clone(),
-                serde_json::Value::String(lariv_core::duration::format_duration(n)),
+                serde_json::Value::String(lariv_core::duration::format_duration(nanos)),
             );
         }
     }
@@ -168,10 +221,8 @@ pub fn values_json_for_form(schema_json: &Json, values_json: &Json) -> Json {
 
 pub fn format_variables_display(schema_json: &Json, values_json: &Json, extra: &Json) -> String {
     let schema = resolved_schema(schema_json, values_json, extra);
-    let ctx = FormulaContext {
-        length_units: dim_units_map(extra),
-    };
-    let values: VariableValues = parse_values(&schema, values_json, &ctx).unwrap_or_default();
+    let _ = extra;
+    let values: VariableValues = parse_values(&schema, values_json).unwrap_or_default();
     if values.is_empty() {
         if let serde_json::Value::Object(m) = values_json {
             if m.is_empty() {
@@ -187,7 +238,7 @@ pub fn format_variables_display(schema_json: &Json, values_json: &Json, extra: &
         }
         return "-".into();
     }
-    formula::format_values_display(&schema, &values, &ctx)
+    formula::format_values_display(&schema, &values)
 }
 
 #[cfg(test)]
@@ -197,22 +248,22 @@ mod tests {
     #[test]
     fn duration_nanos_render_as_hours() {
         let schema = serde_json::json!({"duration": "duration"});
-        let values = serde_json::json!({"duration": 7_200_000_000_000i64});
+        let values = serde_json::json!({"duration": 7200});
         let out = format_variables_display(&schema, &values, &serde_json::json!({}));
-        assert_eq!(out, "duration: 2 hours");
+        assert_eq!(out, "Duration: 2 hours");
     }
 
     #[test]
     fn duration_nanos_render_without_schema() {
-        let values = serde_json::json!({"duration": 7_200_000_000_000i64});
+        let values = serde_json::json!({"duration": 7200});
         let out = format_variables_display(&serde_json::json!({}), &values, &serde_json::json!({}));
-        assert_eq!(out, "duration: 2 hours");
+        assert_eq!(out, "Duration: 2 hours");
     }
 
     #[test]
     fn duration_form_value_is_human() {
         let schema = serde_json::json!({"duration": "duration"});
-        let values = serde_json::json!({"duration": 7_200_000_000_000i64});
+        let values = serde_json::json!({"duration": 7200});
         let out = values_json_for_form(&schema, &values);
         assert_eq!(out["duration"], "2 hours");
     }
@@ -222,7 +273,43 @@ mod tests {
         let schema = serde_json::json!({"length": "length", "qty": "quantity"});
         let values = serde_json::json!({"length": "1000", "qty": 2});
         let out = format_variables_display(&schema, &values, &serde_json::json!({}));
-        assert!(out.contains("length: 1000 mm"), "{out}");
-        assert!(out.contains("qty: 2"), "{out}");
+        assert!(out.contains("Length: 1000 mm"), "{out}");
+        assert!(out.contains("Qty: 2"), "{out}");
+    }
+
+    #[test]
+    fn formula_context_normalizes_length_to_millimetres() {
+        use rust_decimal::Decimal;
+
+        let mut schema = VariableSchema::new();
+        schema.insert("length".into(), VariableDef::new(VariableType::Length));
+        schema.insert("width".into(), VariableDef::new(VariableType::Length));
+        let values = parse_values(
+            &schema,
+            &serde_json::json!({
+                "length": {"value": "2", "unit": "cm"},
+                "width": {"value": "1", "unit": "m"}
+            }),
+        )
+        .unwrap();
+        let length = formula::eval_formula(&schema, "length", &values).unwrap();
+        let width = formula::eval_formula(&schema, "width", &values).unwrap();
+        assert_eq!(length, Decimal::from(20));
+        assert_eq!(width, Decimal::from(1000));
+    }
+
+    #[test]
+    fn formula_context_prefers_value_unit_over_dim_units() {
+        use rust_decimal::Decimal;
+
+        let mut schema = VariableSchema::new();
+        schema.insert("length".into(), VariableDef::new(VariableType::Length));
+        let values = parse_values(
+            &schema,
+            &serde_json::json!({"length": {"value": "1", "unit": "m"}}),
+        )
+        .unwrap();
+        let length = formula::eval_formula(&schema, "length", &values).unwrap();
+        assert_eq!(length, Decimal::from(1000));
     }
 }

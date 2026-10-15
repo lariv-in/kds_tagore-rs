@@ -1,5 +1,5 @@
 use kds_tagore_rs::formula::{
-    VariableType, VariableValue, VariableValues, eval_formula, standard_sample_values,
+    Measure, VariableDef, VariableType, VariableValues, eval_formula, standard_sample_values,
     validate_formula,
 };
 use kds_tagore_rs::machinery_schedule::entities::machine;
@@ -43,8 +43,8 @@ fn gst18_levied_tax() -> lariv_rs::plugins::finance_taxes::entities::tax::Model 
 
 fn sample_component() -> component::Model {
     let mut schema = HashMap::new();
-    schema.insert("length".into(), VariableType::Length);
-    schema.insert("qty".into(), VariableType::Quantity);
+    schema.insert("length".into(), VariableDef::new(VariableType::Length));
+    schema.insert("qty".into(), VariableDef::new(VariableType::Quantity));
     component::Model {
         id: 1,
         created_at: None,
@@ -63,12 +63,20 @@ fn test_component_get_cost_and_weight_decimal() {
     let mut vars = VariableValues::new();
     vars.insert(
         "length".into(),
-        VariableValue::Length {
-            mm: Decimal::from(10),
+        Measure {
+            kind: VariableType::Length,
+            value: Decimal::from(10),
             unit: "mm".into(),
         },
     );
-    vars.insert("qty".into(), VariableValue::Quantity(3));
+    vars.insert(
+        "qty".into(),
+        Measure {
+            kind: VariableType::Quantity,
+            value: Decimal::from(3),
+            unit: "Number".into(),
+        },
+    );
     assert_eq!(c.get_cost(&vars).unwrap(), Decimal::from(60));
     assert_eq!(
         c.get_weight(&vars).unwrap(),
@@ -89,7 +97,7 @@ fn test_validate_formulas_standard_samples() {
 fn test_machine_get_cost_duration_seconds() {
     use kds_tagore_rs::machinery_schedule::entities::machine;
     let mut schema = HashMap::new();
-    schema.insert("duration".into(), VariableType::Duration);
+    schema.insert("duration".into(), VariableDef::new(VariableType::Duration));
     let m = machine::Model {
         id: 1,
         created_at: None,
@@ -102,7 +110,11 @@ fn test_machine_get_cost_duration_seconds() {
     let mut vars = VariableValues::new();
     vars.insert(
         "duration".into(),
-        VariableValue::DurationNanos(3_600_000_000_000),
+        Measure {
+            kind: VariableType::Duration,
+            value: Decimal::from(3600),
+            unit: "s".into(),
+        },
     );
     assert_eq!(m.get_cost(&vars).unwrap(), Decimal::from(950));
     m.validate_formulas().unwrap();
@@ -162,11 +174,15 @@ fn test_invoice_line_totals_and_taxes() {
 #[test]
 fn test_eval_formula_no_f64() {
     let mut schema = HashMap::new();
-    schema.insert("duration".into(), VariableType::Duration);
+    schema.insert("duration".into(), VariableDef::new(VariableType::Duration));
     let mut values = VariableValues::new();
     values.insert(
         "duration".into(),
-        VariableValue::DurationNanos(7_200_000_000_000),
+        Measure {
+            kind: VariableType::Duration,
+            value: Decimal::from(7200),
+            unit: "s".into(),
+        },
     );
     let out = eval_formula(&schema, "duration / 3600 * 100", &values).unwrap();
     assert_eq!(out, Decimal::from(200));

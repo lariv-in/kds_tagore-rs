@@ -691,6 +691,7 @@ impl JobHubPage {
                 TableRow {
                     attrs: row_attr_navigate(&j.detail_href),
                     cells,
+                    ..Default::default()
                 }
             })
             .collect();
@@ -1280,6 +1281,7 @@ impl MachineListPage {
                         classes: "font-mono text-xs",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
         let mut actions = html! {
@@ -1450,6 +1452,7 @@ impl MachineDetailPage {
                         classes: "",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
         data_table_list_refresh::<MachineJobsTableKey>(
@@ -1700,6 +1703,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                         classes: "font-mono",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
         let target_input = self.target_input.clone();

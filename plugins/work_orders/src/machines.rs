@@ -285,6 +285,7 @@ impl WorkOrdersMachineListPage {
                         classes: "font-mono text-xs",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
         let mut actions = html! {
@@ -455,6 +456,7 @@ impl WorkOrdersMachineDetailPage {
                         classes: "",
                     }),
                 ],
+                ..Default::default()
             })
             .collect();
         data_table_list_refresh::<WorkOrdersMachineJobsTableKey>(
