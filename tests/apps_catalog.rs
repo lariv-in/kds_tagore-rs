@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use kds_tagore_rs::{
-    accountant_role, delivery, laser_programmer_role, machinery_schedule, marketing_sheet,
-    vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, machinery_schedule,
+    marketing_sheet, vmc_programmer_role, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
@@ -68,6 +68,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = work_orders::install(app);
                 let app = delivery::install(app);
                 let app = finance_invoices::install(app);
+                let app = invoice_out_movement::install(app);
                 let app = finance_purchases::install(app);
                 let app = finance_indian::install(app);
                 let app = dashboard::install(app);
@@ -151,12 +152,13 @@ fn kds_tagore_registers_forms_app_tile() {
                         "kds_tagore-machinery-schedule".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_contacts".to_string(),
+                        "p_crm".to_string(),
                         "p_finance_accounts".to_string(),
                         "p_hr".to_string(),
                         "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, and Contacts"
+                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, and CRM"
                 );
 
                 let mut laser_programmer_keys: Vec<_> = catalog

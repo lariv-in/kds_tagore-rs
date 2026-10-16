@@ -31,6 +31,7 @@ kds-plugin-vmc-programmer-role = { version = "0.1.0", path = "plugins/vmc_progra
 kds-plugin-machinery-schedule = { version = "0.1.0", path = "plugins/machinery_schedule" }
 kds-plugin-work-orders = { version = "0.1.0", path = "plugins/work_orders" }
 kds-plugin-delivery = { version = "0.1.0", path = "plugins/delivery" }
+kds-plugin-invoice-out-movement = { version = "0.1.0", path = "plugins/invoice_out_movement" }
 kds-plugin-marketing-sheet = { version = "0.1.0", path = "plugins/marketing_sheet" }
 kds-plugin-website-seed = { version = "0.1.0", path = "plugins/website_seed" }
 tokio = { version = "1", features = ["full"] }
@@ -99,6 +100,7 @@ lariv-rs = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git"
 lariv-core = { workspace = true }
 lariv-formula = { workspace = true }
 kds-plugin-delivery = { workspace = true }
+kds-plugin-invoice-out-movement = { workspace = true }
 kds-plugin-accountant-role = { workspace = true }
 kds-plugin-laser-programmer-role = { workspace = true }
 kds-plugin-vmc-programmer-role = { workspace = true }

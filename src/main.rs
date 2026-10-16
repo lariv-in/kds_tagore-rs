@@ -1,8 +1,8 @@
 #![recursion_limit = "4096"]
 
 use kds_tagore_rs::{
-    accountant_role, delivery, laser_programmer_role, machinery_schedule, marketing_sheet,
-    vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, machinery_schedule,
+    marketing_sheet, vmc_programmer_role, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
@@ -56,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
     // so invoices point at that same party.
     let app = delivery::install(app);
     let app = finance_invoices::install(app);
+    // After invoices and inventory: adds stock_movement_out_id and registers PDF/form addons.
+    let app = invoice_out_movement::install(app);
     let app = finance_purchases::install(app);
     let app = finance_indian::install(app);
     let app = dashboard::install(app);

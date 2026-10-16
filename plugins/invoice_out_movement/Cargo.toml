@@ -1,0 +1,19 @@
+[package]
+name = "kds-plugin-invoice-out-movement"
+version = "0.1.0"
+edition.workspace = true
+description = "Links finance invoices to an inventory out movement"
+
+[dependencies]
+lariv-core = { workspace = true }
+lariv-plugin-finance-invoices = { workspace = true }
+lariv-plugin-inventory = { workspace = true }
+lariv-plugin-users = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+frunk = { workspace = true }
+maud = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
