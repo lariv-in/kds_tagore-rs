@@ -3323,6 +3323,7 @@ async fn create_draft_invoice_from_quotation(
         CreateDraftInput {
             number: None,
             reference,
+            eway_bill_number: None,
             payment_reference: None,
             bank_account: prefs.default_bank_account,
             remarks,
