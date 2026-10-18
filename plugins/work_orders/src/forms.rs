@@ -867,11 +867,40 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                     }
                     return out;
                 },
-                postCalculate(kind, id, item) {
+                trimMoney(raw) {
+                    const s = String(raw ?? '').trim();
+                    if (!s) return '';
+                    const dot = s.indexOf('.');
+                    if (dot < 0) return s;
+                    const frac = s.slice(dot + 1).replace(/0+$/, '');
+                    return frac ? s.slice(0, dot) + '.' + frac : s.slice(0, dot);
+                },
+                calculatedDiffers(item) {
+                    if (!this.manualPrice) return false;
+                    const calc = String(item.calculated_cost ?? '').trim();
+                    if (!calc) return false;
+                    const actual = String(item.final_cost ?? '').trim();
+                    if (!actual) return true;
+                    const a = parseFloat(actual.replace(/,/g, '.'));
+                    const c = parseFloat(calc.replace(/,/g, '.'));
+                    if (!isFinite(a) || !isFinite(c)) return actual !== calc;
+                    return a !== c;
+                },
+                priceTargetId(item) {
+                    if (!item) return 0;
+                    if (this.linesKind === 'machine') return parseInt(item.machine_id, 10) || 0;
+                    return parseInt(item.component_id, 10) || 0;
+                },
+                applyCalculatedPrice(item) {
+                    const kind = this.linesKind === 'machine' ? 'machine' : 'component';
+                    this.postCalculate(kind, this.priceTargetId(item), item, true);
+                },
+                postCalculate(kind, id, item, apply) {
                     const seq = (item._calcSeq = (item._calcSeq || 0) + 1);
                     const parsedId = parseInt(id, 10) || 0;
                     if (!parsedId) {
                         item.final_cost = '';
+                        item.calculated_cost = '';
                         item.weight = '';
                         item.calc_error = '';
                         item.untaxed = 0;
@@ -897,11 +926,15 @@ const ALPINE_CALC_BRIDGE: &str = r#"
                         if (seq !== item._calcSeq) return;
                         if (data && data.error) {
                             item.calc_error = String(data.error);
+                            if (this.manualPrice) item.calculated_cost = '';
                             return;
                         }
                         item.calc_error = '';
                         const cost = (data && (data.cost != null ? data.cost : data.cost_inr));
-                        if (cost != null && cost !== '') item.final_cost = String(cost);
+                        if (cost != null && cost !== '') {
+                            item.calculated_cost = String(cost);
+                            if (!this.manualPrice || apply) item.final_cost = String(cost);
+                        }
                         const weight = (data && (data.weight != null ? data.weight : data.weight_kg));
                         if (weight != null && weight !== '') item.weight = String(weight);
                         item.untaxed = this.lineUntaxedNumber(item);
@@ -1045,10 +1078,61 @@ fn extra_dim_units(extra: Option<&serde_json::Value>) -> serde_json::Value {
         .unwrap_or_else(|| serde_json::json!({}))
 }
 
-pub struct MaterialLinesWidget;
+fn money_input_value(v: &serde_json::Value) -> String {
+    let s = match v {
+        serde_json::Value::String(s) => s.trim().to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => return String::new(),
+    };
+    let Some((whole, frac)) = s.split_once('.') else {
+        return s;
+    };
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        whole.to_string()
+    } else {
+        format!("{whole}.{frac}")
+    }
+}
 
-impl FormWidget for MaterialLinesWidget {
-    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+fn line_unit_price_header(manual_price: bool) -> Markup {
+    if manual_price {
+        html! { th class="min-w-[9rem]" { "Unit price" } }
+    } else {
+        html! { th class="text-right w-24" { "Pre-tax (₹)" } }
+    }
+}
+
+fn line_unit_price_cell(manual_price: bool) -> Markup {
+    if manual_price {
+        html! {
+            td class="align-middle min-w-[9rem]" {
+                div class="flex items-start gap-1" {
+                    div class="flex flex-col gap-0.5 min-w-0 flex-1" {
+                        input type="text" class="input input-bordered input-xs w-full min-w-[5rem]"
+                            x-model="item.final_cost" inputmode="decimal" placeholder="Price of one" {}
+                        (PreEscaped(r#"<span class="text-xs text-gray-500 tabular-nums" x-show="calculatedDiffers(item)" x-text="item.calculated_cost"></span>"#))
+                    }
+                    (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-square btn-xs shrink-0" x-show="priceTargetId(item) > 0" @click="applyCalculatedPrice(item)" aria-label="Recalculate" title="Recalculate">"#))
+                    (icon("arrow-path", "heroicon-sm"))
+                    (PreEscaped("</button>"))
+                }
+            }
+        }
+    } else {
+        html! {
+            td class="align-middle text-right font-mono text-xs" {
+                (PreEscaped(r#"<span x-text="formatMoney(lineUntaxedNumber(item))"></span>"#))
+            }
+        }
+    }
+}
+
+fn render_material_lines(
+    ctx: &FormCtx<'_>,
+    field: &FieldRender<'_>,
+    manual_price: bool,
+) -> Markup {
         let comp_str = ctx.display_of(field.name);
         let components_json = if comp_str.is_empty() {
             let alt = ctx.display_of("components_data");
@@ -1078,10 +1162,10 @@ impl FormWidget for MaterialLinesWidget {
                         .unwrap_or(serde_json::json!({}));
                     let dim_units = extra_dim_units(obj.get("extra_data"));
                     let db_id = json_i64_id(obj.get("id"));
-                    let final_cost = obj
-                        .get("final_cost")
-                        .cloned()
-                        .unwrap_or(serde_json::json!(""));
+                    let final_cost = money_input_value(
+                        obj.get("final_cost")
+                            .unwrap_or(&serde_json::Value::Null),
+                    );
                     let component_label = component_metas
                         .iter()
                         .find(|c| c.id == component_id)
@@ -1119,6 +1203,7 @@ impl FormWidget for MaterialLinesWidget {
         let show_remarks = show_line_remarks(ctx);
         let show_remarks_js = if show_remarks { "true" } else { "false" };
         let totals_colspan = if show_remarks { "6" } else { "5" };
+        let manual_price_js = if manual_price { "true" } else { "false" };
         let alpine_data = format!(
             r#"{{
                 {ALPINE_LENGTH_BRIDGE}
@@ -1133,6 +1218,7 @@ impl FormWidget for MaterialLinesWidget {
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
                 showLineRemarks: {show_remarks_js},
+                manualPrice: {manual_price_js},
                 linesKind: 'material',
                 components: {components_json},
                 items: {rows_json},
@@ -1195,7 +1281,7 @@ impl FormWidget for MaterialLinesWidget {
                             component_label,
                             variables,
                             dim_units,
-                            final_cost: obj.final_cost != null ? String(obj.final_cost) : '',
+                            final_cost: obj.final_cost != null ? this.trimMoney(obj.final_cost) : '',
                             extra_data: extra,
                             tax_ids: Array.isArray(obj.tax_ids) ? obj.tax_ids : [],
                             line_taxes: Array.isArray(obj.line_taxes) ? obj.line_taxes : [],
@@ -1272,6 +1358,7 @@ impl FormWidget for MaterialLinesWidget {
                                 extra_data: extra,
                                 tax_ids: this.taxIdsOf(it)
                             }};
+                            if (this.manualPrice) row.final_cost = it.final_cost == null ? '' : String(it.final_cost);
                             if (this.showLineRemarks) row.remarks = it.remarks || '';
                             return row;
                         }});
@@ -1302,7 +1389,7 @@ impl FormWidget for MaterialLinesWidget {
                                 th class="min-w-[240px]" { "Variables" }
                                 (line_remarks_header(show_remarks))
                                 th class="min-w-[8rem]" { "Taxes" }
-                                th class="text-right w-24" { "Pre-tax (₹)" }
+                                (line_unit_price_header(manual_price))
                                 th class="text-right w-24" { "Total (₹)" }
                                 th class="w-7 text-center" { "" }
                             }
@@ -1334,9 +1421,7 @@ impl FormWidget for MaterialLinesWidget {
                                 }
                                 (line_remarks_cell(show_remarks))
                                 (embed_line_tax_picker())
-                                td class="align-middle text-right font-mono text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(lineUntaxedNumber(item))"></span>"#))
-                                }
+                                (line_unit_price_cell(manual_price))
                                 td class="align-middle text-right font-mono font-bold text-primary text-xs" {
                                     (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
                                 }
@@ -1367,13 +1452,13 @@ impl FormWidget for MaterialLinesWidget {
                 }))
             }
         }
-    }
 }
 
-pub struct MachineLinesWidget;
-
-impl FormWidget for MachineLinesWidget {
-    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+fn render_machine_lines(
+    ctx: &FormCtx<'_>,
+    field: &FieldRender<'_>,
+    manual_price: bool,
+) -> Markup {
         let machines_json: &str = ctx.display_of(field.name);
         let machines_json = if machines_json.is_empty() {
             "[]"
@@ -1399,10 +1484,10 @@ impl FormWidget for MachineLinesWidget {
                     let variables =
                         form_variables(&schema, json_object_field(obj.get("variables")));
                     let db_id = json_i64_id(obj.get("id"));
-                    let final_cost = obj
-                        .get("final_cost")
-                        .cloned()
-                        .unwrap_or(serde_json::json!(""));
+                    let final_cost = money_input_value(
+                        obj.get("final_cost")
+                            .unwrap_or(&serde_json::Value::Null),
+                    );
                     rows.push(serde_json::json!({
                         "id": i + 1,
                         "db_id": db_id,
@@ -1436,6 +1521,7 @@ impl FormWidget for MachineLinesWidget {
         let show_remarks = show_line_remarks(ctx);
         let show_remarks_js = if show_remarks { "true" } else { "false" };
         let totals_colspan = if show_remarks { "6" } else { "5" };
+        let manual_price_js = if manual_price { "true" } else { "false" };
         let alpine_data = format!(
             r#"{{
                 {ALPINE_LENGTH_BRIDGE}
@@ -1450,6 +1536,7 @@ impl FormWidget for MachineLinesWidget {
                 default_machine_taxes: {default_machine_json},
                 tax_pick_base: '{tax_pick_base}',
                 showLineRemarks: {show_remarks_js},
+                manualPrice: {manual_price_js},
                 linesKind: 'machine',
                 machines: {machines_json},
                 items: {rows_json},
@@ -1503,7 +1590,7 @@ impl FormWidget for MachineLinesWidget {
                         product_id: parseInt(obj.product_id, 10) || 0,
                         variables: this.parseVariables(obj.variables),
                         dim_units: {{}},
-                        final_cost: obj.final_cost != null ? String(obj.final_cost) : '',
+                        final_cost: obj.final_cost != null ? this.trimMoney(obj.final_cost) : '',
                         tax_ids: Array.isArray(obj.tax_ids) ? obj.tax_ids : [],
                         line_taxes: Array.isArray(obj.line_taxes) ? obj.line_taxes : [],
                         total: 0,
@@ -1581,6 +1668,7 @@ impl FormWidget for MachineLinesWidget {
                                 extra_data: extra,
                                 tax_ids: this.taxIdsOf(it)
                             }};
+                            if (this.manualPrice) row.final_cost = it.final_cost == null ? '' : String(it.final_cost);
                             if (this.showLineRemarks) {{
                                 row.remarks = it.remarks || '';
                                 row.product_id = parseInt(it.product_id, 10) || 0;
@@ -1614,7 +1702,7 @@ impl FormWidget for MachineLinesWidget {
                                 th class="min-w-[240px]" { "Variables" }
                                 (line_remarks_header(show_remarks))
                                 th class="min-w-[8rem]" { "Taxes" }
-                                th class="text-right w-24" { "Pre-tax (₹)" }
+                                (line_unit_price_header(manual_price))
                                 th class="text-right w-24" { "Total (₹)" }
                                 th class="w-7 text-center" { "" }
                             }
@@ -1646,11 +1734,9 @@ impl FormWidget for MachineLinesWidget {
                                 }
                                 (line_remarks_cell(show_remarks))
                                 (embed_line_tax_picker())
-                                td class="align-middle text-right font-mono text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(item.untaxed)"></span>"#))
-                                }
+                                (line_unit_price_cell(manual_price))
                                 td class="align-middle text-right font-mono font-bold text-primary text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(item.total)"></span>"#))
+                                    (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
                                 }
                                 td class="align-middle text-center" {
                                     (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove machine line" @click="removeItem(idx)">✕</button>"#))
@@ -1679,13 +1765,42 @@ impl FormWidget for MachineLinesWidget {
                 }))
             }
         }
+}
+
+pub struct MaterialLinesWidget;
+
+impl FormWidget for MaterialLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        render_material_lines(ctx, field, false)
+    }
+}
+
+pub struct QuotationMaterialLinesWidget;
+
+impl FormWidget for QuotationMaterialLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        render_material_lines(ctx, field, true)
+    }
+}
+
+pub struct MachineLinesWidget;
+
+impl FormWidget for MachineLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        render_machine_lines(ctx, field, false)
+    }
+}
+
+pub struct QuotationMachineLinesWidget;
+
+impl FormWidget for QuotationMachineLinesWidget {
+    fn render(ctx: &FormCtx<'_>, field: &FieldRender<'_>) -> Markup {
+        render_machine_lines(ctx, field, true)
     }
 }
 
 pub type DraftWorkOrderMaterialLinesWidget = MaterialLinesWidget;
 pub type DraftWorkOrderMachineLinesWidget = MachineLinesWidget;
-pub type QuotationMaterialLinesWidget = MaterialLinesWidget;
-pub type QuotationMachineLinesWidget = MachineLinesWidget;
 pub type DraftWorkOrderItemsWidget = MaterialLinesWidget;
 pub type WorkOrderItemsWidget = MaterialLinesWidget;
 
@@ -1841,6 +1956,9 @@ pub struct DraftWorkOrderMachineLineInput {
     pub product_id: i64,
     #[serde(default)]
     pub remarks: String,
+    /// Typed unit price. Empty leaves the line cost to the formula.
+    #[serde(default, alias = "FinalCost")]
+    pub final_cost: Option<String>,
     /// Display units for length variables. Used when computing the line; not stored.
     #[serde(default)]
     pub extra_data: Option<serde_json::Value>,
@@ -1862,6 +1980,9 @@ pub struct DraftWorkOrderMaterialLineInput {
     pub tax_ids: Vec<i64>,
     #[serde(default)]
     pub remarks: String,
+    /// Typed unit price. Empty leaves the line cost to the formula.
+    #[serde(default, alias = "FinalCost")]
+    pub final_cost: Option<String>,
 }
 
 pub type DraftWorkOrderLineInput = DraftWorkOrderMaterialLineInput;
@@ -2069,13 +2190,13 @@ pub struct InvoiceForm {
 
     #[form(
         label = "Material Lines",
-        widget = MaterialLinesWidget,
+        widget = QuotationMaterialLinesWidget,
     )]
     pub material_lines: Option<String>,
 
     #[form(
         label = "Machine Lines",
-        widget = MachineLinesWidget,
+        widget = QuotationMachineLinesWidget,
     )]
     pub machine_lines: Option<String>,
 }
@@ -2095,6 +2216,81 @@ pub type InvoiceMachineLineInput = DraftWorkOrderMachineLineInput;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lariv_core::html_form::FieldSpec;
+
+    fn field_spec() -> FieldSpec {
+        FieldSpec {
+            name: "lines",
+            label: "Lines",
+            required: false,
+            row: None,
+            when: None,
+            required_unless: None,
+            model: None,
+            show: None,
+            disabled: None,
+            url: None,
+            swap_key: None,
+            display_key: None,
+            error_key: None,
+            choices_key: None,
+            placeholder: None,
+            hint: None,
+            rows: None,
+            multiple: false,
+            accept: None,
+            language: None,
+            render: |_ctx, _field| html! {},
+        }
+    }
+
+    #[test]
+    fn quotation_line_editors_keep_a_typed_unit_price() {
+        let spec = field_spec();
+        let ctx = FormCtx::default();
+        let field = FieldRender {
+            name: "lines",
+            label: "Lines",
+            value: "[]",
+            required: false,
+            spec: &spec,
+        };
+        for html in [
+            QuotationMaterialLinesWidget::render(&ctx, &field).into_string(),
+            QuotationMachineLinesWidget::render(&ctx, &field).into_string(),
+        ] {
+            assert!(html.contains(">Unit price<"), "{html}");
+            assert!(html.contains("manualPrice: true"), "{html}");
+            assert!(
+                html.contains("x-model=\"item.final_cost\""),
+                "unit price stays an input: {html}"
+            );
+            assert!(
+                html.contains("applyCalculatedPrice"),
+                "variables need a button that copies the formula price into the unit price"
+            );
+            assert!(html.contains("aria-label=\"Recalculate\""));
+            assert!(html.contains("heroicons/arrow-path.svg"));
+            assert!(
+                html.contains("calculatedDiffers"),
+                "a differing formula price is shown under the typed unit price"
+            );
+            assert!(html.contains("text-gray-500"));
+            assert!(
+                html.contains("if (!this.manualPrice || apply) item.final_cost"),
+                "typing variables must not overwrite the unit price: {html}"
+            );
+            assert!(html.contains("row.final_cost"));
+        }
+
+        let draft = MaterialLinesWidget::render(&ctx, &field).into_string();
+        assert!(draft.contains("manualPrice: false"), "{draft}");
+        assert!(draft.contains(">Pre-tax"));
+        assert!(
+            !draft.contains("x-model=\"item.final_cost\""),
+            "draft work orders keep the computed pre-tax: {draft}"
+        );
+    }
 
     #[test]
     fn scalar_variable_inputs_include_decimal_and_percent() {

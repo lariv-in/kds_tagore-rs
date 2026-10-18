@@ -1522,6 +1522,43 @@ fn validate_machine_lines_json(ml_str: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// A typed unit price overrides the cost formula. An empty price leaves the cost to the formula.
+fn optional_non_negative_cost(raw: &Option<String>) -> Result<Option<Decimal>, String> {
+    let Some(raw) = raw.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let cost: Decimal = raw.parse().map_err(|_| "invalid unit price".to_string())?;
+    if cost < Decimal::ZERO {
+        return Err("unit price must be non-negative".to_string());
+    }
+    Ok(Some(cost))
+}
+
+fn line_cost_or_formula(explicit: &Option<String>, formula: Decimal) -> Result<Decimal, String> {
+    Ok(optional_non_negative_cost(explicit)?.unwrap_or(formula))
+}
+
+fn validate_quotation_line_prices(
+    material: Option<&str>,
+    machine: Option<&str>,
+) -> Result<(), String> {
+    if let Some(s) = material.filter(|s| !s.trim().is_empty()) {
+        let lines: Vec<super::forms::DraftWorkOrderMaterialLineInput> =
+            serde_json::from_str(s).map_err(|_| "Invalid material lines data.".to_string())?;
+        for line in &lines {
+            optional_non_negative_cost(&line.final_cost)?;
+        }
+    }
+    if let Some(s) = machine.filter(|s| !s.trim().is_empty()) {
+        let lines: Vec<super::forms::DraftWorkOrderMachineLineInput> =
+            serde_json::from_str(s).map_err(|_| "Invalid machine lines data.".to_string())?;
+        for line in &lines {
+            optional_non_negative_cost(&line.final_cost)?;
+        }
+    }
+    Ok(())
+}
+
 async fn latest_child_id(
     db: &sea_orm::DatabaseConnection,
     table: &str,
@@ -1687,6 +1724,7 @@ async fn invoice_machine_lines_json(db: &sea_orm::DatabaseConnection, invoice_id
                 "machine_id": l.machine_id,
                 "product_id": l.product_id,
                 "variables": l.variables,
+                "final_cost": l.final_cost,
                 "tax_ids": tax_map.get(&l.id).cloned().unwrap_or_default(),
                 "remarks": remarks,
             })
@@ -1715,13 +1753,14 @@ async fn sync_invoice_material_lines(
         if item.component_id <= 0 {
             continue;
         }
-        if let Ok((vars_json, final_cost, extra_data)) = resolve_and_compute_line_data(
+        if let Ok((vars_json, formula_cost, extra_data)) = resolve_and_compute_line_data(
             db,
             item.component_id,
             item.variables.as_ref(),
             item.extra_data.as_ref(),
         )
         .await
+            && let Ok(final_cost) = line_cost_or_formula(&item.final_cost, formula_cost)
             && let Ok(product_id) =
                 crate::line_product::component_product_id(db, item.component_id).await
         {
@@ -1770,7 +1809,7 @@ async fn sync_invoice_machine_lines(
         if line.machine_id <= 0 {
             continue;
         }
-        let Ok((vars_json, final_cost, machine_name)) = resolve_and_compute_machine_cost(
+        let Ok((vars_json, formula_cost, machine_name)) = resolve_and_compute_machine_cost(
             db,
             line.machine_id,
             line.variables.as_ref(),
@@ -1778,6 +1817,9 @@ async fn sync_invoice_machine_lines(
         )
         .await
         else {
+            continue;
+        };
+        let Ok(final_cost) = line_cost_or_formula(&line.final_cost, formula_cost) else {
             continue;
         };
         let Ok(product_id) = crate::line_product::machine_product_id(db, line.machine_id).await
@@ -2899,7 +2941,14 @@ pub async fn invoice_create_post(
         }
     };
 
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()) {
+    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref())
+        .and_then(|_| {
+            validate_quotation_line_prices(
+                form.material_lines.as_deref(),
+                form.machine_lines.as_deref(),
+            )
+        })
+    {
         let page = invoice_create_error_modal(&state.db, q.form_name(), &form, e).await;
         return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
     }
@@ -3019,7 +3068,14 @@ pub async fn invoice_edit_post(
     let date =
         chrono::NaiveDate::parse_from_str(form.date.trim(), "%Y-%m-%d").unwrap_or(existing.date);
 
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()) {
+    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref())
+        .and_then(|_| {
+            validate_quotation_line_prices(
+                form.material_lines.as_deref(),
+                form.machine_lines.as_deref(),
+            )
+        })
+    {
         let page = invoice_edit_error_modal(&state.db, id, q.form_name(), &form, e).await;
         return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
     }
@@ -5004,6 +5060,7 @@ mod tests {
             serde_json::from_str(json).expect("widget snake_case json must parse");
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].component_id, 1);
+        assert_eq!(lines[0].final_cost.as_deref(), Some("3500"));
     }
 
     #[test]
@@ -5026,6 +5083,38 @@ mod tests {
             serde_json::from_str(r#"[{"MachineId":3,"Variables":{"duration":"1h"}}]"#)
                 .expect("pascal case json must parse");
         assert_eq!(machine[0].machine_id, 3);
+    }
+
+    #[test]
+    fn typed_unit_price_overrides_formula_only_when_present() {
+        assert_eq!(optional_non_negative_cost(&None).unwrap(), None);
+        assert_eq!(optional_non_negative_cost(&Some("  ".into())).unwrap(), None);
+        assert_eq!(
+            optional_non_negative_cost(&Some("12.5".into())).unwrap(),
+            Some(Decimal::new(125, 1))
+        );
+        assert_eq!(
+            line_cost_or_formula(&None, Decimal::new(99, 0)).unwrap(),
+            Decimal::new(99, 0)
+        );
+        assert_eq!(
+            line_cost_or_formula(&Some("4".into()), Decimal::new(99, 0)).unwrap(),
+            Decimal::new(4, 0)
+        );
+        assert_eq!(
+            optional_non_negative_cost(&Some("-1".into())).unwrap_err(),
+            "unit price must be non-negative"
+        );
+        assert!(validate_quotation_line_prices(
+            Some(r#"[{"component_id":1,"final_cost":"-2"}]"#),
+            None
+        )
+        .is_err());
+        assert!(validate_quotation_line_prices(
+            Some(r#"[{"component_id":1,"final_cost":""}]"#),
+            Some(r#"[{"machine_id":2,"final_cost":"10"}]"#)
+        )
+        .is_ok());
     }
 
     #[test]
