@@ -11,6 +11,7 @@ edition = "2024"
 lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
 lariv-formula = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
 lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
+lariv-plugin-customer = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
 lariv-plugin-crm = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
 lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }
 lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "43cf6c783dd85878a3533b6ed11cf181db1fb3d4" }

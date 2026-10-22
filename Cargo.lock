@@ -3974,6 +3974,7 @@ dependencies = [
  "lariv-core",
  "lariv-plugin-contacts",
  "lariv-plugin-crm",
+ "lariv-plugin-customer",
  "lariv-plugin-finance-accounts",
  "lariv-plugin-finance-creditnotes",
  "lariv-plugin-finance-invoices",
