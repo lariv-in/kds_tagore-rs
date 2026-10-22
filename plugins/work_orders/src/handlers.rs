@@ -2822,6 +2822,7 @@ async fn invoice_create_error_modal(
         date: form.date.clone(),
         customer_id: (form.customer_id > 0).then_some(form.customer_id),
         customer_name: customer_name_by_id(db, form.customer_id).await,
+        bank_account: form.bank_account.clone(),
         remarks: form.remarks.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
@@ -2846,6 +2847,7 @@ async fn invoice_edit_error_modal(
         date: form.date.clone(),
         customer_id: form.customer_id,
         customer_name: customer_name_by_id(db, form.customer_id).await,
+        bank_account: form.bank_account.clone(),
         remarks: form.remarks.clone(),
         material_lines_json: form.material_lines.clone().unwrap_or_default(),
         machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
@@ -2865,6 +2867,11 @@ pub async fn invoice_create_get(
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let components_json = components_json(&state.db).await;
     let machines_json = fetch_machines_json(&state.db).await;
+    let bank_account = load_preferences(&state.db)
+        .await
+        .ok()
+        .and_then(|prefs| prefs.default_bank_account)
+        .unwrap_or_default();
 
     let page = InvoiceCreateModalPage {
         form_name: q.form_name(),
@@ -2872,6 +2879,7 @@ pub async fn invoice_create_get(
         date: today,
         customer_id: None,
         customer_name: String::new(),
+        bank_account,
         remarks: String::new(),
         material_lines_json: "[]".into(),
         machine_lines_json: "[]".into(),
@@ -2902,6 +2910,8 @@ pub struct InvoiceFormData {
     pub material_lines: Option<String>,
     #[serde(alias = "machine_lines", default)]
     pub machine_lines: Option<String>,
+    #[serde(alias = "bank_account", default)]
+    pub bank_account: String,
     #[serde(alias = "remarks", default)]
     pub remarks: String,
 }
@@ -2941,14 +2951,12 @@ pub async fn invoice_create_post(
         }
     };
 
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref())
-        .and_then(|_| {
-            validate_quotation_line_prices(
-                form.material_lines.as_deref(),
-                form.machine_lines.as_deref(),
-            )
-        })
-    {
+    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()).and_then(|_| {
+        validate_quotation_line_prices(
+            form.material_lines.as_deref(),
+            form.machine_lines.as_deref(),
+        )
+    }) {
         let page = invoice_create_error_modal(&state.db, q.form_name(), &form, e).await;
         return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
     }
@@ -2978,6 +2986,7 @@ pub async fn invoice_create_post(
         date: Set(date),
         customer_id: Set(form.customer_id),
         invoice_number: Set(invoice_number),
+        bank_account: Set(opt_text(&form.bank_account)),
         remarks: Set(form.remarks.trim().to_string()),
     };
 
@@ -3038,6 +3047,7 @@ pub async fn invoice_edit_get(
         invoice_number: inv.invoice_number,
         date: inv.date.to_string(),
         customer_id: inv.customer_id,
+        bank_account: inv.bank_account.unwrap_or_default(),
         remarks: inv.remarks,
         customer_name,
         material_lines_json,
@@ -3068,14 +3078,12 @@ pub async fn invoice_edit_post(
     let date =
         chrono::NaiveDate::parse_from_str(form.date.trim(), "%Y-%m-%d").unwrap_or(existing.date);
 
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref())
-        .and_then(|_| {
-            validate_quotation_line_prices(
-                form.material_lines.as_deref(),
-                form.machine_lines.as_deref(),
-            )
-        })
-    {
+    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()).and_then(|_| {
+        validate_quotation_line_prices(
+            form.material_lines.as_deref(),
+            form.machine_lines.as_deref(),
+        )
+    }) {
         let page = invoice_edit_error_modal(&state.db, id, q.form_name(), &form, e).await;
         return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
     }
@@ -3104,6 +3112,7 @@ pub async fn invoice_edit_post(
     am.invoice_number = Set(invoice_number);
     am.date = Set(date);
     am.customer_id = Set(form.customer_id);
+    am.bank_account = Set(opt_text(&form.bank_account));
     am.remarks = Set(form.remarks.trim().to_string());
 
     match am.update(&state.db).await {
@@ -3195,6 +3204,7 @@ async fn copy_quotation(
         date: Set(date),
         customer_id: Set(inv.customer_id),
         invoice_number: Set(invoice_number),
+        bank_account: Set(inv.bank_account),
         remarks: Set(inv.remarks),
     }
     .insert(&txn)
@@ -3260,6 +3270,15 @@ pub async fn invoice_copy_post(
     }
 }
 
+fn quotation_invoice_remarks(remarks: &str) -> Option<String> {
+    let text = remarks.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
 fn quotation_invoice_line(
     product_id: i64,
     variables: serde_json::Value,
@@ -3269,14 +3288,6 @@ fn quotation_invoice_line(
     if product_id <= 0 {
         return Err("a quotation line is not linked to a product".into());
     }
-    let remarks = {
-        let text = remarks.trim();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text.to_string())
-        }
-    };
     Ok(
         lariv_plugin_finance_invoices::logic::draft::DraftLinePending {
             product_id,
@@ -3284,7 +3295,28 @@ fn quotation_invoice_line(
             quantity: "1".into(),
             variables: Some(variables),
             tax_ids: Some(tax_ids),
-            remarks,
+            remarks: quotation_invoice_remarks(remarks),
+        },
+    )
+}
+
+fn quotation_invoice_service_line(
+    service_id: i64,
+    variables: serde_json::Value,
+    tax_ids: Vec<i64>,
+    remarks: &str,
+) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftServiceLinePending, String> {
+    if service_id <= 0 {
+        return Err("a quotation machine line is not linked to a service".into());
+    }
+    Ok(
+        lariv_plugin_finance_invoices::logic::draft::DraftServiceLinePending {
+            service_id,
+            rate: None,
+            quantity: "1".into(),
+            variables: Some(variables),
+            tax_ids: Some(tax_ids),
+            remarks: quotation_invoice_remarks(remarks),
         },
     )
 }
@@ -3328,15 +3360,16 @@ async fn create_draft_invoice_from_quotation(
         .await
         .unwrap_or_default();
 
-    let mut lines = Vec::new();
+    let mut service_lines = Vec::new();
     for line in machine_lines {
-        lines.push(quotation_invoice_line(
+        service_lines.push(quotation_invoice_service_line(
             line.product_id,
             line.variables,
             mach_tax_map.get(&line.id).cloned().unwrap_or_default(),
             &line.remarks,
         )?);
     }
+    let mut lines = Vec::new();
     for line in material_lines {
         lines.push(quotation_invoice_line(
             line.product_id,
@@ -3345,7 +3378,7 @@ async fn create_draft_invoice_from_quotation(
             &line.remarks,
         )?);
     }
-    if lines.is_empty() {
+    if lines.is_empty() && service_lines.is_empty() {
         return Err("This quotation has no lines to invoice.".into());
     }
 
@@ -3381,7 +3414,11 @@ async fn create_draft_invoice_from_quotation(
             reference,
             eway_bill_number: None,
             payment_reference: None,
-            bank_account: prefs.default_bank_account,
+            bank_account: inv
+                .bank_account
+                .clone()
+                .filter(|account| !account.trim().is_empty())
+                .or(prefs.default_bank_account),
             remarks,
             datetime,
             delivery_date: None,
@@ -3389,6 +3426,7 @@ async fn create_draft_invoice_from_quotation(
             payment_term_lines: parse_payment_term_lines_json(&default_payment_term_lines_json())?,
             header_tax_ids: Vec::new(),
             lines,
+            service_lines,
         },
         "UTC",
     )
@@ -4572,6 +4610,7 @@ async fn prefs_page(
         company_phone: prefs.company_phone.unwrap_or_default(),
         company_gstin: prefs.company_gstin.unwrap_or_default(),
         place_of_supply: prefs.place_of_supply.unwrap_or_default(),
+        default_bank_account: prefs.default_bank_account.unwrap_or_default(),
         company_logo_vnode_id: fk_value(prefs.company_logo_vnode_id),
         company_logo_vnode_display: load_vnode_display(db, prefs.company_logo_vnode_id).await,
         company_signature_vnode_id: fk_value(prefs.company_signature_vnode_id),
@@ -4691,6 +4730,7 @@ pub async fn preferences_post(
         company_phone: opt_text(&form.company_phone),
         company_gstin: opt_text(&form.company_gstin),
         place_of_supply: opt_text(&form.place_of_supply),
+        default_bank_account: opt_text(&form.default_bank_account),
         company_logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
         company_signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
         quotation_email_subject: stored_email_template(
@@ -4989,8 +5029,14 @@ pub async fn invoice_pdf_preview_post(
         Some(form.quotation_pdf_template.as_str())
     };
     let presentation = company_presentation_from_form(&form);
-    match pdf::render_quotation_pdf_preview(&state.db, Some(&fs), template, Some(presentation))
-        .await
+    match pdf::render_quotation_pdf_preview(
+        &state.db,
+        Some(&fs),
+        template,
+        Some(presentation),
+        Some(form.default_bank_account.as_str()),
+    )
+    .await
     {
         Ok(result) => {
             let token = preview_token();
@@ -5088,7 +5134,10 @@ mod tests {
     #[test]
     fn typed_unit_price_overrides_formula_only_when_present() {
         assert_eq!(optional_non_negative_cost(&None).unwrap(), None);
-        assert_eq!(optional_non_negative_cost(&Some("  ".into())).unwrap(), None);
+        assert_eq!(
+            optional_non_negative_cost(&Some("  ".into())).unwrap(),
+            None
+        );
         assert_eq!(
             optional_non_negative_cost(&Some("12.5".into())).unwrap(),
             Some(Decimal::new(125, 1))
@@ -5105,16 +5154,17 @@ mod tests {
             optional_non_negative_cost(&Some("-1".into())).unwrap_err(),
             "unit price must be non-negative"
         );
-        assert!(validate_quotation_line_prices(
-            Some(r#"[{"component_id":1,"final_cost":"-2"}]"#),
-            None
-        )
-        .is_err());
-        assert!(validate_quotation_line_prices(
-            Some(r#"[{"component_id":1,"final_cost":""}]"#),
-            Some(r#"[{"machine_id":2,"final_cost":"10"}]"#)
-        )
-        .is_ok());
+        assert!(
+            validate_quotation_line_prices(Some(r#"[{"component_id":1,"final_cost":"-2"}]"#), None)
+                .is_err()
+        );
+        assert!(
+            validate_quotation_line_prices(
+                Some(r#"[{"component_id":1,"final_cost":""}]"#),
+                Some(r#"[{"machine_id":2,"final_cost":"10"}]"#)
+            )
+            .is_ok()
+        );
     }
 
     #[test]

@@ -19,6 +19,9 @@ lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.co
 lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }
 lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }
 lariv-plugin-finance-purchases = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }
+# Not in the pinned lariv-rs rev yet. The local overlay supplies it; this path
+# is the sibling checkout until `scripts/lariv-source pin` includes the crate.
+lariv-plugin-finance-services = { path = "../../lariv-rs/plugins/finance_services" }
 lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }
 lariv-plugin-hr = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }
 lariv-plugin-inventory = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git", rev = "61f76153aeed54eb6dcecef2c00cd5e187084889" }

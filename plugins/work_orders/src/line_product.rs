@@ -1,7 +1,7 @@
-//! Products backing quotation and work-order lines.
+//! Catalog rows backing quotation and work-order lines.
 //!
-//! A component owns one goods product. Each machine owns one services product.
-//! Variable schemas and price formulas live on that product; the line keeps the
+//! A component owns one goods product. Each machine owns one service.
+//! Variable schemas and price formulas live on that row; the line keeps the
 //! values entered for that job.
 
 use std::collections::HashMap;
@@ -13,7 +13,37 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use lariv_plugin_finance_products::entities::product::{self, ProductType};
+use lariv_plugin_finance_products::entities::product;
+use lariv_plugin_inventory::entities::stock;
+
+const COMPONENT_STOCK_NAME: &str = "Components";
+const COMPONENT_STOCK_QTY_TYPE: &str = "quantity";
+const COMPONENT_STOCK_QTY_UNIT: &str = "Number";
+
+async fn component_stock_id<C: ConnectionTrait>(db: &C) -> Result<i64, String> {
+    if let Some(existing) = stock::Entity::find()
+        .filter(stock::Column::Name.eq(COMPONENT_STOCK_NAME))
+        .filter(stock::Column::QtyType.eq(COMPONENT_STOCK_QTY_TYPE))
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(existing.id);
+    }
+    let now = Utc::now();
+    let saved = stock::ActiveModel {
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
+        name: Set(COMPONENT_STOCK_NAME.into()),
+        qty_type: Set(COMPONENT_STOCK_QTY_TYPE.into()),
+        qty_unit: Set(COMPONENT_STOCK_QTY_UNIT.into()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(saved.id)
+}
 
 fn formula_text(formula: &str, fallback: Decimal) -> String {
     let trimmed = formula.trim();
@@ -44,15 +74,15 @@ fn display_name(name: &str, fallback: &str) -> String {
 async fn insert_product<C: ConnectionTrait>(
     db: &C,
     name: String,
-    product_type: ProductType,
     variables: String,
     formula: String,
 ) -> Result<i64, String> {
     let now = Utc::now();
+    let stock_id = component_stock_id(db).await?;
     let saved = product::ActiveModel {
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
-        product_type: Set(product_type),
+        stock_id: Set(stock_id),
         reference: Set(Some(format!("kds-{}", Uuid::new_v4()))),
         remarks: Set(None),
         name: Set(name),
@@ -72,7 +102,6 @@ async fn write_product<C: ConnectionTrait>(
     db: &C,
     product_id: i64,
     name: String,
-    product_type: ProductType,
     variables: String,
     formula: String,
 ) -> Result<i64, String> {
@@ -85,14 +114,13 @@ async fn write_product<C: ConnectionTrait>(
         let mut am: product::ActiveModel = existing.into();
         am.updated_at = Set(Some(Utc::now()));
         am.name = Set(name);
-        am.product_type = Set(product_type);
         am.variables = Set(variables);
         am.base_price_formula = Set(formula.clone());
         am.sales_price_formula = Set(formula);
         let saved = am.update(db).await.map_err(|e| e.to_string())?;
         return Ok(saved.id);
     }
-    insert_product(db, name, product_type, variables, formula).await
+    insert_product(db, name, variables, formula).await
 }
 
 /// Create or update the goods product that stores a component's schema and cost formula.
@@ -107,7 +135,6 @@ pub async fn save_component_product<C: ConnectionTrait>(
         db,
         product_id,
         display_name(name, "Component"),
-        ProductType::Goods,
         schema_text(variables),
         formula_text(cost_formula, Decimal::ZERO),
     )
@@ -155,7 +182,7 @@ pub async fn component_product_id<C: ConnectionTrait>(
     ensure_component_product(db, &component).await
 }
 
-/// Product linked to this machine, creating one when the link is missing.
+/// Service linked to this machine, creating one when the link is missing.
 pub async fn machine_product_id<C: ConnectionTrait>(
     db: &C,
     machine_id: i64,
@@ -163,7 +190,7 @@ pub async fn machine_product_id<C: ConnectionTrait>(
     kds_plugin_machinery_schedule::machine_product::machine_product_id(db, machine_id).await
 }
 
-/// Line text wins. A blank line uses the linked product's remarks.
+/// Line text wins. A blank line uses the linked service's remarks.
 pub fn remarks_with_product_default(line_remarks: &str, product_remarks: Option<&str>) -> String {
     let line = line_remarks.trim();
     if !line.is_empty() {
@@ -180,15 +207,7 @@ pub async fn product_remarks_by_id<C: ConnectionTrait>(
     if ids.is_empty() {
         return HashMap::new();
     }
-    let products = product::Entity::find()
-        .filter(product::Column::Id.is_in(ids))
-        .all(db)
-        .await
-        .unwrap_or_default();
-    products
-        .into_iter()
-        .map(|p| (p.id, p.remarks.unwrap_or_default()))
-        .collect()
+    kds_plugin_machinery_schedule::machine_product::service_remarks_by_id(db, &ids).await
 }
 
 #[cfg(test)]

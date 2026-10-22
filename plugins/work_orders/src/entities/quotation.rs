@@ -13,6 +13,8 @@ pub struct Model {
     pub date: NaiveDate,
     pub customer_id: i64,
     pub invoice_number: String,
+    /// Bank details printed on this quotation. Blank means none.
+    pub bank_account: Option<String>,
     pub remarks: String,
 }
 

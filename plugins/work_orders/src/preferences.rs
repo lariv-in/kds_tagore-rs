@@ -53,6 +53,7 @@ pub async fn save_preferences(
     am.company_phone = Set(prefs.company_phone);
     am.company_gstin = Set(prefs.company_gstin);
     am.place_of_supply = Set(prefs.place_of_supply);
+    am.default_bank_account = Set(prefs.default_bank_account);
     am.company_logo_vnode_id = Set(prefs.company_logo_vnode_id);
     am.company_signature_vnode_id = Set(prefs.company_signature_vnode_id);
     am.quotation_email_subject = Set(prefs.quotation_email_subject);
@@ -160,6 +161,7 @@ pub fn empty_preferences() -> WorkOrdersPreferences {
         company_phone: None,
         company_gstin: None,
         place_of_supply: None,
+        default_bank_account: None,
         company_logo_vnode_id: None,
         company_signature_vnode_id: None,
         quotation_email_subject: None,

@@ -8,8 +8,8 @@ use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
     finance_creditnotes, finance_indian, finance_invoices, finance_products, finance_purchases,
-    finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks, todo, users,
-    website,
+    finance_services, finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks,
+    todo, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -49,6 +49,8 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
     let app = finance_products::install(app);
+    // Before work orders retarget machine links from products to services.
+    let app = finance_services::install(app);
     // After finance_taxes (line taxes) and finance_products (line products).
     let app = work_orders::install(app);
     // Before invoices drop `customers`. Challans reuse an existing company or

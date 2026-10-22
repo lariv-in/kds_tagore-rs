@@ -11,6 +11,7 @@ lariv-formula = { workspace = true }
 lariv-plugin-hr = { workspace = true }
 lariv-plugin-filesystem = { workspace = true }
 lariv-plugin-finance-products = { workspace = true }
+lariv-plugin-finance-services = { workspace = true }
 lariv-plugin-users = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }

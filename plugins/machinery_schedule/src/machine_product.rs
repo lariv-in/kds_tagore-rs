@@ -1,13 +1,17 @@
-//! One services product per machine.
+//! One service per machine.
 //!
-//! The product stores the machine's name, variable schema, and cost formula.
-//! Quotation and work-order machine lines point at this product.
+//! The service stores the machine's name, variable schema, and cost formula.
+//! `machinery_machines.product_id` and quotation machine lines store that service id.
+
+use std::collections::HashMap;
 
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+};
 use uuid::Uuid;
 
-use lariv_plugin_finance_products::entities::product::{self, ProductType};
+use lariv_plugin_finance_services::entities::service;
 
 use crate::entities::machine;
 
@@ -37,21 +41,20 @@ fn display_name(name: &str) -> String {
     }
 }
 
-async fn insert_product<C: ConnectionTrait>(
+async fn insert_service<C: ConnectionTrait>(
     db: &C,
     name: String,
     variables: String,
     formula: String,
 ) -> Result<i64, String> {
     let now = Utc::now();
-    let saved = product::ActiveModel {
+    let saved = service::ActiveModel {
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
-        product_type: Set(ProductType::Services),
         reference: Set(Some(format!("kds-{}", Uuid::new_v4()))),
         remarks: Set(None),
         name: Set(name),
-        hsn_code: Set(0),
+        sac_code: Set(0),
         variables: Set(variables),
         base_price_formula: Set(formula.clone()),
         sales_price_formula: Set(formula),
@@ -63,10 +66,10 @@ async fn insert_product<C: ConnectionTrait>(
     Ok(saved.id)
 }
 
-/// Create or update the services product that stores a machine's schema and cost formula.
+/// Create or update the service that stores a machine's schema and cost formula.
 pub async fn save_machine_product<C: ConnectionTrait>(
     db: &C,
-    product_id: i64,
+    service_id: i64,
     name: &str,
     variables: &serde_json::Value,
     cost_formula: &str,
@@ -74,32 +77,31 @@ pub async fn save_machine_product<C: ConnectionTrait>(
     let name = display_name(name);
     let variables = schema_text(variables);
     let formula = formula_text(cost_formula);
-    if product_id > 0
-        && let Some(existing) = product::Entity::find_by_id(product_id)
+    if service_id > 0
+        && let Some(existing) = service::Entity::find_by_id(service_id)
             .one(db)
             .await
             .map_err(|e| e.to_string())?
     {
-        let mut am: product::ActiveModel = existing.into();
+        let mut am: service::ActiveModel = existing.into();
         am.updated_at = Set(Some(Utc::now()));
         am.name = Set(name);
-        am.product_type = Set(ProductType::Services);
         am.variables = Set(variables);
         am.base_price_formula = Set(formula.clone());
         am.sales_price_formula = Set(formula);
         let saved = am.update(db).await.map_err(|e| e.to_string())?;
         return Ok(saved.id);
     }
-    insert_product(db, name, variables, formula).await
+    insert_service(db, name, variables, formula).await
 }
 
-/// Product linked to this machine, creating one when the link is missing.
+/// Service linked to this machine, creating one when the link is missing.
 pub async fn ensure_machine_product<C: ConnectionTrait>(
     db: &C,
     machine: &machine::Model,
 ) -> Result<i64, String> {
     if machine.product_id > 0 {
-        let exists = product::Entity::find_by_id(machine.product_id)
+        let exists = service::Entity::find_by_id(machine.product_id)
             .one(db)
             .await
             .map_err(|e| e.to_string())?
@@ -132,4 +134,23 @@ pub async fn machine_product_id<C: ConnectionTrait>(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Machine #{machine_id} not found"))?;
     ensure_machine_product(db, &machine).await
+}
+
+pub async fn service_remarks_by_id<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+) -> HashMap<i64, String> {
+    let ids: Vec<i64> = ids.iter().copied().filter(|id| *id > 0).collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    let services = service::Entity::find()
+        .filter(service::Column::Id.is_in(ids))
+        .all(db)
+        .await
+        .unwrap_or_default();
+    services
+        .into_iter()
+        .map(|service| (service.id, service.remarks.unwrap_or_default()))
+        .collect()
 }

@@ -33,6 +33,9 @@ mod m00028_formula_measure;
 mod m00029_formula_fixed_units;
 mod m00030_decimal_unit_none;
 mod m00031_drop_orphan_line_products;
+mod m00032_quotation_bank_account;
+mod m00033_machine_services;
+mod m00034_product_stock;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -72,6 +75,9 @@ impl MigratorTrait for Migrator {
             Box::new(m00029_formula_fixed_units::Migration),
             Box::new(m00030_decimal_unit_none::Migration),
             Box::new(m00031_drop_orphan_line_products::Migration),
+            Box::new(m00032_quotation_bank_account::Migration),
+            Box::new(m00033_machine_services::Migration),
+            Box::new(m00034_product_stock::Migration),
         ]
     }
 }

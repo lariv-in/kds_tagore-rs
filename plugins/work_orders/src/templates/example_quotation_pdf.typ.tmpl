@@ -6,6 +6,7 @@
      MachineLines  [ { ID, MachineId, Machine, VariablesDisplay, Taxes, TaxItems, PreTax, LineTotal, Remarks } ],
      GrandTotal (string),
      Remarks (string; free text, may be blank),
+     BankAccount (Typst markup for the quotation account; blank when unset),
      company_name, company_address, company_phone, company_gstin, place_of_supply,
      company_logo_vnode_id, company_signature_vnode_id
      (from KDS Quotations → Preferences; blank preview fields use sample placeholders).
@@ -208,6 +209,11 @@
     *Amount Chargeable (in words)* \
     {{ grandTotalWords() }} \
     #text(size: 7.5pt)[E. & O.E.]
+    {% if BankAccount %}
+    #v(0.5em)
+    *Company's Bank Details* \
+    {{ BankAccount }}
+    {% endif %}
   ],
   table(
     columns: (1.4fr, 1fr),

@@ -154,6 +154,8 @@ struct InvoiceRoot {
     machine_lines: Vec<PdfMachineLine>,
     grand_total: String,
     remarks: String,
+    /// Typst markup for the quotation's bank details. Blank when there is no account.
+    bank_account: String,
     #[serde(rename = "company_name")]
     company_name: String,
     #[serde(rename = "company_address")]
@@ -171,6 +173,15 @@ struct InvoiceRoot {
     /// True only for the preferences sample PDF (placeholder logo/signature boxes).
     #[serde(rename = "preview")]
     preview: bool,
+}
+
+/// Bank details as Typst markup with real line breaks. Blank when unset.
+fn quotation_account_markup(account: Option<&str>) -> String {
+    account
+        .map(|text| text.replace('\r', ""))
+        .map(|text| typst_address_lines(&text))
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or_default()
 }
 
 fn dec_str(d: Decimal) -> String {
@@ -1113,6 +1124,7 @@ pub async fn render_quotation_pdf_parts(
         machine_lines: pdf_machine_lines,
         grand_total: dec_str(grand_total),
         remarks: inv.remarks.clone(),
+        bank_account: quotation_account_markup(inv.bank_account.as_deref()),
         company_name: company.name,
         company_address: company.address,
         company_phone: company.phone,
@@ -1237,6 +1249,9 @@ fn sample_invoice_root() -> InvoiceRoot {
         }],
         grand_total: "8378".into(),
         remarks: "Lead time 10 working days.".into(),
+        bank_account: quotation_account_markup(Some(
+            "Account Number: 1234567890\nIFSC Code: ICIC0005600\nBank: ICICI Bank",
+        )),
         company_name: company.name,
         company_address: company.address,
         company_phone: company.phone,
@@ -1318,6 +1333,7 @@ pub async fn render_quotation_pdf_preview(
     fs: Option<&FilesystemState>,
     template_src: Option<&str>,
     presentation: Option<CompanyPresentation>,
+    bank_account: Option<&str>,
 ) -> Result<PdfResult, PdfError> {
     let prefs = load_preferences(db)
         .await
@@ -1334,6 +1350,12 @@ pub async fn render_quotation_pdf_preview(
         form_company.overlay_nonempty(&mut preview_company);
     }
     preview_company.apply_to(&mut root);
+    if let Some(account) = bank_account
+        .map(str::trim)
+        .filter(|account| !account.is_empty())
+    {
+        root.bank_account = quotation_account_markup(Some(account));
+    }
     let grand: Decimal = root.grand_total.parse().unwrap_or(Decimal::ZERO);
     let ctx = quotation_pdf_context(&root)?;
     let bytes = compile_pdf(tmpl_src, ctx, amount_words_from_decimal(grand), fs).await?;
@@ -1514,7 +1536,26 @@ mod tests {
         assert!(out.contains("+91 20 1111 2222"), "{out}");
         assert!(out.contains("27BBBBB1111B1Z5"), "{out}");
         assert!(out.contains("Maharashtra"), "{out}");
+        assert!(out.contains("Company's Bank Details"), "{out}");
+        assert!(out.contains("1234567890"), "{out}");
+        assert!(out.contains("ICIC0005600"), "{out}");
         assert!(!out.contains("KDS Tagore"), "{out}");
+    }
+
+    #[test]
+    fn default_quotation_template_omits_blank_bank_account() {
+        let mut root = sample_invoice_root();
+        root.bank_account.clear();
+        let grand: Decimal = root.grand_total.parse().unwrap_or(Decimal::ZERO);
+        let ctx = quotation_pdf_context(&root).expect("serialize");
+        let out = render_template(
+            DEFAULT_QUOTATION_PDF_TEMPLATE,
+            ctx,
+            &amount_words_from_decimal(grand),
+            None,
+        )
+        .expect("render");
+        assert!(!out.contains("Company's Bank Details"), "{out}");
     }
 
     #[test]

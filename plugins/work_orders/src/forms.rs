@@ -1128,84 +1128,72 @@ fn line_unit_price_cell(manual_price: bool) -> Markup {
     }
 }
 
-fn render_material_lines(
-    ctx: &FormCtx<'_>,
-    field: &FieldRender<'_>,
-    manual_price: bool,
-) -> Markup {
-        let comp_str = ctx.display_of(field.name);
-        let components_json = if comp_str.is_empty() {
-            let alt = ctx.display_of("components_data");
-            if alt.is_empty() { "[]" } else { alt }
-        } else {
-            comp_str
-        };
-        let component_metas: Vec<ComponentMeta> =
-            serde_json::from_str(components_json).unwrap_or_default();
-        let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) =
-            serde_json::from_str::<serde_json::Value>(field.value)
-        {
-            for (i, v) in arr.into_iter().enumerate() {
-                if let serde_json::Value::Object(obj) = v {
-                    let component_id = json_i64_id(obj.get("component_id"));
-                    let schema = component_metas
-                        .iter()
-                        .find(|c| c.id == component_id)
-                        .map(|c| schema_json_from_meta(&c.variables))
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    let variables =
-                        form_variables(&schema, json_object_field(obj.get("variables")));
-                    let extra_data = obj
-                        .get("extra_data")
-                        .cloned()
-                        .unwrap_or(serde_json::json!({}));
-                    let dim_units = extra_dim_units(obj.get("extra_data"));
-                    let db_id = json_i64_id(obj.get("id"));
-                    let final_cost = money_input_value(
-                        obj.get("final_cost")
-                            .unwrap_or(&serde_json::Value::Null),
-                    );
-                    let component_label = component_metas
-                        .iter()
-                        .find(|c| c.id == component_id)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_default();
-                    rows.push(serde_json::json!({
-                        "id": i + 1,
-                        "db_id": db_id,
-                        "component_id": component_id,
-                        "component_label": component_label,
-                        "variables": variables,
-                        "dim_units": dim_units,
-                        "final_cost": final_cost,
-                        "extra_data": extra_data,
-                        "tax_ids": parse_tax_ids_from_obj(&obj),
-                        "line_taxes": [],
-                        "remarks": json_str(&obj, "remarks"),
-                    }));
-                }
+fn render_material_lines(ctx: &FormCtx<'_>, field: &FieldRender<'_>, manual_price: bool) -> Markup {
+    let comp_str = ctx.display_of(field.name);
+    let components_json = if comp_str.is_empty() {
+        let alt = ctx.display_of("components_data");
+        if alt.is_empty() { "[]" } else { alt }
+    } else {
+        comp_str
+    };
+    let component_metas: Vec<ComponentMeta> =
+        serde_json::from_str(components_json).unwrap_or_default();
+    let mut rows = Vec::new();
+    if let Ok(serde_json::Value::Array(arr)) =
+        serde_json::from_str::<serde_json::Value>(field.value)
+    {
+        for (i, v) in arr.into_iter().enumerate() {
+            if let serde_json::Value::Object(obj) = v {
+                let component_id = json_i64_id(obj.get("component_id"));
+                let schema = component_metas
+                    .iter()
+                    .find(|c| c.id == component_id)
+                    .map(|c| schema_json_from_meta(&c.variables))
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let variables = form_variables(&schema, json_object_field(obj.get("variables")));
+                let extra_data = obj
+                    .get("extra_data")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
+                let dim_units = extra_dim_units(obj.get("extra_data"));
+                let db_id = json_i64_id(obj.get("id"));
+                let final_cost =
+                    money_input_value(obj.get("final_cost").unwrap_or(&serde_json::Value::Null));
+                let component_label = component_metas
+                    .iter()
+                    .find(|c| c.id == component_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                rows.push(serde_json::json!({
+                    "id": i + 1,
+                    "db_id": db_id,
+                    "component_id": component_id,
+                    "component_label": component_label,
+                    "variables": variables,
+                    "dim_units": dim_units,
+                    "final_cost": final_cost,
+                    "extra_data": extra_data,
+                    "tax_ids": parse_tax_ids_from_obj(&obj),
+                    "line_taxes": [],
+                    "remarks": json_str(&obj, "remarks"),
+                }));
             }
         }
-        let next_id = rows.len() + 1;
-        let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
-        let (
-            tax_pct_json,
-            tax_kind_json,
-            all_taxes_json,
-            default_material_json,
-            default_machine_json,
-        ) = line_tax_catalog(ctx);
+    }
+    let next_id = rows.len() + 1;
+    let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+    let (tax_pct_json, tax_kind_json, all_taxes_json, default_material_json, default_machine_json) =
+        line_tax_catalog(ctx);
 
-        let tax_bridge = alpine_line_tax_bridge();
-        let tax_pick_base = TaxMultiSelectRouteTag::PATH;
-        let calc_bridge = alpine_calc_bridge();
-        let show_remarks = show_line_remarks(ctx);
-        let show_remarks_js = if show_remarks { "true" } else { "false" };
-        let totals_colspan = if show_remarks { "6" } else { "5" };
-        let manual_price_js = if manual_price { "true" } else { "false" };
-        let alpine_data = format!(
-            r#"{{
+    let tax_bridge = alpine_line_tax_bridge();
+    let tax_pick_base = TaxMultiSelectRouteTag::PATH;
+    let calc_bridge = alpine_calc_bridge();
+    let show_remarks = show_line_remarks(ctx);
+    let show_remarks_js = if show_remarks { "true" } else { "false" };
+    let totals_colspan = if show_remarks { "6" } else { "5" };
+    let manual_price_js = if manual_price { "true" } else { "false" };
+    let alpine_data = format!(
+        r#"{{
                 {ALPINE_LENGTH_BRIDGE}
                 {ALPINE_LINES_SUBMIT_BRIDGE}
                 {ALPINE_FKEY_BRIDGE}
@@ -1365,52 +1353,52 @@ fn render_material_lines(
                     return JSON.stringify(valid);
                 }}
             }}"#
-        );
-        let component_pick_url = ComponentFkSelectRouteTag.url();
+    );
+    let component_pick_url = ComponentFkSelectRouteTag.url();
 
-        html! {
-            div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
-                x-data=(alpine_data)
-                x-effect="items.length; $nextTick(() => { if (window.htmx) window.htmx.process($el); if (typeof this.rewireFkeyPickers === 'function') this.rewireFkeyPickers(); })" {
-                (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)" x-on:fk-multi-select.window="onTaxMultiSelect($event.detail)"></div>"#))
-                input type="hidden" name=(field.name) data-lines-hidden value=(field.value);
+    html! {
+        div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
+            x-data=(alpine_data)
+            x-effect="items.length; $nextTick(() => { if (window.htmx) window.htmx.process($el); if (typeof this.rewireFkeyPickers === 'function') this.rewireFkeyPickers(); })" {
+            (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)" x-on:fk-multi-select.window="onTaxMultiSelect($event.detail)"></div>"#))
+            input type="hidden" name=(field.name) data-lines-hidden value=(field.value);
 
-                (label(field.label, html! {
-                (PreEscaped(r#"<div x-show="items.length === 0" class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300">"#))
-                    "No material lines added yet. Click \"Add Line\" below to add items."
-                (PreEscaped("</div>"))
+            (label(field.label, html! {
+            (PreEscaped(r#"<div x-show="items.length === 0" class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300">"#))
+                "No material lines added yet. Click \"Add Line\" below to add items."
+            (PreEscaped("</div>"))
 
-                (PreEscaped(r#"<div x-show="items.length > 0" class="overflow-x-auto min-w-0 w-full border border-base-300 rounded-lg bg-base-100 shadow-sm">"#))
-                    table class="table table-xs w-full min-w-max" {
-                        thead class="bg-base-200/80 text-base-content/70" {
-                            tr class="text-xs" {
-                                th class="w-7 text-center" { "#" }
-                                th class="w-40 min-w-[140px]" { "Component" }
-                                th class="min-w-[240px]" { "Variables" }
-                                (line_remarks_header(show_remarks))
-                                th class="min-w-[8rem]" { "Taxes" }
-                                (line_unit_price_header(manual_price))
-                                th class="text-right w-24" { "Total (₹)" }
-                                th class="w-7 text-center" { "" }
-                            }
+            (PreEscaped(r#"<div x-show="items.length > 0" class="overflow-x-auto min-w-0 w-full border border-base-300 rounded-lg bg-base-100 shadow-sm">"#))
+                table class="table table-xs w-full min-w-max" {
+                    thead class="bg-base-200/80 text-base-content/70" {
+                        tr class="text-xs" {
+                            th class="w-7 text-center" { "#" }
+                            th class="w-40 min-w-[140px]" { "Component" }
+                            th class="min-w-[240px]" { "Variables" }
+                            (line_remarks_header(show_remarks))
+                            th class="min-w-[8rem]" { "Taxes" }
+                            (line_unit_price_header(manual_price))
+                            th class="text-right w-24" { "Total (₹)" }
+                            th class="w-7 text-center" { "" }
                         }
-                        tbody {
-                            (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
-                            tr class="hover border-b border-base-200 last:border-none" {
-                                (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
-                                td class="align-middle min-w-[12rem]" {
-                                    div class="min-w-0" data-fkey-field="component" x-bind:data-fkey-item-id="item.id"
-                                        x-effect="bindFkeyInput($el, item, 'component')" {
-                                        (embed_input_fkey(&component_pick_url, "Select component…"))
-                                    }
+                    }
+                    tbody {
+                        (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
+                        tr class="hover border-b border-base-200 last:border-none" {
+                            (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
+                            td class="align-middle min-w-[12rem]" {
+                                div class="min-w-0" data-fkey-field="component" x-bind:data-fkey-item-id="item.id"
+                                    x-effect="bindFkeyInput($el, item, 'component')" {
+                                    (embed_input_fkey(&component_pick_url, "Select component…"))
                                 }
-                                td class="align-middle" {
-                                    (PreEscaped(r#"
+                            }
+                            td class="align-middle" {
+                                (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
                                         <template x-for="v in schemaEntries(item, schemaOfComp(item.component_id))" :key="v.name">
                                     "#))
-                                    (line_variable_inputs())
-                                    (PreEscaped(r#"
+                                (line_variable_inputs())
+                                (PreEscaped(r#"
                                         </template>
                                         <template x-if="schemaEntries(item, schemaOfComp(item.component_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this component</span>
@@ -1418,112 +1406,100 @@ fn render_material_lines(
                                         <div x-show="item.calc_error" x-cloak class="text-xs text-error" x-text="item.calc_error"></div>
                                     </div>
                                     "#))
-                                }
-                                (line_remarks_cell(show_remarks))
-                                (embed_line_tax_picker())
-                                (line_unit_price_cell(manual_price))
-                                td class="align-middle text-right font-mono font-bold text-primary text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
-                                }
-                                td class="align-middle text-center" {
-                                    (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove line" @click="removeItem(idx)">✕</button>"#))
-                                }
                             }
-                            (PreEscaped("</template>"))
+                            (line_remarks_cell(show_remarks))
+                            (embed_line_tax_picker())
+                            (line_unit_price_cell(manual_price))
+                            td class="align-middle text-right font-mono font-bold text-primary text-xs" {
+                                (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
+                            }
+                            td class="align-middle text-center" {
+                                (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove line" @click="removeItem(idx)">✕</button>"#))
+                            }
                         }
-                        tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
-                            tr {
-                                td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Final Grand Total (₹):" }
-                                td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
-                                }
-                                td class="align-middle" {}
+                        (PreEscaped("</template>"))
+                    }
+                    tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
+                        tr {
+                            td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Final Grand Total (₹):" }
+                            td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
+                                (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
                             }
+                            td class="align-middle" {}
                         }
                     }
-                (PreEscaped("</div>"))
-
-                div class="flex justify-end mt-2" {
-                    (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
-                    (icon("plus", "w-3 h-3"))
-                    "Add Line"
-                    (PreEscaped("</button>"))
                 }
-                }))
+            (PreEscaped("</div>"))
+
+            div class="flex justify-end mt-2" {
+                (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
+                (icon("plus", "w-3 h-3"))
+                "Add Line"
+                (PreEscaped("</button>"))
             }
+            }))
         }
+    }
 }
 
-fn render_machine_lines(
-    ctx: &FormCtx<'_>,
-    field: &FieldRender<'_>,
-    manual_price: bool,
-) -> Markup {
-        let machines_json: &str = ctx.display_of(field.name);
-        let machines_json = if machines_json.is_empty() {
-            "[]"
-        } else {
-            machines_json
-        };
-        let machines_val: serde_json::Value =
-            serde_json::from_str(machines_json).unwrap_or_else(|_| serde_json::json!([]));
-        let mut rows = Vec::new();
-        if let Ok(serde_json::Value::Array(arr)) =
-            serde_json::from_str::<serde_json::Value>(field.value)
-        {
-            for (i, v) in arr.into_iter().enumerate() {
-                if let serde_json::Value::Object(obj) = v {
-                    let machine_id = json_i64_id(obj.get("machine_id"));
-                    let machine_label = obj
-                        .get("machine_label")
-                        .or_else(|| obj.get("name"))
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let schema = schema_json_from_list(&machines_val, machine_id);
-                    let variables =
-                        form_variables(&schema, json_object_field(obj.get("variables")));
-                    let db_id = json_i64_id(obj.get("id"));
-                    let final_cost = money_input_value(
-                        obj.get("final_cost")
-                            .unwrap_or(&serde_json::Value::Null),
-                    );
-                    rows.push(serde_json::json!({
-                        "id": i + 1,
-                        "db_id": db_id,
-                        "machine_id": machine_id,
-                        "machine_label": machine_label,
-                        "product_id": json_i64_id(obj.get("product_id")),
-                        "variables": variables,
-                        "dim_units": {},
-                        "final_cost": final_cost,
-                        "tax_ids": parse_tax_ids_from_obj(&obj),
-                        "line_taxes": [],
-                        "total": 0,
-                        "remarks": json_str(&obj, "remarks"),
-                    }));
-                }
+fn render_machine_lines(ctx: &FormCtx<'_>, field: &FieldRender<'_>, manual_price: bool) -> Markup {
+    let machines_json: &str = ctx.display_of(field.name);
+    let machines_json = if machines_json.is_empty() {
+        "[]"
+    } else {
+        machines_json
+    };
+    let machines_val: serde_json::Value =
+        serde_json::from_str(machines_json).unwrap_or_else(|_| serde_json::json!([]));
+    let mut rows = Vec::new();
+    if let Ok(serde_json::Value::Array(arr)) =
+        serde_json::from_str::<serde_json::Value>(field.value)
+    {
+        for (i, v) in arr.into_iter().enumerate() {
+            if let serde_json::Value::Object(obj) = v {
+                let machine_id = json_i64_id(obj.get("machine_id"));
+                let machine_label = obj
+                    .get("machine_label")
+                    .or_else(|| obj.get("name"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let schema = schema_json_from_list(&machines_val, machine_id);
+                let variables = form_variables(&schema, json_object_field(obj.get("variables")));
+                let db_id = json_i64_id(obj.get("id"));
+                let final_cost =
+                    money_input_value(obj.get("final_cost").unwrap_or(&serde_json::Value::Null));
+                rows.push(serde_json::json!({
+                    "id": i + 1,
+                    "db_id": db_id,
+                    "machine_id": machine_id,
+                    "machine_label": machine_label,
+                    "product_id": json_i64_id(obj.get("product_id")),
+                    "variables": variables,
+                    "dim_units": {},
+                    "final_cost": final_cost,
+                    "tax_ids": parse_tax_ids_from_obj(&obj),
+                    "line_taxes": [],
+                    "total": 0,
+                    "remarks": json_str(&obj, "remarks"),
+                }));
             }
         }
-        let next_id = rows.len() + 1;
-        let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
-        let (
-            tax_pct_json,
-            tax_kind_json,
-            all_taxes_json,
-            default_material_json,
-            default_machine_json,
-        ) = line_tax_catalog(ctx);
+    }
+    let next_id = rows.len() + 1;
+    let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+    let (tax_pct_json, tax_kind_json, all_taxes_json, default_material_json, default_machine_json) =
+        line_tax_catalog(ctx);
 
-        let tax_bridge = alpine_line_tax_bridge();
-        let tax_pick_base = TaxMultiSelectRouteTag::PATH;
-        let calc_bridge = alpine_calc_bridge();
-        let show_remarks = show_line_remarks(ctx);
-        let show_remarks_js = if show_remarks { "true" } else { "false" };
-        let totals_colspan = if show_remarks { "6" } else { "5" };
-        let manual_price_js = if manual_price { "true" } else { "false" };
-        let alpine_data = format!(
-            r#"{{
+    let tax_bridge = alpine_line_tax_bridge();
+    let tax_pick_base = TaxMultiSelectRouteTag::PATH;
+    let calc_bridge = alpine_calc_bridge();
+    let show_remarks = show_line_remarks(ctx);
+    let show_remarks_js = if show_remarks { "true" } else { "false" };
+    let totals_colspan = if show_remarks { "6" } else { "5" };
+    let manual_price_js = if manual_price { "true" } else { "false" };
+    let alpine_data = format!(
+        r#"{{
                 {ALPINE_LENGTH_BRIDGE}
                 {ALPINE_LINES_SUBMIT_BRIDGE}
                 {ALPINE_FKEY_BRIDGE}
@@ -1678,52 +1654,52 @@ fn render_machine_lines(
                     return JSON.stringify(valid);
                 }}
             }}"#
-        );
-        let machine_pick_url = MachineFkSelectRouteTag.url();
+    );
+    let machine_pick_url = MachineFkSelectRouteTag.url();
 
-        html! {
-            div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
-                x-data=(alpine_data)
-                x-effect="items.length; $nextTick(() => { if (window.htmx) window.htmx.process($el); if (typeof this.rewireFkeyPickers === 'function') this.rewireFkeyPickers(); })" {
-                (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)" x-on:fk-multi-select.window="onTaxMultiSelect($event.detail)"></div>"#))
-                input type="hidden" name=(field.name) data-lines-hidden value=(field.value);
+    html! {
+        div class="form-control mb-4 w-full min-w-0" data-lines-root="" data-lines-seed=(field.value)
+            x-data=(alpine_data)
+            x-effect="items.length; $nextTick(() => { if (window.htmx) window.htmx.process($el); if (typeof this.rewireFkeyPickers === 'function') this.rewireFkeyPickers(); })" {
+            (PreEscaped(r#"<div hidden x-on:fk-select.window="onFkeySelect($event.detail)" x-on:fk-multi-select.window="onTaxMultiSelect($event.detail)"></div>"#))
+            input type="hidden" name=(field.name) data-lines-hidden value=(field.value);
 
-                (label(field.label, html! {
-                (PreEscaped(r#"<div x-show="items.length === 0" class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300">"#))
-                    "No machine lines added yet. Click \"Add Machine Line\" below to add machine time."
-                (PreEscaped("</div>"))
+            (label(field.label, html! {
+            (PreEscaped(r#"<div x-show="items.length === 0" class="p-4 text-center text-xs text-base-content/60 bg-base-100 rounded-lg border border-dashed border-base-300">"#))
+                "No machine lines added yet. Click \"Add Machine Line\" below to add machine time."
+            (PreEscaped("</div>"))
 
-                (PreEscaped(r#"<div x-show="items.length > 0" class="overflow-x-auto min-w-0 w-full border border-base-300 rounded-lg bg-base-100 shadow-sm">"#))
-                    table class="table table-xs w-full min-w-max" {
-                        thead class="bg-base-200/80 text-base-content/70" {
-                            tr class="text-xs" {
-                                th class="w-7 text-center" { "#" }
-                                th class="min-w-[180px]" { "Machine" }
-                                th class="min-w-[240px]" { "Variables" }
-                                (line_remarks_header(show_remarks))
-                                th class="min-w-[8rem]" { "Taxes" }
-                                (line_unit_price_header(manual_price))
-                                th class="text-right w-24" { "Total (₹)" }
-                                th class="w-7 text-center" { "" }
-                            }
+            (PreEscaped(r#"<div x-show="items.length > 0" class="overflow-x-auto min-w-0 w-full border border-base-300 rounded-lg bg-base-100 shadow-sm">"#))
+                table class="table table-xs w-full min-w-max" {
+                    thead class="bg-base-200/80 text-base-content/70" {
+                        tr class="text-xs" {
+                            th class="w-7 text-center" { "#" }
+                            th class="min-w-[180px]" { "Machine" }
+                            th class="min-w-[240px]" { "Variables" }
+                            (line_remarks_header(show_remarks))
+                            th class="min-w-[8rem]" { "Taxes" }
+                            (line_unit_price_header(manual_price))
+                            th class="text-right w-24" { "Total (₹)" }
+                            th class="w-7 text-center" { "" }
                         }
-                        tbody {
-                            (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
-                            tr class="hover border-b border-base-200 last:border-none" x-bind:data-line-item-id="item.id" {
-                                (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
-                                td class="align-middle min-w-[12rem]" {
-                                    div class="min-w-0" data-fkey-field="machine" x-bind:data-fkey-item-id="item.id"
-                                        x-effect="bindFkeyInput($el, item, 'machine')" {
-                                        (embed_input_fkey(&machine_pick_url, "Select machine…"))
-                                    }
+                    }
+                    tbody {
+                        (PreEscaped(r#"<template x-for="(item, idx) in items" :key="item.id">"#))
+                        tr class="hover border-b border-base-200 last:border-none" x-bind:data-line-item-id="item.id" {
+                            (PreEscaped(r#"<td class="align-middle text-center opacity-60 font-mono text-xs" x-text="idx + 1"></td>"#))
+                            td class="align-middle min-w-[12rem]" {
+                                div class="min-w-0" data-fkey-field="machine" x-bind:data-fkey-item-id="item.id"
+                                    x-effect="bindFkeyInput($el, item, 'machine')" {
+                                    (embed_input_fkey(&machine_pick_url, "Select machine…"))
                                 }
-                                td class="align-middle" {
-                                    (PreEscaped(r#"
+                            }
+                            td class="align-middle" {
+                                (PreEscaped(r#"
                                     <div class="flex flex-col gap-1.5 py-1">
                                         <template x-for="v in schemaEntries(item, schemaOfMachine(item.machine_id))" :key="v.name">
                                     "#))
-                                    (line_variable_inputs())
-                                    (PreEscaped(r#"
+                                (line_variable_inputs())
+                                (PreEscaped(r#"
                                         </template>
                                         <template x-if="schemaEntries(item, schemaOfMachine(item.machine_id)).length === 0">
                                             <span class="text-xs italic opacity-60">No variables on this machine</span>
@@ -1731,40 +1707,40 @@ fn render_machine_lines(
                                         <div x-show="item.calc_error" x-cloak class="text-xs text-error" x-text="item.calc_error"></div>
                                     </div>
                                     "#))
-                                }
-                                (line_remarks_cell(show_remarks))
-                                (embed_line_tax_picker())
-                                (line_unit_price_cell(manual_price))
-                                td class="align-middle text-right font-mono font-bold text-primary text-xs" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
-                                }
-                                td class="align-middle text-center" {
-                                    (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove machine line" @click="removeItem(idx)">✕</button>"#))
-                                }
                             }
-                            (PreEscaped("</template>"))
+                            (line_remarks_cell(show_remarks))
+                            (embed_line_tax_picker())
+                            (line_unit_price_cell(manual_price))
+                            td class="align-middle text-right font-mono font-bold text-primary text-xs" {
+                                (PreEscaped(r#"<span x-text="formatMoney(lineTaxedTotal(item))"></span>"#))
+                            }
+                            td class="align-middle text-center" {
+                                (PreEscaped(r#"<button type="button" class="btn btn-ghost btn-xs text-error h-7 w-7 min-h-0 p-0 flex items-center justify-center mx-auto" title="Remove machine line" @click="removeItem(idx)">✕</button>"#))
+                            }
                         }
-                        tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
-                            tr {
-                                td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Machine Grand Total (₹):" }
-                                td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
-                                    (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
-                                }
-                                td class="align-middle" {}
+                        (PreEscaped("</template>"))
+                    }
+                    tfoot class="bg-base-200/60 font-semibold border-t border-base-300" {
+                        tr {
+                            td colspan=(totals_colspan) class="align-middle text-right font-medium py-2" { "Machine Grand Total (₹):" }
+                            td class="align-middle text-right font-mono font-extrabold text-primary text-sm py-2" {
+                                (PreEscaped(r#"<span x-text="formatMoney(grandTotal())"></span>"#))
                             }
+                            td class="align-middle" {}
                         }
                     }
-                (PreEscaped("</div>"))
-
-                div class="flex justify-end mt-2" {
-                    (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
-                    (icon("plus", "w-3 h-3"))
-                    "Add Machine Line"
-                    (PreEscaped("</button>"))
                 }
-                }))
+            (PreEscaped("</div>"))
+
+            div class="flex justify-end mt-2" {
+                (PreEscaped(r#"<button type="button" class="btn btn-outline btn-xs btn-primary gap-1" @click="addItem()">"#))
+                (icon("plus", "w-3 h-3"))
+                "Add Machine Line"
+                (PreEscaped("</button>"))
             }
+            }))
         }
+    }
 }
 
 pub struct MaterialLinesWidget;
@@ -2045,6 +2021,15 @@ pub struct WorkOrdersPreferencesForm {
     pub place_of_supply: String,
 
     #[form(
+        label = "Default account",
+        widget = Textarea,
+        rows = 6,
+        name = "default_bank_account",
+        hint = "Copied onto new quotations and printed on the quotation PDF."
+    )]
+    pub default_bank_account: String,
+
+    #[form(
         label = "Quotation logo",
         widget = ForeignKey,
         route = VNodeFileSelectRouteTag,
@@ -2184,6 +2169,9 @@ pub struct InvoiceForm {
         placeholder = "Select customer…"
     )]
     pub customer_id: i64,
+
+    #[form(label = "Account", widget = Textarea, rows = 6)]
+    pub bank_account: String,
 
     #[form(label = "Remarks", widget = Textarea, rows = 3)]
     pub remarks: String,

@@ -1698,6 +1698,7 @@ impl InvoiceDetailPage {
 
         let date_str = self.invoice.date.to_string();
         let cust_str = self.customer_name.clone();
+        let account = self.invoice.bank_account.clone().unwrap_or_default();
 
         html! {
             (detail(html! {
@@ -1709,6 +1710,7 @@ impl InvoiceDetailPage {
                     (container_row("gap-6", html! {
                         (label("Quotation Date", field_text(FieldText { value: &date_str, classes: "" })))
                         (label("Customer", field_text(FieldText { value: &cust_str, classes: "" })))
+                        (label("Account", field_text(FieldText { value: &account, classes: "whitespace-pre-wrap" })))
                         (label("Remarks", field_text(FieldText { value: &self.invoice.remarks, classes: "whitespace-pre-wrap" })))
                     }))
 
@@ -2220,6 +2222,7 @@ pub struct InvoiceCreateModalPage {
     pub date: String,
     pub customer_id: Option<i64>,
     pub customer_name: String,
+    pub bank_account: String,
     pub remarks: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
@@ -2250,6 +2253,7 @@ impl RenderTemplate for InvoiceCreateModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::BankAccount, &self.bank_account)
             .value(InvoiceFormField::Remarks, &self.remarks)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
@@ -2294,6 +2298,7 @@ pub struct InvoiceEditModalPage {
     pub date: String,
     pub customer_id: i64,
     pub customer_name: String,
+    pub bank_account: String,
     pub remarks: String,
     pub material_lines_json: String,
     pub machine_lines_json: String,
@@ -2321,6 +2326,7 @@ impl RenderTemplate for InvoiceEditModalPage {
             .value(InvoiceFormField::Date, &self.date)
             .value(InvoiceFormField::CustomerId, &cust_id_str)
             .display(InvoiceFormField::CustomerId, &self.customer_name)
+            .value(InvoiceFormField::BankAccount, &self.bank_account)
             .value(InvoiceFormField::Remarks, &self.remarks)
             .value(InvoiceFormField::MaterialLines, material_lines_val)
             .display(InvoiceFormField::MaterialLines, &self.components_json)
@@ -2579,6 +2585,7 @@ pub struct WorkOrdersPreferencesPage {
     pub company_phone: String,
     pub company_gstin: String,
     pub place_of_supply: String,
+    pub default_bank_account: String,
     pub company_logo_vnode_id: String,
     pub company_logo_vnode_display: String,
     pub company_signature_vnode_id: String,
@@ -2665,6 +2672,10 @@ impl WorkOrdersPreferencesPage {
                 self.place_of_supply.as_str(),
             )
             .value(
+                WorkOrdersPreferencesFormField::DefaultBankAccount,
+                self.default_bank_account.as_str(),
+            )
+            .value(
                 WorkOrdersPreferencesFormField::CompanyLogoVnodeId,
                 self.company_logo_vnode_id.as_str(),
             )
@@ -2713,6 +2724,7 @@ impl WorkOrdersPreferencesPage {
                     || spec.name == WorkOrdersPreferencesFormField::CompanyPhone.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::CompanyGstin.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::PlaceOfSupply.html_name()
+                    || spec.name == WorkOrdersPreferencesFormField::DefaultBankAccount.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::CompanyLogoVnodeId.html_name()
                     || spec.name == WorkOrdersPreferencesFormField::CompanySignatureVnodeId.html_name()
                 {
@@ -2751,7 +2763,7 @@ impl WorkOrdersPreferencesPage {
                     &WorkOrdersPrefsPostRouteTag.url(),
                 ),
                 title: "KDS Quotations Preferences",
-                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, the quotation email subject and body, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. PDF templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF. The email templates are plain-text Jinja2.",
+                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, the default account copied onto new quotations, the quotation email subject and body, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. PDF templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF. The email templates are plain-text Jinja2.",
                 form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
                 inputs: html! {
                     (label_hint(
