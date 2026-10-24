@@ -37,7 +37,6 @@ fn gst18_levied_tax() -> lariv_rs::plugins::finance_taxes::entities::tax::Model 
         name: "GST".into(),
         percentage: Decimal::from(18),
         tax_type: lariv_rs::plugins::finance_taxes::entities::TaxKind::Levied,
-        account_id: None,
     }
 }
 

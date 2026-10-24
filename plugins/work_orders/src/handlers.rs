@@ -2338,7 +2338,6 @@ pub async fn component_create_post(
         0,
         form.name.trim(),
         &variables,
-        &form.cost_formula,
     )
     .await
     {
@@ -2483,7 +2482,6 @@ pub async fn component_edit_post(
         existing.product_id,
         form.name.trim(),
         &variables,
-        &form.cost_formula,
     )
     .await
     {
@@ -3284,6 +3282,7 @@ fn quotation_invoice_line(
     variables: serde_json::Value,
     tax_ids: Vec<i64>,
     remarks: &str,
+    rate: Decimal,
 ) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftLinePending, String> {
     if product_id <= 0 {
         return Err("a quotation line is not linked to a product".into());
@@ -3291,7 +3290,7 @@ fn quotation_invoice_line(
     Ok(
         lariv_plugin_finance_invoices::logic::draft::DraftLinePending {
             product_id,
-            rate: None,
+            rate: Some(rate.normalize().to_string()),
             quantity: "1".into(),
             variables: Some(variables),
             tax_ids: Some(tax_ids),
@@ -3376,6 +3375,7 @@ async fn create_draft_invoice_from_quotation(
             line.variables,
             mat_tax_map.get(&line.id).cloned().unwrap_or_default(),
             &line.remarks,
+            line.final_cost,
         )?);
     }
     if lines.is_empty() && service_lines.is_empty() {

@@ -1,13 +1,12 @@
 //! Catalog rows backing quotation and work-order lines.
 //!
 //! A component owns one goods product. Each machine owns one service.
-//! Variable schemas and price formulas live on that row; the line keeps the
-//! values entered for that job.
+//! Variable schemas live on that catalog row. The component keeps its cost
+//! formula, and the line keeps the values entered for that job.
 
 use std::collections::HashMap;
 
 use chrono::Utc;
-use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
 };
@@ -45,15 +44,6 @@ async fn component_stock_id<C: ConnectionTrait>(db: &C) -> Result<i64, String> {
     Ok(saved.id)
 }
 
-fn formula_text(formula: &str, fallback: Decimal) -> String {
-    let trimmed = formula.trim();
-    if !trimmed.is_empty() {
-        return trimmed.to_string();
-    }
-    let text = fallback.normalize().to_string();
-    if text.is_empty() { "0".into() } else { text }
-}
-
 fn schema_text(variables: &serde_json::Value) -> String {
     match variables {
         serde_json::Value::Object(_) => variables.to_string(),
@@ -75,7 +65,6 @@ async fn insert_product<C: ConnectionTrait>(
     db: &C,
     name: String,
     variables: String,
-    formula: String,
 ) -> Result<i64, String> {
     let now = Utc::now();
     let stock_id = component_stock_id(db).await?;
@@ -88,8 +77,6 @@ async fn insert_product<C: ConnectionTrait>(
         name: Set(name),
         hsn_code: Set(0),
         variables: Set(variables),
-        base_price_formula: Set(formula.clone()),
-        sales_price_formula: Set(formula),
         ..Default::default()
     }
     .insert(db)
@@ -103,7 +90,6 @@ async fn write_product<C: ConnectionTrait>(
     product_id: i64,
     name: String,
     variables: String,
-    formula: String,
 ) -> Result<i64, String> {
     if product_id > 0
         && let Some(existing) = product::Entity::find_by_id(product_id)
@@ -115,28 +101,24 @@ async fn write_product<C: ConnectionTrait>(
         am.updated_at = Set(Some(Utc::now()));
         am.name = Set(name);
         am.variables = Set(variables);
-        am.base_price_formula = Set(formula.clone());
-        am.sales_price_formula = Set(formula);
         let saved = am.update(db).await.map_err(|e| e.to_string())?;
         return Ok(saved.id);
     }
-    insert_product(db, name, variables, formula).await
+    insert_product(db, name, variables).await
 }
 
-/// Create or update the goods product that stores a component's schema and cost formula.
+/// Create or update the goods product that stores a component's variable schema.
 pub async fn save_component_product<C: ConnectionTrait>(
     db: &C,
     product_id: i64,
     name: &str,
     variables: &serde_json::Value,
-    cost_formula: &str,
 ) -> Result<i64, String> {
     write_product(
         db,
         product_id,
         display_name(name, "Component"),
         schema_text(variables),
-        formula_text(cost_formula, Decimal::ZERO),
     )
     .await
 }
@@ -156,14 +138,7 @@ pub async fn ensure_component_product<C: ConnectionTrait>(
             return Ok(component.product_id);
         }
     }
-    let id = save_component_product(
-        db,
-        0,
-        &component.name,
-        &component.variables,
-        &component.cost_formula,
-    )
-    .await?;
+    let id = save_component_product(db, 0, &component.name, &component.variables).await?;
     let mut am: crate::entities::component::ActiveModel = component.clone().into();
     am.product_id = Set(id);
     am.update(db).await.map_err(|e| e.to_string())?;
