@@ -4,10 +4,9 @@
 //! Deployment link from a finance invoice to one inventory out movement.
 //!
 //! The foreign key lives on `draft_invoices`, `posted_invoices`, and
-//! `cancelled_invoices`. Posting and cancelling copy it with a database
-//! trigger, because the shared invoice models do not know this column.
-//! Draft forms and the invoice PDF context pick it up from the invoice addon
-//! registries.
+//! `cancelled_invoices`. Posting copies draft → posted via
+//! [`DraftInvoiceFormAddon::on_posted`]; cancelling still copies posted →
+//! cancelled with a database trigger.
 
 pub mod handlers;
 pub mod keys;
@@ -19,6 +18,7 @@ use async_trait::async_trait;
 use lariv_plugin_finance_invoices::draft_form_addon::{
     DraftInvoiceFormAddon, register_draft_invoice_form_addon,
 };
+use lariv_plugin_finance_invoices::invoice_addon_key::InvoiceAddonKey;
 use lariv_plugin_finance_invoices::invoice_pdf_addon::{
     InvoicePdfContextAddon, register_invoice_pdf_context_addon,
 };
@@ -26,7 +26,8 @@ use lariv_plugin_inventory::entities::stock_movement_out::{self, Entity as OutEn
 use lariv_plugin_inventory::routes::MovementDetailRouteTag;
 use maud::{Markup, html};
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement, Value,
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    Statement, Value,
 };
 use serde_json::{Value as Json, json};
 
@@ -79,9 +80,14 @@ impl InvoicePdfContextAddon for Addon {
     async fn extra_context(
         &self,
         db: &DatabaseConnection,
-        draft_invoice_id: i64,
+        key: InvoiceAddonKey,
     ) -> Result<Json, String> {
-        let movement_id = load_draft_movement_id(db, draft_invoice_id).await?;
+        let movement_id = match key {
+            InvoiceAddonKey::Draft(id) => load_header_movement_id(db, "draft_invoices", id).await?,
+            InvoiceAddonKey::Posted(id) => {
+                load_header_movement_id(db, "posted_invoices", id).await?
+            }
+        };
         let movement = match movement_id {
             Some(id) => OutEntity::find_by_id(id)
                 .one(db)
@@ -134,7 +140,7 @@ impl DraftInvoiceFormAddon for Addon {
     }
 
     async fn render_detail(&self, db: &DatabaseConnection, draft_id: i64) -> Markup {
-        let movement = match load_draft_movement_id(db, draft_id).await {
+        let movement = match load_header_movement_id(db, "draft_invoices", draft_id).await {
             Ok(Some(id)) => OutEntity::find_by_id(id).one(db).await.ok().flatten(),
             _ => None,
         };
@@ -172,13 +178,33 @@ impl DraftInvoiceFormAddon for Addon {
                 return Err(format!("out movement {id} was not found"));
             }
         }
-        write_movement_id(db, draft_id, movement_id).await
+        write_draft_movement_id(db, draft_id, movement_id).await
     }
 
     fn bulk_has_values(&self, fields: &UrlencodedFields) -> bool {
         fields
             .get_first(FIELD)
             .is_some_and(|value| !value.trim().is_empty())
+    }
+
+    async fn on_posted(
+        &self,
+        db: &DatabaseTransaction,
+        draft_id: i64,
+        posted_id: i64,
+    ) -> Result<(), String> {
+        let movement_id = load_header_movement_id(db, "draft_invoices", draft_id).await?;
+        write_header_movement_id(db, "posted_invoices", posted_id, movement_id).await
+    }
+
+    async fn on_new_draft_from_posted(
+        &self,
+        db: &DatabaseTransaction,
+        posted_id: i64,
+        new_draft_id: i64,
+    ) -> Result<(), String> {
+        let movement_id = load_header_movement_id(db, "posted_invoices", posted_id).await?;
+        write_header_movement_id(db, "draft_invoices", new_draft_id, movement_id).await
     }
 }
 
@@ -243,7 +269,7 @@ async fn field_state(
     let Some(draft_id) = draft_id else {
         return (String::new(), String::new());
     };
-    let Ok(Some(id)) = load_draft_movement_id(db, draft_id).await else {
+    let Ok(Some(id)) = load_header_movement_id(db, "draft_invoices", draft_id).await else {
         return (String::new(), String::new());
     };
     let display = movement_display(db, id).await;
@@ -257,20 +283,32 @@ async fn movement_display(db: &DatabaseConnection, id: i64) -> String {
     }
 }
 
-async fn load_draft_movement_id(
-    db: &DatabaseConnection,
-    draft_id: i64,
+fn assert_header_table(table: &str) {
+    assert!(
+        matches!(
+            table,
+            "draft_invoices" | "posted_invoices" | "cancelled_invoices"
+        ),
+        "unexpected invoice header table"
+    );
+}
+
+async fn load_header_movement_id<C: ConnectionTrait>(
+    db: &C,
+    table: &str,
+    id: i64,
 ) -> Result<Option<i64>, String> {
+    assert_header_table(table);
     let backend = db.get_database_backend();
     let sql = format!(
-        "SELECT {COLUMN} AS {COLUMN} FROM draft_invoices WHERE id = {}",
+        "SELECT {COLUMN} AS {COLUMN} FROM {table} WHERE id = {}",
         placeholder(backend, 1)
     );
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             backend,
             sql,
-            [draft_id.into()],
+            [id.into()],
         ))
         .await
         .map_err(|err| err.to_string())?;
@@ -280,60 +318,36 @@ async fn load_draft_movement_id(
     row.try_get("", COLUMN).map_err(|err| err.to_string())
 }
 
-async fn write_movement_id(
+async fn write_draft_movement_id(
     db: &DatabaseConnection,
     draft_id: i64,
     movement_id: Option<i64>,
 ) -> Result<(), String> {
-    let backend = db.get_database_backend();
-    let movement_value: Value = movement_id.into();
-    let draft_value: Value = draft_id.into();
-    exec(
-        db,
-        backend,
-        &format!(
-            "UPDATE draft_invoices SET {COLUMN} = {}, updated_at = CURRENT_TIMESTAMP WHERE id = {}",
-            placeholder(backend, 1),
-            placeholder(backend, 2)
-        ),
-        vec![movement_value.clone(), draft_value.clone()],
-    )
-    .await?;
-    exec(
-        db,
-        backend,
-        &format!(
-            "UPDATE posted_invoices SET {COLUMN} = {}, updated_at = CURRENT_TIMESTAMP WHERE draft_invoice_id = {}",
-            placeholder(backend, 1),
-            placeholder(backend, 2)
-        ),
-        vec![movement_value.clone(), draft_value.clone()],
-    )
-    .await?;
-    exec(
-        db,
-        backend,
-        &format!(
-            "UPDATE cancelled_invoices SET {COLUMN} = {}, updated_at = CURRENT_TIMESTAMP \
-             WHERE posted_invoice_id IN (SELECT id FROM posted_invoices WHERE draft_invoice_id = {})",
-            placeholder(backend, 1),
-            placeholder(backend, 2)
-        ),
-        vec![movement_value, draft_value],
-    )
-    .await
+    write_header_movement_id(db, "draft_invoices", draft_id, movement_id).await
 }
 
-async fn exec(
-    db: &DatabaseConnection,
-    backend: DatabaseBackend,
-    sql: &str,
-    values: Vec<Value>,
+async fn write_header_movement_id<C: ConnectionTrait>(
+    db: &C,
+    table: &str,
+    id: i64,
+    movement_id: Option<i64>,
 ) -> Result<(), String> {
-    db.execute_raw(Statement::from_sql_and_values(backend, sql, values))
-        .await
-        .map(|_| ())
-        .map_err(|err| err.to_string())
+    assert_header_table(table);
+    let backend = db.get_database_backend();
+    let movement_value: Value = movement_id.into();
+    let id_value: Value = id.into();
+    db.execute_raw(Statement::from_sql_and_values(
+        backend,
+        format!(
+            "UPDATE {table} SET {COLUMN} = {}, updated_at = CURRENT_TIMESTAMP WHERE id = {}",
+            placeholder(backend, 1),
+            placeholder(backend, 2)
+        ),
+        vec![movement_value, id_value],
+    ))
+    .await
+    .map(|_| ())
+    .map_err(|err| err.to_string())
 }
 
 fn placeholder(backend: DatabaseBackend, index: usize) -> String {

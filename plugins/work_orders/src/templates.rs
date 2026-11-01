@@ -1,123 +1,32 @@
-use frunk::Generic;
-use lariv_core::{
-    components::{
-        ButtonModalForm, ButtonPost, ButtonSubmit, CodeEditorInput, DeleteConfirmation,
-        DetailHeader, FieldLink, FieldText, FilterClauseView, FormOpts, HTMX_SWAP_BODY_MODAL,
-        HTMX_TARGET_BODY_MODAL, LayoutMain, LayoutSidebar, ListFilterBuilder, ManyToManyItem,
-        PaginationPage, ShellChrome, ShellScaffold, SlotCapability, SlotRegistrar, SwapKey,
-        TableButtonFilter, TableColumnHeader, TablePagination, TableRow, attrs::escape_attr,
-        button_modal_form, button_modal_route, button_post, button_submit, code_editor_input,
-        container_column, container_row, data_table_list_refresh, delete_confirmation, detail,
-        detail_header, field_link, field_text, form, form_hx_get_route, form_hx_post_route, label,
-        label_hint, layout_main, layout_sidebar, list_filter_builder, modal, modal_keyed,
-        pagination_pages, row_attr_navigate_route, row_attr_select, row_attr_select_extra,
-        shell_scaffold, table_button_filter, table_create_button, table_pagination,
-    },
-    http::{FragmentGet, ProvideRequestCaps, RouteUrl},
-    list_filters::{FilterField, FilterRowError},
-    picker::{RenderPickerSelect, picker_create_button},
-    template::{RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar},
-    web::{modal_create_post_query, modal_edit_post_url},
-};
-use maud::PreEscaped;
+//! Work order list, detail, and modals.
+
 use maud::{Markup, html};
-use std::collections::HashMap;
 
-use kds_plugin_machinery_schedule::logic::format_job_duration;
-
-use lariv_core::html_form::{CsrfToken, FieldRender, FormCtx, FormFieldKey, HtmlForm};
-
-use rust_decimal::Decimal;
-
-use super::crumbs::*;
-use super::entities::{
-    component, draft_work_order, draft_work_order_machine_line, draft_work_order_material_line,
-    quotation, quotation_machine_line, quotation_material_line, work_order, work_order_line,
-    work_order_machine_line,
+use lariv_core::components::{
+    ButtonModalForm, ButtonSubmit, DeleteConfirmation, FieldLink, FieldText, FormOpts, Modal,
+    ObjectList, PaginationPage, ShellChrome, SlotCapability, SlotRegistrar, SwapKey,
+    TableColumnHeader, TablePagination, TableRow, button_modal_form, button_submit,
+    data_table_list, delete_confirmation, detail, detail_header, field_link, field_text, form,
+    form_hx_post_selector, form_hx_post_url, modal, modal_keyed, pagination_pages,
+    row_attr_navigate_route, table_create_button, table_pagination,
 };
+use lariv_core::html_form::{CsrfToken, FormCtx, HtmlForm};
+use lariv_core::http::ProvideRequestCaps;
+use lariv_core::template::{
+    RenderAppPane, RenderTemplate, TemplateCapability, TemplateOf, TemplateRegistrar,
+};
+use lariv_core::web::{modal_create_post_url, modal_edit_post_url};
+
+use super::crumbs::{self, detail_url};
+use super::entities::{part, step};
 use super::forms::{
-    ComponentForm, ComponentFormField, DraftWorkOrderForm, DraftWorkOrderFormField,
-    DraftWorkOrderLineForm, DraftWorkOrderLineFormField, DraftWorkOrderMachineLineForm,
-    DraftWorkOrderMachineLineFormField, InvoiceCreateWorkOrderForm,
-    InvoiceCreateWorkOrderFormField, InvoiceForm, InvoiceFormField, LineEditorDisplayKey,
-    WorkOrdersPreferencesForm, WorkOrdersPreferencesFormField, draft_work_order_form_hx_post,
-    lines_form_hx_post, schema_entries_from_json,
+    FlowForm, FlowFormField, PartForm, PartFormField, PresuppliedForm, PresuppliedFormField,
+    StepForm, StepFormField, WorkOrderForm, WorkOrderFormField,
 };
+use super::graph::{self, PartRole, PlanLayout};
 use super::keys::*;
-use super::machines::{
-    WorkOrdersMachineCreateModalPage, WorkOrdersMachineDetailPage, WorkOrdersMachineEditModalPage,
-    WorkOrdersMachineListPage,
-};
+use super::logic::{FlowSide, Plan};
 use super::routes::*;
-use kds_plugin_machinery_schedule::routes::JobDetailRouteTag;
-use kds_plugin_machinery_schedule::templates::data_table_with_filter_errors;
-
-fn formula_preview(s: &str) -> String {
-    let t = s.trim();
-    if t.is_empty() {
-        "—".into()
-    } else if t.len() > 40 {
-        format!("{}…", &t[..40])
-    } else {
-        t.to_string()
-    }
-}
-
-fn schema_label(variables: &serde_json::Value) -> String {
-    let entries = schema_entries_from_json(variables);
-    if entries.is_empty() {
-        "—".into()
-    } else {
-        entries.join(", ")
-    }
-}
-
-fn order_number_display(s: &str) -> &str {
-    if s.trim().is_empty() { "—" } else { s }
-}
-
-fn render_pagination<K: SwapKey>(path_and_query: &str, number: u32, num_pages: u32) -> Markup {
-    let owned = pagination_pages(path_and_query, number, num_pages, true);
-    let pages: Vec<PaginationPage<'_>> = owned
-        .iter()
-        .map(|(ellipsis, url, push_url, active, label)| PaginationPage {
-            ellipsis: *ellipsis,
-            url: url.as_str(),
-            push_url: *push_url,
-            active: *active,
-            label: label.as_str(),
-        })
-        .collect();
-    table_pagination(TablePagination {
-        pages: &pages,
-        hx_target: K::SELECTOR,
-    })
-}
-
-fn list_filter_panel<K, R>(
-    fields: &[FilterField],
-    rows: &[FilterClauseView],
-    page_size: u32,
-    sort: &str,
-    route: R,
-) -> Markup
-where
-    K: SwapKey,
-    R: FragmentGet<K> + RouteUrl + Copy,
-{
-    table_button_filter(TableButtonFilter {
-        panel: list_filter_builder(ListFilterBuilder {
-            fields,
-            rows,
-            page_size,
-            sort,
-            attrs: form_hx_get_route::<K, R>(route),
-            apply_label: "Apply",
-            extra: html! {},
-        }),
-        ..Default::default()
-    })
-}
 
 lariv_core::define_register_items! {
     plugin: super::WorkOrdersTag;
@@ -132,33 +41,12 @@ lariv_core::define_register_items! {
         WorkOrderDetailPageIdx: WorkOrderDetailPageTag => WorkOrderDetailPage,
         WorkOrderCreateModalPageIdx: WorkOrderCreateModalPageTag => WorkOrderCreateModalPage,
         WorkOrderEditModalPageIdx: WorkOrderEditModalPageTag => WorkOrderEditModalPage,
-        WorkOrderSelectPageIdx: WorkOrderSelectPageTag => WorkOrderSelectPage,
-
-        ComponentListPageIdx: ComponentListPageTag => ComponentListPage,
-        WorkOrdersMachineListPageIdx: WorkOrdersMachineListPageTag => WorkOrdersMachineListPage,
-        WorkOrdersMachineDetailPageIdx: WorkOrdersMachineDetailPageTag => WorkOrdersMachineDetailPage,
-        WorkOrdersMachineCreateModalPageIdx: WorkOrdersMachineCreateModalPageTag => WorkOrdersMachineCreateModalPage,
-        WorkOrdersMachineEditModalPageIdx: WorkOrdersMachineEditModalPageTag => WorkOrdersMachineEditModalPage,
-        ComponentDetailPageIdx: ComponentDetailPageTag => ComponentDetailPage,
-        ComponentCreateModalPageIdx: ComponentCreateModalPageTag => ComponentCreateModalPage,
-        ComponentEditModalPageIdx: ComponentEditModalPageTag => ComponentEditModalPage,
-        ComponentSelectPageIdx: ComponentSelectPageTag => ComponentSelectPage,
-
-        InvoiceListPageIdx: InvoiceListPageTag => InvoiceListPage,
-        InvoiceDetailPageIdx: InvoiceDetailPageTag => InvoiceDetailPage,
-        InvoiceCreateModalPageIdx: InvoiceCreateModalPageTag => InvoiceCreateModalPage,
-        InvoiceEditModalPageIdx: InvoiceEditModalPageTag => InvoiceEditModalPage,
-        InvoiceCreateWorkOrderModalPageIdx: InvoiceCreateWorkOrderModalPageTag => InvoiceCreateWorkOrderModalPage,
-        InvoiceCreateDraftInvoiceModalPageIdx: InvoiceCreateDraftInvoiceModalPageTag => InvoiceCreateDraftInvoiceModalPage,
-
-        IssuedWorkOrderListPageIdx: IssuedWorkOrderListPageTag => IssuedWorkOrderListPage,
-        IssuedWorkOrderDetailPageIdx: IssuedWorkOrderDetailPageTag => IssuedWorkOrderDetailPage,
-        IssuedWorkOrderDeleteModalPageIdx: IssuedWorkOrderDeleteModalPageTag => IssuedWorkOrderDeleteModalPage,
-
+        PartModalPageIdx: PartModalPageTag => PartModalPage,
+        PresuppliedModalPageIdx: PresuppliedModalPageTag => PresuppliedModalPage,
+        StepModalPageIdx: StepModalPageTag => StepModalPage,
+        FlowModalPageIdx: FlowModalPageTag => FlowModalPage,
+        CompleteModalPageIdx: CompleteModalPageTag => CompleteModalPage,
         ConfirmDeleteModalPageIdx: ConfirmDeleteModalPageTag => ConfirmDeleteModalPage,
-        WorkOrderLineEditModalPageIdx: WorkOrderLineEditModalPageTag => WorkOrderLineEditModalPage,
-        WorkOrderMachineLineEditModalPageIdx: WorkOrderMachineLineEditModalPageTag => WorkOrderMachineLineEditModalPage,
-        WorkOrdersPreferencesPageIdx: WorkOrdersPreferencesPageTag => WorkOrdersPreferencesPage,
     ]
 }
 
@@ -172,424 +60,200 @@ lariv_core::define_register_items! {
     hook: SlotsHook;
 }
 
-fn app_scaffold(
-    title: &str,
-    chrome: &ShellChrome,
-    sidebar: Markup,
-    crumbs: Markup,
-    body: Markup,
-) -> Markup {
-    shell_scaffold(ShellScaffold {
-        title,
+fn app_scaffold(chrome: &ShellChrome, crumbs: Markup, body: Markup) -> Markup {
+    lariv_core::components::shell_scaffold(lariv_core::components::ShellScaffold {
+        title: "Work orders",
         registry_head: chrome.head.clone(),
         topbar_items: chrome.topbar_items.clone(),
         right_sidebar: chrome.right_sidebar.clone(),
-        sidebar,
+        sidebar: crumbs::menu(),
         breadcrumbs: crumbs,
         body,
         ..Default::default()
     })
 }
 
-fn scaffold_pane(
-    sidebar: Markup,
-    crumbs: Markup,
-    body: Markup,
-) -> lariv_core::components::AppLayoutHtml {
-    layout_sidebar(LayoutSidebar {
-        sidebar,
+fn scaffold_pane(crumbs: Markup, body: Markup) -> lariv_core::components::AppLayoutHtml {
+    lariv_core::components::layout_sidebar(lariv_core::components::LayoutSidebar {
+        sidebar: crumbs::menu(),
         breadcrumbs: crumbs,
         content: body,
     })
 }
 
 fn scaffold_main(crumbs: Markup, body: Markup) -> lariv_core::components::MainContentHtml {
-    layout_main(LayoutMain {
+    lariv_core::components::layout_main(lariv_core::components::LayoutMain {
         breadcrumbs: crumbs,
         content: body,
     })
 }
 
-fn tab_nav_link(href: &str, active: bool, label: &str) -> Markup {
-    let cls = if active { "tab tab-active" } else { "tab" };
-    let nav = lariv_core::components::nav_content_attrs(href);
-    html! {
-        (PreEscaped(format!(
-            r#"<a class="{cls}" href="{href}"{attrs}>"#,
-            cls = escape_attr(cls),
-            href = escape_attr(href),
-            attrs = nav.as_string(),
-        )))
-        (label)
-        (PreEscaped("</a>"))
-    }
+fn render_pagination(path_and_query: &str, number: u32, num_pages: u32) -> Markup {
+    let owned = pagination_pages(path_and_query, number, num_pages, true);
+    let pages: Vec<PaginationPage<'_>> = owned
+        .iter()
+        .map(|(ellipsis, url, push_url, active, label)| PaginationPage {
+            ellipsis: *ellipsis,
+            url: url.as_str(),
+            push_url: *push_url,
+            active: *active,
+            label: label.as_str(),
+        })
+        .collect();
+    table_pagination(TablePagination {
+        pages: &pages,
+        hx_target: WorkOrderTableKey::SELECTOR,
+    })
 }
 
-fn work_order_hub_tabs(active: &str) -> Markup {
-    html! {
-        div class="tabs tabs-boxed mb-4" {
-            (tab_nav_link(&work_orders_tab_url("drafts"), active == "drafts", "Drafts"))
-            (tab_nav_link(&work_orders_tab_url("issued"), active == "issued", "Work Orders"))
-        }
-    }
+pub struct WorkOrderRow {
+    pub id: i64,
+    pub title: String,
+    pub customer: String,
+    pub progress: String,
 }
 
-fn work_order_hub_body(active: &str, table: Markup) -> Markup {
-    html! {
-        (work_order_hub_tabs(active))
-        (table)
-    }
-}
-
-// ==========================================
-// 1. WORK ORDERS
-// ==========================================
-
-#[derive(Generic)]
 pub struct WorkOrderListPage {
-    pub orders: Vec<(draft_work_order::Model, usize, Decimal)>,
-    pub fields: Vec<FilterField>,
-    pub filters: Vec<FilterClauseView>,
-    pub filter_errors: Vec<FilterRowError>,
-    pub sort: String,
+    pub orders: ObjectList<WorkOrderRow>,
     pub path_and_query: String,
-    pub page: u32,
-    pub num_pages: u32,
-    pub page_size: u32,
 }
 
 impl WorkOrderListPage {
     pub fn render_table(&self) -> Markup {
         let headers = [
             TableColumnHeader {
-                key: "Id",
-                label: "Id",
+                key: "title",
+                label: "Title",
                 sort_url: None,
                 push_url: false,
             },
             TableColumnHeader {
-                key: "OrderNumber",
-                label: "Order #",
+                key: "customer",
+                label: "Customer",
                 sort_url: None,
                 push_url: false,
             },
             TableColumnHeader {
-                key: "CustomerId",
-                label: "Customer ID",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Lines",
-                label: "Lines",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "TotalAmount",
-                label: "Total Cost",
+                key: "progress",
+                label: "Progress",
                 sort_url: None,
                 push_url: false,
             },
         ];
-
-        let id_labels: Vec<String> = self
-            .orders
-            .iter()
-            .map(|(o, _, _)| o.id.to_string())
-            .collect();
-        let cust_labels: Vec<String> = self
-            .orders
-            .iter()
-            .map(|(o, _, _)| o.customer_id.to_string())
-            .collect();
-        let lines_labels: Vec<String> = self
-            .orders
-            .iter()
-            .map(|(_, count, _)| count.to_string())
-            .collect();
-        let total_labels: Vec<String> = self
-            .orders
-            .iter()
-            .map(|(_, _, total)| format!("₹ {:.2}", total))
-            .collect();
-
         let rows: Vec<TableRow> = self
             .orders
+            .items
             .iter()
-            .enumerate()
-            .map(|(i, (o, _, _))| TableRow {
-                attrs: row_attr_navigate_route(WorkOrderDetailRouteTag::new(o.id)),
+            .map(|order| TableRow {
+                attrs: row_attr_navigate_route(WorkOrderDetailRouteTag::new(order.id)),
                 cells: vec![
                     field_text(FieldText {
-                        value: &id_labels[i],
+                        value: &order.title,
                         classes: "",
                     }),
                     field_text(FieldText {
-                        value: order_number_display(&o.order_number),
-                        classes: "font-semibold",
-                    }),
-                    field_text(FieldText {
-                        value: &cust_labels[i],
+                        value: &order.customer,
                         classes: "",
                     }),
                     field_text(FieldText {
-                        value: &lines_labels[i],
+                        value: &order.progress,
                         classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &total_labels[i],
-                        classes: "font-mono font-semibold",
                     }),
                 ],
-                ..Default::default()
+                key: String::new(),
+                children: Vec::new(),
             })
             .collect();
-
-        let actions = html! {
-            (list_filter_panel::<WorkOrderTableKey, _>(
-                &self.fields,
-                &self.filters,
-                self.page_size,
-                &self.sort,
-                DraftWorkOrdersDefaultRouteTag,
-            ))
-            (table_create_button::<WorkOrderTableKey, WorkOrderCreateModalKey>(
-                Some("plus"),
-                "btn-square btn-outline btn-sm",
-            ))
-        };
-
-        data_table_with_filter_errors::<WorkOrderTableKey>(
-            "Draft Work Orders",
+        let actions = table_create_button::<WorkOrderTableKey, WorkOrderCreateModalKey>(
+            Some("plus"),
+            "btn-primary btn-sm",
+        );
+        data_table_list::<WorkOrderTableKey>(
+            "Work orders",
             actions,
             &headers,
             &rows,
-            render_pagination::<WorkOrderTableKey>(&self.path_and_query, self.page, self.num_pages),
-            &self.path_and_query,
-            &self.filter_errors,
+            render_pagination(
+                &self.path_and_query,
+                self.orders.number,
+                self.orders.num_pages,
+            ),
         )
-    }
-
-    fn body(&self) -> Markup {
-        work_order_hub_body("drafts", self.render_table())
     }
 }
 
 impl RenderAppPane for WorkOrderListPage {
     fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(wo_menu("orders"), work_orders_list_crumbs(), self.body())
+        scaffold_pane(crumbs::list_crumbs(), self.render_table())
     }
     fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(work_orders_list_crumbs(), self.body())
+        scaffold_main(crumbs::list_crumbs(), self.render_table())
     }
 }
 
 impl RenderTemplate for WorkOrderListPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            "Work Orders",
-            chrome,
-            wo_menu("orders"),
-            work_orders_list_crumbs(),
-            self.body(),
-        )
+        app_scaffold(chrome, crumbs::list_crumbs(), self.render_table())
     }
 }
 
-#[derive(Clone, Generic)]
 pub struct WorkOrderDetailPage {
-    pub order: draft_work_order::Model,
-    pub lines: Vec<(
-        draft_work_order_material_line::Model,
-        String,
-        String,
-        Decimal,
-    )>,
-    pub machine_lines: Vec<(
-        draft_work_order_machine_line::Model,
-        String,
-        String,
-        Decimal,
-    )>,
-    pub component_schemas: HashMap<i64, serde_json::Value>,
-    pub machine_schemas: HashMap<i64, serde_json::Value>,
-    pub customer_name: Option<String>,
-    pub quotation_number: Option<String>,
-    pub total_amount: Decimal,
+    pub plan: Plan,
+    pub customer: String,
+    pub customer_href: String,
+    pub files_href: String,
+    pub files_label: String,
+    pub layout: Option<PlanLayout>,
+    pub layout_error: String,
 }
 
 impl WorkOrderDetailPage {
-    fn material_vars(&self, l: &draft_work_order_material_line::Model) -> String {
-        match self.component_schemas.get(&l.component_id) {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn machine_vars(&self, l: &draft_work_order_machine_line::Model) -> String {
-        match self.machine_schemas.get(&l.machine_id) {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn body(&self) -> Markup {
-        let edit_url = WorkOrderEditGetRouteTag::new(self.order.id).url();
-        let actions = html! {
-            (button_post(ButtonPost {
-                label: "Convert to Work Order",
-                action: &WorkOrderConvertPostRouteTag::new(self.order.id).path(),
-                icon_name: Some("check"),
-                classes: "btn-primary btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_form(ButtonModalForm {
-                label: "Edit",
-                icon_name: Some("pencil"),
-                name: "wo.WorkOrderEditForm",
-                href: &edit_url,
-                form_post_url: &edit_url,
-                modal_uid: WorkOrderEditModalKey::ID,
-                classes: "btn-outline btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_route(
-                WorkOrderPdfModalRouteTag::new(self.order.id),
-                "PDF",
-                "btn-outline btn-sm",
-            ))
+    pub fn render_graph(&self) -> Markup {
+        let body = match &self.layout {
+            Some(layout) => graph_body(&self.plan, layout),
+            None => html! { p class="text-error" { (self.layout_error) } },
         };
-
-        let cust_label = self
-            .customer_name
-            .clone()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "—".into());
-        let quotation_href = self
-            .order
-            .quotation_id
-            .map(|id| InvoiceDetailRouteTag::new(id).url());
-        let quotation_label = self.quotation_number.clone().unwrap_or_else(|| {
-            self.order
-                .quotation_id
-                .map(|id| format!("#{id}"))
-                .unwrap_or_default()
-        });
-        let lines_count_str = self.lines.len().to_string();
-        let machine_lines_count_str = self.machine_lines.len().to_string();
-        let total_str = format!("₹ {:.2}", self.total_amount);
-        let duration_str = format_job_duration(self.order.duration);
-        let title_str = if self.order.order_number.trim().is_empty() {
-            "Draft Work Order".to_string()
-        } else {
-            format!("Draft Work Order {}", self.order.order_number)
-        };
-
         html! {
-            (detail(html! {
-                (container_column("", html! {
-                    (detail_header(DetailHeader {
-                        title: &title_str,
-                        actions,
+            div id=(WorkOrderGraphKey::ID) class="flex flex-col gap-3" {
+                (body)
+            }
+        }
+    }
+
+    fn render_body(&self) -> Markup {
+        let id = self.plan.order.id;
+        let edit_url = WorkOrderEditGetRouteTag::new(id).url();
+        html! {
+            div class="flex flex-col gap-6" {
+                (detail(html! {
+                    (detail_header(lariv_core::components::DetailHeader {
+                        title: &self.plan.order.title,
+                        actions: html! {
+                            (button_modal_form(ButtonModalForm {
+                                label: "Edit",
+                                icon_name: Some("pencil"),
+                                name: "wo.WorkOrderEditForm",
+                                href: &edit_url,
+                                form_post_url: &edit_url,
+                                modal_uid: WorkOrderEditModalKey::ID,
+                                classes: "btn-sm",
+                                ..Default::default()
+                            }))
+                        },
                     }))
-                    div class="@container w-full min-w-0" {
-                        div class="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-x-6 gap-y-1 w-full" {
-                            (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
-                            @if let Some(href) = &quotation_href {
-                                (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
-                            }
-                            (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
-                            (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
-                            (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
-                            (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
-                        }
-                    }
-
-                    div class="mt-8" {
-                        div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Material Lines" }
-                        }
-
-                        @if self.lines.is_empty() {
-                            div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
-                                "No line items added yet."
-                            }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full border border-base-200 rounded-lg" {
-                                table class="table table-zebra w-full min-w-max text-sm" {
-                                    thead {
-                                        tr {
-                                            th class="w-12" { "#" }
-                                            th { "Component" }
-                                            th { "Variables" }
-                                            th { "Taxes" }
-                                            th class="text-right" { "Pre-tax (₹)" }
-                                            th class="text-right" { "Total (₹)" }
-                                        }
-                                    }
-                                    tbody {
-                                        @for (idx, (l, comp_name, tax_labels, taxed_total)) in self.lines.iter().enumerate() {
-                                            tr {
-                                                td class="opacity-60" { (idx + 1) }
-                                                td class="font-semibold" { (comp_name) }
-                                                td class="font-mono text-xs" { (self.material_vars(l)) }
-                                                td class="text-sm" { (tax_labels) }
-                                                td class="text-right font-mono" { (format!("₹ {:.2}", l.final_cost)) }
-                                                td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    div class="mt-8" {
-                        div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Machine Lines" }
-                        }
-
-                        @if self.machine_lines.is_empty() {
-                            div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
-                                "No machine lines added yet."
-                            }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full border border-base-200 rounded-lg" {
-                                table class="table table-zebra w-full min-w-max text-sm" {
-                                    thead {
-                                        tr {
-                                            th class="w-12" { "#" }
-                                            th { "Machine" }
-                                            th { "Variables" }
-                                            th { "Taxes" }
-                                            th class="text-right" { "Pre-tax (₹)" }
-                                            th class="text-right" { "Total (₹)" }
-                                        }
-                                    }
-                                    tbody {
-                                        @for (idx, (l, machine_name, tax_labels, taxed_total)) in self.machine_lines.iter().enumerate() {
-                                            tr {
-                                                td class="opacity-60" { (idx + 1) }
-                                                td class="font-semibold" { (machine_name) }
-                                                td class="font-mono text-xs" { (self.machine_vars(l)) }
-                                                td class="text-sm" { (tax_labels) }
-                                                td class="text-right font-mono" { (format!("₹ {:.2}", l.line_total())) }
-                                                td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    div class="mt-4 p-4 bg-base-200/60 rounded-lg flex justify-between items-center border border-base-200" {
-                        span class="font-semibold" { "Final Grand Total" }
-                        span class="text-xl font-extrabold text-primary font-mono" { (format!("₹ {:.2}", self.total_amount)) }
+                    div class="mt-2 flex flex-col gap-1" {
+                        (field_link(FieldLink { href: &self.customer_href, label: &self.customer, classes: "" }))
+                        (field_link(FieldLink { href: &self.files_href, label: &self.files_label, classes: "" }))
                     }
                 }))
-            }))
+                section class="flex flex-col gap-2" {
+                    h3 class="font-semibold" { "Plan" }
+                    (self.render_graph())
+                }
+                (parts_section(&self.plan))
+                (presupplied_section(&self.plan))
+                (steps_section(&self.plan))
+            }
         }
     }
 }
@@ -597,175 +261,485 @@ impl WorkOrderDetailPage {
 impl RenderAppPane for WorkOrderDetailPage {
     fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
         scaffold_pane(
-            wo_menu("orders"),
-            work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
-            ),
-            self.body(),
+            crumbs::detail_crumbs(&self.plan.order.title),
+            self.render_body(),
         )
     }
     fn render_main(&self) -> lariv_core::components::MainContentHtml {
         scaffold_main(
-            work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
-            ),
-            self.body(),
+            crumbs::detail_crumbs(&self.plan.order.title),
+            self.render_body(),
         )
     }
 }
 
 impl RenderTemplate for WorkOrderDetailPage {
     fn render(&self, chrome: &ShellChrome) -> Markup {
-        let page_title = if self.order.order_number.trim().is_empty() {
-            "Draft Work Order — Work Orders".to_string()
-        } else {
-            format!("Order {} — Work Orders", self.order.order_number)
-        };
         app_scaffold(
-            &page_title,
             chrome,
-            wo_menu("orders"),
-            work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
-            ),
-            self.body(),
+            crumbs::detail_crumbs(&self.plan.order.title),
+            self.render_body(),
         )
     }
 }
 
-#[derive(Clone, Generic, Default)]
+fn parts_section(plan: &Plan) -> Markup {
+    html! {
+        section class="flex flex-col gap-2" {
+            h3 class="font-semibold" { "Parts" }
+            table class="table table-sm" {
+                thead { tr { th { "Name" } th { "Kind" } th { "Unit" } } }
+                tbody {
+                    @for part in &plan.parts {
+                        tr {
+                            td { (part.name) }
+                            td { (part.measure_kind) }
+                            td { (part.measure_unit) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn presupplied_section(plan: &Plan) -> Markup {
+    html! {
+        section class="flex flex-col gap-2" {
+            h3 class="font-semibold" { "Presupplied parts" }
+            table class="table table-sm" {
+                thead { tr { th { "Part" } th { "Quantity" } } }
+                tbody {
+                    @for line in &plan.presupplied {
+                        tr {
+                            td { (part_name(&plan.parts, line.part_id)) }
+                            td { (format!("{} {}", line.qty_value.normalize(), line.qty_unit)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn steps_section(plan: &Plan) -> Markup {
+    html! {
+        section class="flex flex-col gap-4" {
+            h3 class="font-semibold" { "Steps" }
+            @for step in &plan.steps {
+                (step_card(plan, step))
+            }
+        }
+    }
+}
+
+fn step_card(plan: &Plan, step: &step::Model) -> Markup {
+    let done = plan
+        .completions
+        .iter()
+        .filter(|row| row.step_id == step.id)
+        .count();
+    let complete_url = CompleteGetRouteTag::new(step.id).url();
+    html! {
+        article class="rounded-box border border-base-300 p-3 flex flex-col gap-3" {
+            div class="flex flex-wrap items-center justify-between gap-2" {
+                div {
+                    h4 class="font-medium" { (step.name) }
+                    p class="text-sm opacity-70" { (format!("{done}/{} batches", step.planned_batches)) }
+                }
+                (button_modal_form(ButtonModalForm {
+                    label: "Record batch",
+                    icon_name: Some("check"),
+                    name: "wo.CompleteForm",
+                    href: &complete_url,
+                    form_post_url: &complete_url,
+                    modal_uid: CompleteModalKey::ID,
+                    classes: "btn-sm btn-primary",
+                    ..Default::default()
+                }))
+            }
+            div class="grid gap-3 md:grid-cols-2" {
+                (flow_table(plan, step.id, FlowSide::Input))
+                (flow_table(plan, step.id, FlowSide::Output))
+            }
+            (completion_list(plan, step.id))
+        }
+    }
+}
+
+fn flow_table(plan: &Plan, step_id: i64, side: FlowSide) -> Markup {
+    let title = match side {
+        FlowSide::Input => "Inputs per batch",
+        FlowSide::Output => "Outputs per batch",
+    };
+    html! {
+        div class="flex flex-col gap-1" {
+            h5 class="text-sm font-medium" { (title) }
+            ul class="text-sm" {
+                @match side {
+                    FlowSide::Input => {
+                        @for line in plan.inputs.iter().filter(|line| line.step_id == step_id) {
+                            li { (format!("{} {} {}", part_name(&plan.parts, line.part_id), line.qty_value.normalize(), line.qty_unit)) }
+                        }
+                    }
+                    FlowSide::Output => {
+                        @for line in plan.outputs.iter().filter(|line| line.step_id == step_id) {
+                            li { (format!("{} {} {}", part_name(&plan.parts, line.part_id), line.qty_value.normalize(), line.qty_unit)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn completion_list(plan: &Plan, step_id: i64) -> Markup {
+    let mut rows: Vec<_> = plan
+        .completions
+        .iter()
+        .filter(|row| row.step_id == step_id)
+        .collect();
+    rows.sort_by_key(|row| row.completed_at);
+    html! {
+        div class="flex flex-col gap-1" {
+            h5 class="text-sm font-medium" { "Recorded batches" }
+            @if rows.is_empty() {
+                p class="text-sm opacity-60" { "No batches recorded." }
+            }
+            ul class="text-sm flex flex-col gap-1" {
+                @for (index, row) in rows.iter().enumerate() {
+                    li class="flex flex-wrap items-center justify-between gap-2" {
+                        span { (format!("Batch {} · {}", index.saturating_add(1), row.completed_at.format("%Y-%m-%d %H:%M"))) }
+                        (edit_button("Delete", &CompletionDeleteGetRouteTag::new(row.id).url(), CompletionDeleteModalKey::ID, "wo.CompletionDeleteForm"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn edit_button(label: &str, href: &str, modal_uid: &str, name: &str) -> Markup {
+    button_modal_form(ButtonModalForm {
+        label,
+        icon_name: None,
+        name,
+        href,
+        form_post_url: href,
+        modal_uid,
+        classes: "btn-xs",
+        ..Default::default()
+    })
+}
+
+fn part_name(parts: &[part::Model], id: i64) -> &str {
+    parts
+        .iter()
+        .find(|part| part.id == id)
+        .map(|part| part.name.as_str())
+        .unwrap_or("Missing part")
+}
+
+const NODE_W: i32 = 112;
+const NODE_H: i32 = 32;
+const COL_STEP: i32 = 124;
+const RANK_STEP: i32 = 44;
+
+fn graph_body(plan: &Plan, layout: &PlanLayout) -> Markup {
+    let placed = place_nodes(plan, layout);
+    let width = placed
+        .iter()
+        .map(|node| node.x.saturating_add(NODE_W).saturating_add(8))
+        .max()
+        .unwrap_or(160);
+    let height = placed
+        .iter()
+        .map(|node| node.y.saturating_add(NODE_H).saturating_add(8))
+        .max()
+        .unwrap_or(NODE_H);
+    let unused: Vec<_> = plan
+        .parts
+        .iter()
+        .filter(|part| graph::role_of(layout, part.id) == Some(PartRole::Unused))
+        .collect();
+    html! {
+        div class="flex flex-col gap-3 lg:flex-row lg:items-start" {
+            div class="min-w-0 overflow-auto max-h-52" {
+                @if placed.is_empty() {
+                    p class="text-sm opacity-70" { "Connect parts with steps to draw the plan." }
+                } @else {
+                    svg xmlns="http://www.w3.org/2000/svg" viewBox=(format!("0 0 {width} {height}")) width=(width) height=(height) class="max-w-full h-auto text-base-content" role="img" aria-label="Work order plan" {
+                        @for edge in edges(plan, &placed) {
+                            line x1=(edge.0) y1=(edge.1) x2=(edge.2) y2=(edge.3) stroke="currentColor" stroke-opacity="0.45" {}
+                        }
+                        @for node in &placed {
+                            rect x=(node.x) y=(node.y) width=(NODE_W) height=(NODE_H) rx="6" fill="currentColor" fill-opacity=(node.fill) stroke="currentColor" {}
+                            text x=(node.x.saturating_add(NODE_W / 2)) y=(node.y.saturating_add(13)) text-anchor="middle" font-size="11" fill="currentColor" { (node.title) }
+                            text x=(node.x.saturating_add(NODE_W / 2)) y=(node.y.saturating_add(25)) text-anchor="middle" font-size="10" fill="currentColor" opacity="0.7" { (node.subtitle) }
+                        }
+                    }
+                }
+            }
+            div class="w-full lg:w-56" {
+                h4 class="text-sm font-medium" { "Unused parts" }
+                @if unused.is_empty() {
+                    p class="text-sm opacity-60" { "None" }
+                } @else {
+                    ul class="text-sm" {
+                        @for part in unused {
+                            li { (part.name) }
+                        }
+                    }
+                }
+            }
+        }
+        ul class="text-sm flex flex-col gap-1" {
+            @for row in &layout.coverage {
+                li class=(if row.gap.is_sign_negative() { "text-error" } else { "" }) {
+                    (format!(
+                        "{}: supply {}, demand {}, gap {}",
+                        part_name(&plan.parts, row.part_id),
+                        row.supply.normalize(),
+                        row.demand.normalize(),
+                        row.gap.normalize()
+                    ))
+                }
+            }
+        }
+    }
+}
+
+struct Placed {
+    kind: NodeKind,
+    id: i64,
+    x: i32,
+    y: i32,
+    title: String,
+    subtitle: String,
+    fill: &'static str,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NodeKind {
+    Part,
+    Step,
+}
+
+fn place_nodes(plan: &Plan, layout: &PlanLayout) -> Vec<Placed> {
+    let mut ranks: Vec<u32> = Vec::new();
+    for node in &layout.part_ranks {
+        if graph::role_of(layout, node.id) != Some(PartRole::Unused) && !ranks.contains(&node.rank)
+        {
+            ranks.push(node.rank);
+        }
+    }
+    for node in &layout.step_ranks {
+        if !ranks.contains(&node.rank) {
+            ranks.push(node.rank);
+        }
+    }
+    ranks.sort_unstable();
+    let mut placed = Vec::new();
+    for rank in ranks {
+        let mut column = 0i32;
+        for node in layout.part_ranks.iter().filter(|node| node.rank == rank) {
+            if graph::role_of(layout, node.id) == Some(PartRole::Unused) {
+                continue;
+            }
+            let name = part_name(&plan.parts, node.id).to_string();
+            let role = graph::role_of(layout, node.id)
+                .map(PartRole::label)
+                .unwrap_or("");
+            placed.push(Placed {
+                kind: NodeKind::Part,
+                id: node.id,
+                x: column.saturating_mul(COL_STEP).saturating_add(8),
+                y: i32::try_from(rank)
+                    .unwrap_or(0)
+                    .saturating_mul(RANK_STEP)
+                    .saturating_add(8),
+                title: clip_label(&name),
+                subtitle: role.to_string(),
+                fill: "0.04",
+            });
+            column = column.saturating_add(1);
+        }
+        for node in layout.step_ranks.iter().filter(|node| node.rank == rank) {
+            let name = plan
+                .steps
+                .iter()
+                .find(|step| step.id == node.id)
+                .map(|step| step.name.as_str())
+                .unwrap_or("Step");
+            let done = plan
+                .completions
+                .iter()
+                .filter(|row| row.step_id == node.id)
+                .count();
+            let planned = plan
+                .steps
+                .iter()
+                .find(|step| step.id == node.id)
+                .map(|step| step.planned_batches)
+                .unwrap_or(0);
+            placed.push(Placed {
+                kind: NodeKind::Step,
+                id: node.id,
+                x: column.saturating_mul(COL_STEP).saturating_add(8),
+                y: i32::try_from(rank)
+                    .unwrap_or(0)
+                    .saturating_mul(RANK_STEP)
+                    .saturating_add(8),
+                title: clip_label(name),
+                subtitle: format!("{done}/{planned}"),
+                fill: "0.12",
+            });
+            column = column.saturating_add(1);
+        }
+    }
+    placed
+}
+
+fn edges(plan: &Plan, placed: &[Placed]) -> Vec<(i32, i32, i32, i32)> {
+    let mut lines = Vec::new();
+    for flow in &plan.inputs {
+        if let (Some(from), Some(to)) = (
+            center(placed, NodeKind::Part, flow.part_id),
+            center(placed, NodeKind::Step, flow.step_id),
+        ) {
+            lines.push((from.0, from.1, to.0, to.1));
+        }
+    }
+    for flow in &plan.outputs {
+        if let (Some(from), Some(to)) = (
+            center(placed, NodeKind::Step, flow.step_id),
+            center(placed, NodeKind::Part, flow.part_id),
+        ) {
+            lines.push((from.0, from.1, to.0, to.1));
+        }
+    }
+    lines
+}
+
+fn center(placed: &[Placed], kind: NodeKind, id: i64) -> Option<(i32, i32)> {
+    placed
+        .iter()
+        .find(|node| node.kind == kind && node.id == id)
+        .map(|node| {
+            (
+                node.x.saturating_add(NODE_W / 2),
+                node.y.saturating_add(NODE_H / 2),
+            )
+        })
+}
+
+fn clip_label(value: &str) -> String {
+    let mut clipped = String::new();
+    for (index, ch) in value.chars().enumerate() {
+        if index == 22 {
+            clipped.push('…');
+            break;
+        }
+        clipped.push(ch);
+    }
+    clipped
+}
+
+fn submit(label: &str) -> Markup {
+    button_submit(ButtonSubmit {
+        label,
+        classes: "btn-primary",
+        ..Default::default()
+    })
+}
+
 pub struct WorkOrderCreateModalPage {
     pub form_name: String,
-    pub order_number: String,
-    pub customer_id: Option<i64>,
-    pub customer_name: String,
-    pub duration: String,
-    pub items_json: String,
-    pub components_json: String,
-    pub machine_lines_json: String,
-    pub machines_json: String,
-    pub taxes_json: String,
+    pub refresh_table: String,
+    pub title: String,
+    pub customer_id: String,
+    pub customer_display: String,
+    pub folder_vnode_id: String,
+    pub folder_display: String,
+    pub parts_json: String,
+    pub presupplied_json: String,
+    pub steps_json: String,
     pub error: String,
 }
 
 impl RenderTemplate for WorkOrderCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let cust_id_str = self
-            .customer_id
-            .map(|id| id.to_string())
-            .unwrap_or_default();
-        let items_val = if self.items_json.is_empty() {
-            "[]"
-        } else {
-            &self.items_json
-        };
-        let machine_lines_val = if self.machine_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.machine_lines_json
-        };
-        let ctx = FormCtx::form::<DraftWorkOrderForm>(CsrfToken::current())
-            .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
-            .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
-            .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
-            .value(DraftWorkOrderFormField::Duration, &self.duration)
-            .value(DraftWorkOrderFormField::Items, items_val)
-            .display(DraftWorkOrderFormField::Items, &self.components_json)
-            .value(DraftWorkOrderFormField::MachineLines, machine_lines_val)
-            .display(DraftWorkOrderFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json);
-
-        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
-        modal_keyed::<DraftWorkOrderCreateModalKey>(
-            &modal_classes,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "New Draft Work Order" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: draft_work_order_form_hx_post::<DraftWorkOrderCreateModalKey>(
-                        &WorkOrderCreatePostRouteTag.url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (DraftWorkOrderForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Create Draft Work Order", ..Default::default() }))
-                    },
+        let ctx = order_form_ctx(OrderFields {
+            title: &self.title,
+            customer_id: &self.customer_id,
+            customer_display: &self.customer_display,
+            folder_vnode_id: &self.folder_vnode_id,
+            folder_display: &self.folder_display,
+            parts_json: &self.parts_json,
+            presupplied_json: &self.presupplied_json,
+            steps_json: &self.steps_json,
+        });
+        modal_keyed::<WorkOrderCreateModalKey>(
+            "",
+            form(
+                &CsrfToken::current(),
+                FormOpts {
+                    title: "New work order",
+                    attrs: form_hx_post_url::<WorkOrderCreateModalKey>(&modal_create_post_url(
+                        WorkOrderCreatePostRouteTag,
+                        &self.form_name,
+                        &self.refresh_table,
+                    )),
+                    form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                    inputs: WorkOrderForm::render_inputs(&ctx),
+                    actions: submit("Create"),
                     ..Default::default()
-                }))
-            },
+                },
+            ),
         )
     }
 }
 
-#[derive(Clone, Generic)]
 pub struct WorkOrderEditModalPage {
     pub id: i64,
     pub form_name: String,
-    pub order_number: String,
-    pub customer_id: i64,
-    pub customer_name: String,
-    pub duration: String,
-    pub items_json: String,
-    pub components_json: String,
-    pub machine_lines_json: String,
-    pub machines_json: String,
-    pub taxes_json: String,
+    pub title: String,
+    pub customer_id: String,
+    pub customer_display: String,
+    pub folder_vnode_id: String,
+    pub folder_display: String,
+    pub parts_json: String,
+    pub presupplied_json: String,
+    pub steps_json: String,
     pub error: String,
 }
 
 impl RenderTemplate for WorkOrderEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let cust_id_str = self.customer_id.to_string();
-        let items_val = if self.items_json.is_empty() {
-            "[]"
-        } else {
-            &self.items_json
-        };
-        let machine_lines_val = if self.machine_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.machine_lines_json
-        };
-        let ctx = FormCtx::form::<DraftWorkOrderForm>(CsrfToken::current())
-            .value(DraftWorkOrderFormField::OrderNumber, &self.order_number)
-            .value(DraftWorkOrderFormField::CustomerId, &cust_id_str)
-            .display(DraftWorkOrderFormField::CustomerId, &self.customer_name)
-            .value(DraftWorkOrderFormField::Duration, &self.duration)
-            .value(DraftWorkOrderFormField::Items, items_val)
-            .display(DraftWorkOrderFormField::Items, &self.components_json)
-            .value(DraftWorkOrderFormField::MachineLines, machine_lines_val)
-            .display(DraftWorkOrderFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json);
+        let ctx = order_form_ctx(OrderFields {
+            title: &self.title,
+            customer_id: &self.customer_id,
+            customer_display: &self.customer_display,
+            folder_vnode_id: &self.folder_vnode_id,
+            folder_display: &self.folder_display,
+            parts_json: &self.parts_json,
+            presupplied_json: &self.presupplied_json,
+            steps_json: &self.steps_json,
+        });
         let delete_url = WorkOrderDeleteGetRouteTag::new(self.id).url();
-
-        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
-        modal_keyed::<DraftWorkOrderEditModalKey>(
-            &modal_classes,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Draft Work Order" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: draft_work_order_form_hx_post::<DraftWorkOrderEditModalKey>(
-                        &WorkOrderEditPostRouteTag::new(self.id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (DraftWorkOrderForm::render_inputs(&ctx))
-                    },
+        modal_keyed::<WorkOrderEditModalKey>(
+            "",
+            form(
+                &CsrfToken::current(),
+                FormOpts {
+                    title: "Edit work order",
+                    attrs: form_hx_post_url::<WorkOrderEditModalKey>(&modal_edit_post_url(
+                        WorkOrderEditPostRouteTag::new(self.id),
+                        &self.form_name,
+                    )),
+                    form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                    inputs: WorkOrderForm::render_inputs(&ctx),
                     actions: html! {
+                        (submit("Save"))
                         (button_modal_form(ButtonModalForm {
                             label: "Delete",
                             icon_name: Some("trash"),
@@ -773,1780 +747,397 @@ impl RenderTemplate for WorkOrderEditModalPage {
                             href: &delete_url,
                             form_post_url: &delete_url,
                             modal_uid: WorkOrderDeleteModalKey::ID,
-                            classes: "btn-error btn-sm",
+                            classes: "btn-error",
                             ..Default::default()
                         }))
-                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
                     },
                     ..Default::default()
-                }))
-            },
+                },
+            ),
         )
     }
 }
 
-#[derive(Clone, Generic)]
-pub struct WorkOrderLineEditModalPage {
-    pub id: i64,
-    pub draft_work_order_id: i64,
-    pub draft_work_order_label: String,
-    pub form_name: String,
-    pub component_id: i64,
-    pub component_label: String,
-    pub variables: String,
-    pub extra_data: String,
-    pub tax_items: Vec<ManyToManyItem>,
-    pub error: String,
+struct OrderFields<'a> {
+    title: &'a str,
+    customer_id: &'a str,
+    customer_display: &'a str,
+    folder_vnode_id: &'a str,
+    folder_display: &'a str,
+    parts_json: &'a str,
+    presupplied_json: &'a str,
+    steps_json: &'a str,
 }
 
-impl RenderTemplate for WorkOrderLineEditModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let wo_id_str = self.draft_work_order_id.to_string();
-        let comp_id_str = self.component_id.to_string();
-        let vars_str = if self.variables.is_empty() {
-            "{}"
-        } else {
-            &self.variables
-        };
-        let ctx = FormCtx::form::<DraftWorkOrderLineForm>(CsrfToken::current())
-            .value(DraftWorkOrderLineFormField::DraftWorkOrderId, &wo_id_str)
-            .display(
-                DraftWorkOrderLineFormField::DraftWorkOrderId,
-                &self.draft_work_order_label,
-            )
-            .value(DraftWorkOrderLineFormField::ComponentId, &comp_id_str)
-            .display(
-                DraftWorkOrderLineFormField::ComponentId,
-                &self.component_label,
-            )
-            .value(DraftWorkOrderLineFormField::Variables, vars_str)
-            .value(DraftWorkOrderLineFormField::ExtraData, &self.extra_data)
-            .m2m(DraftWorkOrderLineFormField::Taxes, &self.tax_items);
-
-        modal_keyed::<DraftWorkOrderLineEditModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Material Line" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<DraftWorkOrderLineEditModalKey>(
-                        &WorkOrderLineEditPostRouteTag::new(self.id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (DraftWorkOrderLineForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
+fn order_form_ctx(fields: OrderFields<'_>) -> FormCtx<'_> {
+    FormCtx::form::<WorkOrderForm>(CsrfToken::current())
+        .value(WorkOrderFormField::Title, fields.title)
+        .value(WorkOrderFormField::CustomerId, fields.customer_id)
+        .display(WorkOrderFormField::CustomerId, fields.customer_display)
+        .value(WorkOrderFormField::FolderVnodeId, fields.folder_vnode_id)
+        .display(WorkOrderFormField::FolderVnodeId, fields.folder_display)
+        .value(WorkOrderFormField::PartsLinesJson, fields.parts_json)
+        .value(
+            WorkOrderFormField::PresuppliedLinesJson,
+            fields.presupplied_json,
         )
-    }
+        .value(WorkOrderFormField::StepsLinesJson, fields.steps_json)
+        .into()
 }
 
-#[derive(Clone, Generic)]
-pub struct WorkOrderMachineLineEditModalPage {
-    pub id: i64,
-    pub form_name: String,
-    pub draft_work_order_id: i64,
-    pub draft_work_order_label: String,
-    pub machine_id: i64,
-    pub machine_label: String,
-    pub variables: String,
-    pub tax_items: Vec<ManyToManyItem>,
-    pub error: String,
-}
-
-impl RenderTemplate for WorkOrderMachineLineEditModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let wo_id_str = self.draft_work_order_id.to_string();
-        let machine_id_str = self.machine_id.to_string();
-        let vars_str = if self.variables.is_empty() {
-            "{}"
-        } else {
-            &self.variables
-        };
-        let ctx = FormCtx::form::<DraftWorkOrderMachineLineForm>(CsrfToken::current())
-            .value(
-                DraftWorkOrderMachineLineFormField::DraftWorkOrderId,
-                &wo_id_str,
-            )
-            .display(
-                DraftWorkOrderMachineLineFormField::DraftWorkOrderId,
-                &self.draft_work_order_label,
-            )
-            .value(
-                DraftWorkOrderMachineLineFormField::MachineId,
-                &machine_id_str,
-            )
-            .display(
-                DraftWorkOrderMachineLineFormField::MachineId,
-                &self.machine_label,
-            )
-            .value(DraftWorkOrderMachineLineFormField::Variables, vars_str)
-            .m2m(DraftWorkOrderMachineLineFormField::Taxes, &self.tax_items);
-
-        modal_keyed::<DraftWorkOrderMachineLineEditModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Machine Line" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<DraftWorkOrderMachineLineEditModalKey>(
-                        &WorkOrderMachineLineEditPostRouteTag::new(self.id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (DraftWorkOrderMachineLineForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct WorkOrderSelectPage {
-    pub orders: Vec<draft_work_order::Model>,
-    pub target_input: String,
-    pub path_and_query: String,
-}
-
-impl RenderPickerSelect<WorkOrderSelectTableKey, WorkOrderSelectModalKey> for WorkOrderSelectPage {
-    fn render_table(&self) -> Markup {
-        let target = if self.target_input.is_empty() {
-            "work_order_id"
-        } else {
-            self.target_input.as_str()
-        };
-        let headers = [
-            TableColumnHeader {
-                key: "OrderNumber",
-                label: "Order #",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "CustomerId",
-                label: "Customer ID",
-                sort_url: None,
-                push_url: false,
-            },
-        ];
-        let rows: Vec<TableRow> = self
-            .orders
-            .iter()
-            .map(|o| TableRow {
-                attrs: row_attr_select(
-                    target,
-                    &o.id.to_string(),
-                    order_number_display(&o.order_number),
-                ),
-                cells: vec![
-                    field_text(FieldText {
-                        value: order_number_display(&o.order_number),
-                        classes: "font-semibold",
-                    }),
-                    field_text(FieldText {
-                        value: &o.customer_id.to_string(),
-                        classes: "font-mono",
-                    }),
-                ],
-                ..Default::default()
-            })
-            .collect();
-
-        let actions = html! {};
-
-        data_table_list_refresh::<WorkOrderSelectTableKey>(
-            "Select Work Order",
-            actions,
-            &headers,
-            &rows,
-            html! {},
-            &self.path_and_query,
-        )
-    }
-}
-
-impl RenderTemplate for WorkOrderSelectPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        self.render_modal().into_inner()
-    }
-}
-
-pub type DraftWorkOrderListPage = WorkOrderListPage;
-pub type DraftWorkOrderDetailPage = WorkOrderDetailPage;
-pub type DraftWorkOrderCreateModalPage = WorkOrderCreateModalPage;
-pub type DraftWorkOrderEditModalPage = WorkOrderEditModalPage;
-pub type DraftWorkOrderSelectPage = WorkOrderSelectPage;
-pub type DraftWorkOrderLineEditModalPage = WorkOrderLineEditModalPage;
-pub type DraftWorkOrderMaterialLineEditModalPage = WorkOrderLineEditModalPage;
-pub type WorkOrderMaterialLineEditModalPage = WorkOrderLineEditModalPage;
-pub type DraftWorkOrderMachineLineEditModalPage = WorkOrderMachineLineEditModalPage;
-
-#[derive(Clone, Generic)]
-pub struct ComponentSelectPage {
-    pub components: Vec<component::Model>,
-    pub target_input: String,
-    pub path_and_query: String,
-}
-
-impl RenderPickerSelect<ComponentSelectTableKey, ComponentSelectModalKey> for ComponentSelectPage {
-    fn render_table(&self) -> Markup {
-        let target = if self.target_input.is_empty() {
-            "component_id"
-        } else {
-            self.target_input.as_str()
-        };
-        let headers = [
-            TableColumnHeader {
-                key: "Name",
-                label: "Name",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Variables",
-                label: "Variables",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "CostFormula",
-                label: "Cost Formula",
-                sort_url: None,
-                push_url: false,
-            },
-        ];
-        let extras: Vec<(String, String, String, String)> = self
-            .components
-            .iter()
-            .map(|c| {
-                (
-                    serde_json::to_string(&c.variables).unwrap_or_else(|_| "{}".into()),
-                    c.cost_formula.clone(),
-                    c.weight_formula.clone(),
-                    schema_label(&c.variables),
-                )
-            })
-            .collect();
-        let formula_labels: Vec<String> = self
-            .components
-            .iter()
-            .map(|c| formula_preview(&c.cost_formula))
-            .collect();
-        let rows: Vec<TableRow> = self
-            .components
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                let (vars_s, cost_s, weight_s, schema_s) = &extras[i];
-                TableRow {
-                    attrs: row_attr_select_extra(
-                        target,
-                        &c.id.to_string(),
-                        &c.name,
-                        &[
-                            ("variables", vars_s.as_str()),
-                            ("cost_formula", cost_s.as_str()),
-                            ("weight_formula", weight_s.as_str()),
-                        ],
-                    ),
-                    cells: vec![
-                        field_text(FieldText {
-                            value: &c.name,
-                            classes: "font-semibold",
-                        }),
-                        field_text(FieldText {
-                            value: schema_s,
-                            classes: "font-mono text-xs",
-                        }),
-                        field_text(FieldText {
-                            value: &formula_labels[i],
-                            classes: "font-mono text-xs",
-                        }),
-                    ],
-                    ..Default::default()
-                }
-            })
-            .collect();
-
-        let actions = html! {
-            (picker_create_button::<ComponentCreateModalKey>(
-                target,
-                Some("plus"),
-                "btn-square btn-outline btn-sm",
-            ))
-        };
-
-        data_table_list_refresh::<ComponentSelectTableKey>(
-            "Select Component",
-            actions,
-            &headers,
-            &rows,
-            html! {},
-            &self.path_and_query,
-        )
-    }
-}
-
-impl RenderTemplate for ComponentSelectPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        self.render_modal().into_inner()
-    }
-}
-
-// ==========================================
-// 2. COMPONENTS
-// ==========================================
-
-#[derive(Generic)]
-pub struct ComponentListPage {
-    pub components: Vec<component::Model>,
-    pub fields: Vec<FilterField>,
-    pub filters: Vec<FilterClauseView>,
-    pub filter_errors: Vec<FilterRowError>,
-    pub sort: String,
-    pub path_and_query: String,
-    pub page: u32,
-    pub num_pages: u32,
-    pub page_size: u32,
-}
-
-impl ComponentListPage {
-    pub fn render_table(&self) -> Markup {
-        let headers = [
-            TableColumnHeader {
-                key: "Id",
-                label: "Id",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Name",
-                label: "Name",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Variables",
-                label: "Variables",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "CostFormula",
-                label: "Cost Formula",
-                sort_url: None,
-                push_url: false,
-            },
-        ];
-
-        let id_labels: Vec<String> = self.components.iter().map(|c| c.id.to_string()).collect();
-        let schema_labels: Vec<String> = self
-            .components
-            .iter()
-            .map(|c| schema_label(&c.variables))
-            .collect();
-        let formula_labels: Vec<String> = self
-            .components
-            .iter()
-            .map(|c| formula_preview(&c.cost_formula))
-            .collect();
-
-        let rows: Vec<TableRow> = self
-            .components
-            .iter()
-            .enumerate()
-            .map(|(i, c)| TableRow {
-                attrs: row_attr_navigate_route(ComponentDetailRouteTag::new(c.id)),
-                cells: vec![
-                    field_text(FieldText {
-                        value: &id_labels[i],
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &c.name,
-                        classes: "font-semibold",
-                    }),
-                    field_text(FieldText {
-                        value: &schema_labels[i],
-                        classes: "font-mono text-xs",
-                    }),
-                    field_text(FieldText {
-                        value: &formula_labels[i],
-                        classes: "font-mono text-xs",
-                    }),
-                ],
-                ..Default::default()
-            })
-            .collect();
-
-        let actions = html! {
-            (list_filter_panel::<ComponentTableKey, _>(
-                &self.fields,
-                &self.filters,
-                self.page_size,
-                &self.sort,
-                WorkOrdersComponentsRouteTag,
-            ))
-            (table_create_button::<ComponentTableKey, ComponentCreateModalKey>(
-                Some("plus"),
-                "btn-square btn-outline btn-sm",
-            ))
-        };
-
-        data_table_with_filter_errors::<ComponentTableKey>(
-            "Components",
-            actions,
-            &headers,
-            &rows,
-            render_pagination::<ComponentTableKey>(&self.path_and_query, self.page, self.num_pages),
-            &self.path_and_query,
-            &self.filter_errors,
-        )
-    }
-}
-
-impl RenderAppPane for ComponentListPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("components"),
-            components_list_crumbs(),
-            self.render_table(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(components_list_crumbs(), self.render_table())
-    }
-}
-
-impl RenderTemplate for ComponentListPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            "Components — KDS Quotations",
-            chrome,
-            wo_menu("components"),
-            components_list_crumbs(),
-            self.render_table(),
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct ComponentDetailPage {
-    pub component: component::Model,
-}
-
-impl ComponentDetailPage {
-    fn body(&self) -> Markup {
-        let edit_url = ComponentEditGetRouteTag::new(self.component.id).url();
-        let delete_url = ComponentDeleteGetRouteTag::new(self.component.id).url();
-        let actions = html! {
-            (button_modal_form(ButtonModalForm {
-                label: "Edit",
-                icon_name: Some("pencil"),
-                name: "wo.ComponentEditForm",
-                href: &edit_url,
-                form_post_url: &edit_url,
-                modal_uid: ComponentEditModalKey::ID,
-                classes: "btn-outline btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_form(ButtonModalForm {
-                label: "Delete",
-                icon_name: Some("trash"),
-                name: "wo.ComponentDeleteForm",
-                href: &delete_url,
-                form_post_url: &delete_url,
-                modal_uid: ComponentDeleteModalKey::ID,
-                classes: "btn-error btn-sm",
-                ..Default::default()
-            }))
-        };
-
-        let schema_str = schema_label(&self.component.variables);
-        let cost_str = if self.component.cost_formula.trim().is_empty() {
-            "—".to_string()
-        } else {
-            self.component.cost_formula.clone()
-        };
-        let weight_str = if self.component.weight_formula.trim().is_empty() {
-            "—".to_string()
-        } else {
-            self.component.weight_formula.clone()
-        };
-
-        html! {
-            (detail(html! {
-                (container_column("", html! {
-                    (detail_header(DetailHeader {
-                        title: &self.component.name,
-                        actions,
-                    }))
-                    (container_row("gap-6", html! {
-                        (label("Variables", field_text(FieldText { value: &schema_str, classes: "font-mono text-sm" })))
-                    }))
-                    div class="mt-6" {
-                        (label("Cost Formula", html! {
-                            pre class="p-3 bg-base-200 rounded text-xs font-mono whitespace-pre-wrap" { (cost_str) }
-                        }))
-                    }
-                    div class="mt-4" {
-                        (label("Weight Formula", html! {
-                            pre class="p-3 bg-base-200 rounded text-xs font-mono whitespace-pre-wrap" { (weight_str) }
-                        }))
-                    }
-                }))
-            }))
-        }
-    }
-}
-
-impl RenderAppPane for ComponentDetailPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("components"),
-            component_crumbs(&self.component.name, self.component.id),
-            self.body(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(
-            component_crumbs(&self.component.name, self.component.id),
-            self.body(),
-        )
-    }
-}
-
-impl RenderTemplate for ComponentDetailPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            &format!("{} — Components", self.component.name),
-            chrome,
-            wo_menu("components"),
-            component_crumbs(&self.component.name, self.component.id),
-            self.body(),
-        )
-    }
-}
-
-#[derive(Clone, Generic, Default)]
-pub struct ComponentCreateModalPage {
-    pub form_name: String,
-    pub refresh_table: String,
-    pub target_input: String,
-    pub name: String,
-    pub variables: Vec<String>,
-    pub cost_formula: String,
-    pub weight_formula: String,
-    pub error: String,
-}
-
-impl RenderTemplate for ComponentCreateModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let ctx = FormCtx::form::<ComponentForm>(CsrfToken::current())
-            .value(ComponentFormField::Name, &self.name)
-            .list(ComponentFormField::Variables, &self.variables)
-            .value(ComponentFormField::CostFormula, &self.cost_formula)
-            .value(ComponentFormField::WeightFormula, &self.weight_formula);
-
-        modal_keyed::<ComponentCreateModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "New Component" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<ComponentCreateModalKey>(
-                        &modal_create_post_query(
-                            ComponentCreatePostRouteTag,
-                            &self.form_name,
-                            &self.refresh_table,
-                            &self.target_input,
-                        ),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (ComponentForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Create Component", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct ComponentEditModalPage {
-    pub id: i64,
+pub struct PartModalPage {
+    pub work_order_id: i64,
+    pub existing_id: Option<i64>,
     pub form_name: String,
     pub name: String,
-    pub variables: Vec<String>,
-    pub cost_formula: String,
-    pub weight_formula: String,
+    pub measure_kind: String,
+    pub measure_unit: String,
+    pub kind_choices: Vec<(String, String)>,
     pub error: String,
 }
 
-impl RenderTemplate for ComponentEditModalPage {
+impl RenderTemplate for PartModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let ctx = FormCtx::form::<ComponentForm>(CsrfToken::current())
-            .value(ComponentFormField::Name, &self.name)
-            .list(ComponentFormField::Variables, &self.variables)
-            .value(ComponentFormField::CostFormula, &self.cost_formula)
-            .value(ComponentFormField::WeightFormula, &self.weight_formula);
-
-        modal_keyed::<ComponentEditModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Component" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<ComponentEditModalKey>(
-                        &ComponentEditPostRouteTag::new(self.id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (ComponentForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
-        )
-    }
-}
-
-#[derive(Generic)]
-pub struct InvoiceListPage {
-    pub invoices: Vec<quotation::Model>,
-    pub customer_names: Vec<String>,
-    pub grand_totals: Vec<rust_decimal::Decimal>,
-    pub fields: Vec<FilterField>,
-    pub filters: Vec<FilterClauseView>,
-    pub filter_errors: Vec<FilterRowError>,
-    pub sort: String,
-    pub path_and_query: String,
-    pub page: u32,
-    pub num_pages: u32,
-    pub page_size: u32,
-}
-
-impl InvoiceListPage {
-    pub fn render_table(&self) -> Markup {
-        let headers = [
-            TableColumnHeader {
-                key: "Id",
-                label: "Id",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "InvoiceNumber",
-                label: "Quotation #",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Date",
-                label: "Date",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Customer",
-                label: "Customer",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Total",
-                label: "Total",
-                sort_url: None,
-                push_url: false,
-            },
-        ];
-
-        let id_labels: Vec<String> = self.invoices.iter().map(|inv| inv.id.to_string()).collect();
-        let date_labels: Vec<String> = self
-            .invoices
-            .iter()
-            .map(|inv| inv.date.to_string())
-            .collect();
-        let total_labels: Vec<String> = self
-            .grand_totals
-            .iter()
-            .map(|t| format!("₹ {:.2}", t))
-            .collect();
-
-        let rows: Vec<TableRow> = self
-            .invoices
-            .iter()
-            .enumerate()
-            .map(|(i, inv)| TableRow {
-                attrs: row_attr_navigate_route(InvoiceDetailRouteTag::new(inv.id)),
-                cells: vec![
-                    field_text(FieldText {
-                        value: &id_labels[i],
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &inv.invoice_number,
-                        classes: "font-semibold",
-                    }),
-                    field_text(FieldText {
-                        value: &date_labels[i],
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: self
-                            .customer_names
-                            .get(i)
-                            .map(String::as_str)
-                            .unwrap_or_default(),
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &total_labels[i],
-                        classes: "font-semibold",
-                    }),
-                ],
-                ..Default::default()
-            })
-            .collect();
-
-        let actions = html! {
-            (list_filter_panel::<InvoiceTableKey, _>(
-                &self.fields,
-                &self.filters,
-                self.page_size,
-                &self.sort,
-                WorkOrdersDefaultRouteTag,
-            ))
-            (table_create_button::<InvoiceTableKey, InvoiceCreateModalKey>(
-                Some("plus"),
-                "btn-square btn-outline btn-sm",
-            ))
-        };
-
-        data_table_with_filter_errors::<InvoiceTableKey>(
-            "Quotations",
-            actions,
-            &headers,
-            &rows,
-            render_pagination::<InvoiceTableKey>(&self.path_and_query, self.page, self.num_pages),
-            &self.path_and_query,
-            &self.filter_errors,
-        )
-    }
-}
-
-impl RenderAppPane for InvoiceListPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("invoices"),
-            invoices_list_crumbs(),
-            self.render_table(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(invoices_list_crumbs(), self.render_table())
-    }
-}
-
-impl RenderTemplate for InvoiceListPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            "Quotations — KDS Quotations",
-            chrome,
-            wo_menu("invoices"),
-            invoices_list_crumbs(),
-            self.render_table(),
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct InvoiceDetailPage {
-    pub invoice: quotation::Model,
-    pub machine_lines: Vec<(
-        quotation_machine_line::Model,
-        String,
-        String,
-        rust_decimal::Decimal,
-    )>,
-    pub material_lines: Vec<(
-        quotation_material_line::Model,
-        String,
-        String,
-        rust_decimal::Decimal,
-    )>,
-    pub component_schemas: HashMap<i64, serde_json::Value>,
-    pub machine_schemas: HashMap<i64, serde_json::Value>,
-    pub grand_total: rust_decimal::Decimal,
-    pub customer_name: String,
-}
-
-impl InvoiceDetailPage {
-    fn material_vars(&self, l: &quotation_material_line::Model) -> String {
-        match self.component_schemas.get(&l.component_id) {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn machine_vars(&self, l: &quotation_machine_line::Model) -> String {
-        let schema = l.machine_id.and_then(|id| self.machine_schemas.get(&id));
-        match schema {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn body(&self) -> Markup {
-        let edit_url = InvoiceEditGetRouteTag::new(self.invoice.id).url();
-        let copy_path = InvoiceCopyPostRouteTag::new(self.invoice.id).path();
-        let create_wo_url = InvoiceCreateWorkOrderGetRouteTag::new(self.invoice.id).url();
-        let create_invoice_url = InvoiceCreateDraftInvoiceGetRouteTag::new(self.invoice.id).url();
-        let mail_href = InvoiceMailRouteTag::new(self.invoice.id).path();
-        let eml_name = format!(
-            "{}.eml",
-            crate::pdf::pdf_filename_base(
-                Some(self.invoice.invoice_number.as_str()),
-                &format!("quotation-{}", self.invoice.id),
-            )
-        );
-        let actions = html! {
-            (button_modal_form(ButtonModalForm {
-                label: "Create Invoice",
-                icon_name: Some("plus"),
-                name: "wo.InvoiceCreateDraftInvoiceForm",
-                href: &create_invoice_url,
-                form_post_url: &create_invoice_url,
-                modal_uid: InvoiceCreateDraftInvoiceModalKey::ID,
-                classes: "btn-outline btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_form(ButtonModalForm {
-                label: "Create Work Order",
-                icon_name: Some("plus"),
-                name: "wo.InvoiceCreateWorkOrderForm",
-                href: &create_wo_url,
-                form_post_url: &create_wo_url,
-                modal_uid: InvoiceCreateWorkOrderModalKey::ID,
-                classes: "btn-primary btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_form(ButtonModalForm {
-                label: "Edit",
-                icon_name: Some("pencil"),
-                name: "wo.InvoiceEditForm",
-                href: &edit_url,
-                form_post_url: &edit_url,
-                modal_uid: InvoiceEditModalKey::ID,
-                classes: "btn-outline btn-sm",
-                ..Default::default()
-            }))
-            (button_post(ButtonPost {
-                label: "Copy",
-                action: &copy_path,
-                icon_name: Some("document-duplicate"),
-                classes: "btn-outline btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_route(
-                InvoicePdfModalRouteTag::new(self.invoice.id),
-                "PDF",
-                "btn-outline btn-sm",
-            ))
-            a href=(mail_href)
-                download=(eml_name)
-                class="btn btn-outline btn-sm"
-                hx-boost="false"
-                title="Download a draft message with the quotation PDF attached. Open it to send from your mail client."
-            {
-                "Send mail"
-            }
-        };
-
-        let date_str = self.invoice.date.to_string();
-        let cust_str = self.customer_name.clone();
-        let account = self.invoice.bank_account.clone().unwrap_or_default();
-
-        html! {
-            (detail(html! {
-                (container_column("", html! {
-                    (detail_header(DetailHeader {
-                        title: &format!("Quotation {}", self.invoice.invoice_number),
-                        actions,
-                    }))
-                    (container_row("gap-6", html! {
-                        (label("Quotation Date", field_text(FieldText { value: &date_str, classes: "" })))
-                        (label("Customer", field_text(FieldText { value: &cust_str, classes: "" })))
-                        (label("Account", field_text(FieldText { value: &account, classes: "whitespace-pre-wrap" })))
-                        (label("Remarks", field_text(FieldText { value: &self.invoice.remarks, classes: "whitespace-pre-wrap" })))
-                    }))
-
-                    // Machine Lines Table
-                    div class="mt-6 min-w-0 w-full" {
-                        h4 class="font-bold text-md mb-2" { "Machine Operations" }
-                        @if self.machine_lines.is_empty() {
-                            p class="text-sm opacity-70" { "No machine lines on this quotation." }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full" {
-                            table class="table table-zebra w-full min-w-max text-sm" {
-                                thead {
-                                    tr {
-                                        th { "Machine" }
-                                        th { "Variables" }
-                                        th { "Remarks" }
-                                        th { "Taxes" }
-                                        th { "Pre-tax" }
-                                        th { "Amount" }
-                                    }
-                                }
-                                tbody {
-                                    @for (l, machine_name, tax_labels, taxed_total) in &self.machine_lines {
-                                        tr {
-                                            td { (machine_name) }
-                                            td class="font-mono text-xs" { (self.machine_vars(l)) }
-                                            td class="whitespace-pre-wrap text-xs" { (l.remarks) }
-                                            td { (tax_labels) }
-                                            td class="font-semibold" { (format!("₹ {:.2}", l.line_total())) }
-                                            td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
-                                        }
-                                    }
-                                }
-                            }
-                            }
-                        }
-                    }
-
-                    // Material Lines Table
-                    div class="mt-6 min-w-0 w-full" {
-                        h4 class="font-bold text-md mb-2" { "Material Lines" }
-                        @if self.material_lines.is_empty() {
-                            p class="text-sm opacity-70" { "No material lines on this quotation." }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full" {
-                            table class="table table-zebra w-full min-w-max text-sm" {
-                                thead {
-                                    tr {
-                                        th { "Component" }
-                                        th { "Variables" }
-                                        th { "Remarks" }
-                                        th { "Taxes" }
-                                        th { "Pre-tax" }
-                                        th { "Amount" }
-                                    }
-                                }
-                                tbody {
-                                    @for (l, comp_name, tax_labels, taxed_total) in &self.material_lines {
-                                        tr {
-                                            td { (comp_name) }
-                                            td class="font-mono text-xs" { (self.material_vars(l)) }
-                                            td class="whitespace-pre-wrap text-xs" { (l.remarks) }
-                                            td { (tax_labels) }
-                                            td class="font-semibold" { (format!("₹ {:.2}", l.final_cost)) }
-                                            td class="font-semibold" { (format!("₹ {:.2}", taxed_total)) }
-                                        }
-                                    }
-                                }
-                            }
-                            }
-                        }
-                    }
-
-                    // Total
-                    div class="mt-6 p-4 bg-base-200 rounded flex justify-between items-center" {
-                        span class="text-lg font-bold" { "Grand Total" }
-                        span class="text-xl font-extrabold text-primary" { (format!("₹ {:.2}", self.grand_total)) }
-                    }
-                }))
-            }))
-        }
-    }
-}
-
-impl RenderAppPane for InvoiceDetailPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("invoices"),
-            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
-            self.body(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(
-            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
-            self.body(),
-        )
-    }
-}
-
-impl RenderTemplate for InvoiceDetailPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            &format!("{} — Quotations", self.invoice.invoice_number),
-            chrome,
-            wo_menu("invoices"),
-            invoice_crumbs(&self.invoice.invoice_number, self.invoice.id),
-            self.body(),
-        )
-    }
-}
-
-#[derive(Generic)]
-pub struct IssuedWorkOrderListPage {
-    pub orders: Vec<work_order::Model>,
-    pub customer_names: Vec<String>,
-    pub job_labels: Vec<String>,
-    pub line_counts: Vec<usize>,
-    pub totals: Vec<Decimal>,
-    pub fields: Vec<FilterField>,
-    pub filters: Vec<FilterClauseView>,
-    pub filter_errors: Vec<FilterRowError>,
-    pub sort: String,
-    pub path_and_query: String,
-    pub page: u32,
-    pub num_pages: u32,
-    pub page_size: u32,
-}
-
-impl IssuedWorkOrderListPage {
-    pub fn render_table(&self) -> Markup {
-        let headers = [
-            TableColumnHeader {
-                key: "Id",
-                label: "Id",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "OrderNumber",
-                label: "Order #",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Customer",
-                label: "Customer",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Job",
-                label: "Job",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Lines",
-                label: "Lines",
-                sort_url: None,
-                push_url: false,
-            },
-            TableColumnHeader {
-                key: "Total",
-                label: "Total Cost",
-                sort_url: None,
-                push_url: false,
-            },
-        ];
-
-        let id_labels: Vec<String> = self.orders.iter().map(|o| o.id.to_string()).collect();
-        let line_labels: Vec<String> = self.line_counts.iter().map(|n| n.to_string()).collect();
-        let total_labels: Vec<String> = self.totals.iter().map(|t| format!("₹ {:.2}", t)).collect();
-
-        let rows: Vec<TableRow> = self
-            .orders
-            .iter()
-            .enumerate()
-            .map(|(i, o)| TableRow {
-                attrs: row_attr_navigate_route(IssuedWorkOrderDetailRouteTag::new(o.id)),
-                cells: vec![
-                    field_text(FieldText {
-                        value: &id_labels[i],
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: order_number_display(&o.order_number),
-                        classes: "font-semibold",
-                    }),
-                    field_text(FieldText {
-                        value: self
-                            .customer_names
-                            .get(i)
-                            .map(String::as_str)
-                            .unwrap_or_default(),
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: self.job_labels.get(i).map(String::as_str).unwrap_or("—"),
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &line_labels[i],
-                        classes: "",
-                    }),
-                    field_text(FieldText {
-                        value: &total_labels[i],
-                        classes: "font-semibold",
-                    }),
-                ],
-                ..Default::default()
-            })
-            .collect();
-
-        let actions = html! {
-            (list_filter_panel::<IssuedWorkOrderTableKey, _>(
-                &self.fields,
-                &self.filters,
-                self.page_size,
-                &self.sort,
-                IssuedWorkOrdersRouteTag,
-            ))
-        };
-
-        data_table_with_filter_errors::<IssuedWorkOrderTableKey>(
-            "Work Orders",
-            actions,
-            &headers,
-            &rows,
-            render_pagination::<IssuedWorkOrderTableKey>(
-                &self.path_and_query,
-                self.page,
-                self.num_pages,
+        let ctx = FormCtx::form::<PartForm>(CsrfToken::current())
+            .value(PartFormField::Name, &self.name)
+            .value(PartFormField::MeasureKind, &self.measure_kind)
+            .value(PartFormField::MeasureUnit, &self.measure_unit)
+            .choices(PartFormField::MeasureKind, &self.kind_choices);
+        let (title, attrs) = match self.existing_id {
+            Some(id) => (
+                "Edit part",
+                form_hx_post_url::<PartEditModalKey>(&modal_edit_post_url(
+                    PartEditPostRouteTag::new(id),
+                    &self.form_name,
+                )),
             ),
-            &self.path_and_query,
-            &self.filter_errors,
-        )
-    }
-
-    fn body(&self) -> Markup {
-        work_order_hub_body("issued", self.render_table())
-    }
-}
-
-impl RenderAppPane for IssuedWorkOrderListPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("issued"),
-            issued_work_orders_list_crumbs(),
-            self.body(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(issued_work_orders_list_crumbs(), self.body())
-    }
-}
-
-impl RenderTemplate for IssuedWorkOrderListPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            "Work Orders — KDS Quotations",
-            chrome,
-            wo_menu("issued"),
-            issued_work_orders_list_crumbs(),
-            self.body(),
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct IssuedWorkOrderDetailPage {
-    pub order: work_order::Model,
-    pub lines: Vec<(work_order_line::Model, String, String, Decimal)>,
-    pub machine_lines: Vec<(work_order_machine_line::Model, String, String, Decimal)>,
-    pub component_schemas: HashMap<i64, serde_json::Value>,
-    pub machine_schemas: HashMap<i64, serde_json::Value>,
-    pub customer_name: Option<String>,
-    pub quotation_number: Option<String>,
-    pub job_name: Option<String>,
-    pub total_amount: Decimal,
-}
-
-impl IssuedWorkOrderDetailPage {
-    fn material_vars(&self, l: &work_order_line::Model) -> String {
-        match self.component_schemas.get(&l.component_id) {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn machine_vars(&self, l: &work_order_machine_line::Model) -> String {
-        let schema = l.machine_id.and_then(|id| self.machine_schemas.get(&id));
-        match schema {
-            Some(schema) => l.format_variables_display_with_schema(schema),
-            None => l.format_variables_display(),
-        }
-    }
-
-    fn body(&self) -> Markup {
-        let delete_url = IssuedWorkOrderDeleteGetRouteTag::new(self.order.id).url();
-        let new_draft_path = IssuedWorkOrderNewDraftPostRouteTag::new(self.order.id).path();
-        let actions = html! {
-            (button_post(ButtonPost {
-                label: "New Draft Work Order",
-                action: &new_draft_path,
-                icon_name: Some("plus"),
-                classes: "btn-primary btn-sm",
-                ..Default::default()
-            }))
-            (button_modal_route(
-                IssuedWorkOrderPdfModalRouteTag::new(self.order.id),
-                "PDF",
-                "btn-outline btn-sm",
-            ))
-            (button_modal_form(ButtonModalForm {
-                label: "Delete",
-                icon_name: Some("trash"),
-                name: "wo.IssuedWorkOrderDeleteForm",
-                href: &delete_url,
-                form_post_url: &delete_url,
-                modal_uid: IssuedWorkOrderDeleteModalKey::ID,
-                classes: "btn-error btn-outline btn-sm",
-                ..Default::default()
-            }))
-        };
-
-        let cust_label = self
-            .customer_name
-            .clone()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "—".into());
-        let quotation_href = self
-            .order
-            .quotation_id
-            .map(|id| InvoiceDetailRouteTag::new(id).url());
-        let quotation_label = self.quotation_number.clone().unwrap_or_else(|| {
-            self.order
-                .quotation_id
-                .map(|id| format!("#{id}"))
-                .unwrap_or_default()
-        });
-        let job_href = self.order.job_id.map(|id| JobDetailRouteTag::new(id).url());
-        let job_label = self.job_name.clone().unwrap_or_else(|| {
-            self.order
-                .job_id
-                .map(|id| format!("#{id}"))
-                .unwrap_or_default()
-        });
-        let lines_count_str = self.lines.len().to_string();
-        let machine_lines_count_str = self.machine_lines.len().to_string();
-        let total_str = format!("₹ {:.2}", self.total_amount);
-        let duration_str = format_job_duration(self.order.duration);
-        let title_str = if self.order.order_number.trim().is_empty() {
-            "Work Order".to_string()
-        } else {
-            format!("Work Order {}", self.order.order_number)
-        };
-
-        html! {
-            (detail(html! {
-                (container_column("", html! {
-                    (detail_header(DetailHeader {
-                        title: &title_str,
-                        actions,
-                    }))
-                    div class="@container w-full min-w-0" {
-                        div class="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-x-6 gap-y-1 w-full" {
-                            (label("Customer", field_text(FieldText { value: &cust_label, classes: "" })))
-                            @if let Some(href) = &quotation_href {
-                                (label("Quotation", field_link(FieldLink { href, label: &quotation_label, classes: "" })))
-                            }
-                            @if let Some(href) = &job_href {
-                                (label("Job", field_link(FieldLink { href, label: &job_label, classes: "" })))
-                            }
-                            (label("Duration", field_text(FieldText { value: &duration_str, classes: "" })))
-                            (label("Material Lines", field_text(FieldText { value: &lines_count_str, classes: "" })))
-                            (label("Machine Lines", field_text(FieldText { value: &machine_lines_count_str, classes: "" })))
-                            (label("Total Cost", field_text(FieldText { value: &total_str, classes: "font-mono font-bold text-primary" })))
-                        }
-                    }
-
-                    div class="mt-8" {
-                        div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Material Lines" }
-                        }
-                        @if self.lines.is_empty() {
-                            div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
-                                "No line items."
-                            }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full border border-base-200 rounded-lg" {
-                                table class="table table-zebra w-full min-w-max text-sm" {
-                                    thead {
-                                        tr {
-                                            th class="w-12" { "#" }
-                                            th { "Component" }
-                                            th { "Variables" }
-                                            th { "Taxes" }
-                                            th class="text-right" { "Pre-tax (₹)" }
-                                            th class="text-right" { "Total (₹)" }
-                                        }
-                                    }
-                                    tbody {
-                                        @for (idx, (l, comp_name, tax_labels, taxed_total)) in self.lines.iter().enumerate() {
-                                            tr {
-                                                td class="opacity-60" { (idx + 1) }
-                                                td class="font-semibold" { (comp_name) }
-                                                td class="font-mono text-xs" { (self.material_vars(l)) }
-                                                td class="text-sm" { (tax_labels) }
-                                                td class="text-right font-mono" { (format!("₹ {:.2}", l.final_cost)) }
-                                                td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    div class="mt-8" {
-                        div class="mb-3" {
-                            h4 class="font-bold text-lg" { "Machine Lines" }
-                        }
-                        @if self.machine_lines.is_empty() {
-                            div class="p-8 text-center text-sm text-base-content/60 bg-base-200/50 rounded-lg border border-base-200" {
-                                "No machine lines."
-                            }
-                        } @else {
-                            div class="overflow-x-auto min-w-0 w-full border border-base-200 rounded-lg" {
-                                table class="table table-zebra w-full min-w-max text-sm" {
-                                    thead {
-                                        tr {
-                                            th class="w-12" { "#" }
-                                            th { "Machine" }
-                                            th { "Variables" }
-                                            th { "Taxes" }
-                                            th class="text-right" { "Pre-tax (₹)" }
-                                            th class="text-right" { "Total (₹)" }
-                                        }
-                                    }
-                                    tbody {
-                                        @for (idx, (l, machine_name, tax_labels, taxed_total)) in self.machine_lines.iter().enumerate() {
-                                            tr {
-                                                td class="opacity-60" { (idx + 1) }
-                                                td class="font-semibold" { (machine_name) }
-                                                td class="font-mono text-xs" { (self.machine_vars(l)) }
-                                                td class="text-sm" { (tax_labels) }
-                                                td class="text-right font-mono" { (format!("₹ {:.2}", l.line_total())) }
-                                                td class="text-right font-mono font-bold text-primary" { (format!("₹ {:.2}", taxed_total)) }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }))
-            }))
-        }
-    }
-}
-
-impl RenderAppPane for IssuedWorkOrderDetailPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("issued"),
-            issued_work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
+            None => (
+                "Add part",
+                form_hx_post_url::<PartCreateModalKey>(&modal_create_post_url(
+                    PartCreatePostRouteTag::new(self.work_order_id),
+                    &self.form_name,
+                    "",
+                )),
             ),
-            self.body(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(
-            issued_work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
-            ),
-            self.body(),
-        )
-    }
-}
-
-impl RenderTemplate for IssuedWorkOrderDetailPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        let page_title = if self.order.order_number.trim().is_empty() {
-            "Work Order — Work Orders".to_string()
-        } else {
-            format!("{} — Work Orders", self.order.order_number)
         };
-        app_scaffold(
-            &page_title,
-            chrome,
-            wo_menu("issued"),
-            issued_work_order_crumbs(
-                order_number_display(&self.order.order_number),
-                self.order.id,
-            ),
-            self.body(),
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct InvoiceCreateModalPage {
-    pub form_name: String,
-    pub invoice_number: String,
-    pub date: String,
-    pub customer_id: Option<i64>,
-    pub customer_name: String,
-    pub bank_account: String,
-    pub remarks: String,
-    pub material_lines_json: String,
-    pub machine_lines_json: String,
-    pub components_json: String,
-    pub machines_json: String,
-    pub taxes_json: String,
-    pub error: String,
-}
-
-impl RenderTemplate for InvoiceCreateModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let cust_id_str = self
-            .customer_id
-            .map(|id| id.to_string())
-            .unwrap_or_default();
-        let material_lines_val = if self.material_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.material_lines_json
-        };
-        let machine_lines_val = if self.machine_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.machine_lines_json
-        };
-        let ctx = FormCtx::form::<InvoiceForm>(CsrfToken::current())
-            .value(InvoiceFormField::InvoiceNumber, &self.invoice_number)
-            .value(InvoiceFormField::Date, &self.date)
-            .value(InvoiceFormField::CustomerId, &cust_id_str)
-            .display(InvoiceFormField::CustomerId, &self.customer_name)
-            .value(InvoiceFormField::BankAccount, &self.bank_account)
-            .value(InvoiceFormField::Remarks, &self.remarks)
-            .value(InvoiceFormField::MaterialLines, material_lines_val)
-            .display(InvoiceFormField::MaterialLines, &self.components_json)
-            .value(InvoiceFormField::MachineLines, machine_lines_val)
-            .display(InvoiceFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json)
-            .display(LineEditorDisplayKey::ShowRemarks, "1");
-
-        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
-        modal_keyed::<InvoiceCreateModalKey>(
-            &modal_classes,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "New Quotation" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lines_form_hx_post::<InvoiceCreateModalKey>(
-                        &InvoiceCreatePostRouteTag.url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (InvoiceForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Create Quotation", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
-            },
-        )
-    }
-}
-
-#[derive(Clone, Generic)]
-pub struct InvoiceEditModalPage {
-    pub id: i64,
-    pub form_name: String,
-    pub invoice_number: String,
-    pub date: String,
-    pub customer_id: i64,
-    pub customer_name: String,
-    pub bank_account: String,
-    pub remarks: String,
-    pub material_lines_json: String,
-    pub machine_lines_json: String,
-    pub components_json: String,
-    pub machines_json: String,
-    pub taxes_json: String,
-    pub error: String,
-}
-
-impl RenderTemplate for InvoiceEditModalPage {
-    fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let cust_id_str = self.customer_id.to_string();
-        let material_lines_val = if self.material_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.material_lines_json
-        };
-        let machine_lines_val = if self.machine_lines_json.is_empty() {
-            "[]"
-        } else {
-            &self.machine_lines_json
-        };
-        let ctx = FormCtx::form::<InvoiceForm>(CsrfToken::current())
-            .value(InvoiceFormField::InvoiceNumber, &self.invoice_number)
-            .value(InvoiceFormField::Date, &self.date)
-            .value(InvoiceFormField::CustomerId, &cust_id_str)
-            .display(InvoiceFormField::CustomerId, &self.customer_name)
-            .value(InvoiceFormField::BankAccount, &self.bank_account)
-            .value(InvoiceFormField::Remarks, &self.remarks)
-            .value(InvoiceFormField::MaterialLines, material_lines_val)
-            .display(InvoiceFormField::MaterialLines, &self.components_json)
-            .value(InvoiceFormField::MachineLines, machine_lines_val)
-            .display(InvoiceFormField::MachineLines, &self.machines_json)
-            .display(LineEditorDisplayKey::TaxesData, &self.taxes_json)
-            .display(LineEditorDisplayKey::ShowRemarks, "1");
-        let delete_url = InvoiceDeleteGetRouteTag::new(self.id).url();
-
-        let modal_classes = format!("!max-w-6xl !w-11/12 {}", self.form_name);
-        modal_keyed::<InvoiceEditModalKey>(
-            &modal_classes,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Edit Quotation" }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
-                    }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lines_form_hx_post::<InvoiceEditModalKey>(
-                        &InvoiceEditPostRouteTag::new(self.id).url(),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (InvoiceForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
+        let body = form(
+            &CsrfToken::current(),
+            FormOpts {
+                title,
+                attrs,
+                form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                inputs: PartForm::render_inputs(&ctx),
+                actions: html! {
+                    (submit("Save"))
+                    @if let Some(id) = self.existing_id {
                         (button_modal_form(ButtonModalForm {
                             label: "Delete",
                             icon_name: Some("trash"),
-                            name: "wo.InvoiceDeleteForm",
-                            href: &delete_url,
-                            form_post_url: &delete_url,
-                            modal_uid: InvoiceDeleteModalKey::ID,
-                            classes: "btn-error btn-sm",
+                            name: "wo.PartDeleteForm",
+                            href: &PartDeleteGetRouteTag::new(id).url(),
+                            form_post_url: &PartDeleteGetRouteTag::new(id).url(),
+                            modal_uid: PartDeleteModalKey::ID,
+                            classes: "btn-error",
                             ..Default::default()
                         }))
-                        (button_submit(ButtonSubmit { label: "Save Changes", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
+                    }
+                },
+                ..Default::default()
             },
-        )
+        );
+        match self.existing_id {
+            Some(_) => modal_keyed::<PartEditModalKey>("", body),
+            None => modal_keyed::<PartCreateModalKey>("", body),
+        }
     }
 }
 
-#[derive(Clone, Generic)]
-pub struct InvoiceCreateDraftInvoiceModalPage {
-    pub id: i64,
+pub struct PresuppliedModalPage {
+    pub work_order_id: i64,
+    pub existing_id: Option<i64>,
     pub form_name: String,
-    pub quotation_number: String,
+    pub part_id: String,
+    pub qty_value: String,
+    pub qty_unit: String,
+    pub part_choices: Vec<(String, String)>,
     pub error: String,
 }
 
-impl RenderTemplate for InvoiceCreateDraftInvoiceModalPage {
+impl RenderTemplate for PresuppliedModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        modal_keyed::<InvoiceCreateDraftInvoiceModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Create Draft Invoice" }
-                p class="text-sm opacity-70 mb-4" {
-                    "Create a draft invoice from quotation "
-                    span class="font-semibold" { (self.quotation_number) }
-                    ". Each machine line and material line becomes an invoice line."
-                }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
+        let ctx = FormCtx::form::<PresuppliedForm>(CsrfToken::current())
+            .value(PresuppliedFormField::PartId, &self.part_id)
+            .value(PresuppliedFormField::QtyValue, &self.qty_value)
+            .value(PresuppliedFormField::QtyUnit, &self.qty_unit)
+            .choices(PresuppliedFormField::PartId, &self.part_choices);
+        let (title, attrs) = match self.existing_id {
+            Some(id) => (
+                "Edit supply",
+                form_hx_post_url::<PresuppliedEditModalKey>(&modal_edit_post_url(
+                    PresuppliedEditPostRouteTag::new(id),
+                    &self.form_name,
+                )),
+            ),
+            None => (
+                "Add supply",
+                form_hx_post_url::<PresuppliedCreateModalKey>(&modal_create_post_url(
+                    PresuppliedCreatePostRouteTag::new(self.work_order_id),
+                    &self.form_name,
+                    "",
+                )),
+            ),
+        };
+        let body = form(
+            &CsrfToken::current(),
+            FormOpts {
+                title,
+                attrs,
+                form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                inputs: PresuppliedForm::render_inputs(&ctx),
+                actions: html! {
+                    (submit("Save"))
+                    @if let Some(id) = self.existing_id {
+                        (button_modal_form(ButtonModalForm {
+                            label: "Delete",
+                            icon_name: Some("trash"),
+                            name: "wo.PresuppliedDeleteForm",
+                            href: &PresuppliedDeleteGetRouteTag::new(id).url(),
+                            form_post_url: &PresuppliedDeleteGetRouteTag::new(id).url(),
+                            modal_uid: PresuppliedDeleteModalKey::ID,
+                            classes: "btn-error",
+                            ..Default::default()
+                        }))
                     }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<InvoiceCreateDraftInvoiceModalKey>(
-                        &modal_edit_post_url(
-                            InvoiceCreateDraftInvoicePostRouteTag::new(self.id),
-                            &self.form_name,
-                        ),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {},
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Create Draft Invoice", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
+                },
+                ..Default::default()
             },
-        )
+        );
+        match self.existing_id {
+            Some(_) => modal_keyed::<PresuppliedEditModalKey>("", body),
+            None => modal_keyed::<PresuppliedCreateModalKey>("", body),
+        }
     }
 }
 
-#[derive(Clone, Generic)]
-pub struct InvoiceCreateWorkOrderModalPage {
-    pub id: i64,
+pub struct StepModalPage {
+    pub work_order_id: i64,
+    pub existing_id: Option<i64>,
     pub form_name: String,
-    pub quotation_number: String,
-    pub duration: String,
+    pub name: String,
+    pub planned_batches: String,
     pub error: String,
 }
 
-impl RenderTemplate for InvoiceCreateWorkOrderModalPage {
+impl RenderTemplate for StepModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let ctx = FormCtx::form::<InvoiceCreateWorkOrderForm>(CsrfToken::current())
-            .value(InvoiceCreateWorkOrderFormField::Duration, &self.duration);
-
-        modal_keyed::<InvoiceCreateWorkOrderModalKey>(
-            &self.form_name,
-            html! {
-                h3 class="font-bold text-lg mb-4" { "Create Work Order" }
-                p class="text-sm opacity-70 mb-4" {
-                    "Set the job duration for work order from quotation "
-                    span class="font-semibold" { (self.quotation_number) }
-                    "."
-                }
-                @if !self.error.is_empty() {
-                    div class="alert alert-error text-sm mb-4 shadow-sm" {
-                        span { (self.error) }
+        let ctx = FormCtx::form::<StepForm>(CsrfToken::current())
+            .value(StepFormField::Name, &self.name)
+            .value(StepFormField::PlannedBatches, &self.planned_batches);
+        let (title, attrs) = match self.existing_id {
+            Some(id) => (
+                "Edit step",
+                form_hx_post_url::<StepEditModalKey>(&modal_edit_post_url(
+                    StepEditPostRouteTag::new(id),
+                    &self.form_name,
+                )),
+            ),
+            None => (
+                "Add step",
+                form_hx_post_url::<StepCreateModalKey>(&modal_create_post_url(
+                    StepCreatePostRouteTag::new(self.work_order_id),
+                    &self.form_name,
+                    "",
+                )),
+            ),
+        };
+        let body = form(
+            &CsrfToken::current(),
+            FormOpts {
+                title,
+                attrs,
+                form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                inputs: StepForm::render_inputs(&ctx),
+                actions: html! {
+                    (submit("Save"))
+                    @if let Some(id) = self.existing_id {
+                        (button_modal_form(ButtonModalForm {
+                            label: "Delete",
+                            icon_name: Some("trash"),
+                            name: "wo.StepDeleteForm",
+                            href: &StepDeleteGetRouteTag::new(id).url(),
+                            form_post_url: &StepDeleteGetRouteTag::new(id).url(),
+                            modal_uid: StepDeleteModalKey::ID,
+                            classes: "btn-error",
+                            ..Default::default()
+                        }))
                     }
-                }
-                (form(&CsrfToken::current(), FormOpts {
-                    attrs: lariv_core::components::swap::form_hx_post_url::<InvoiceCreateWorkOrderModalKey>(
-                        &modal_edit_post_url(
-                            InvoiceCreateWorkOrderPostRouteTag::new(self.id),
-                            &self.form_name,
-                        ),
-                    ),
-                    form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                    inputs: html! {
-                        (InvoiceCreateWorkOrderForm::render_inputs(&ctx))
-                    },
-                    actions: html! {
-                        (button_submit(ButtonSubmit { label: "Create Work Order", ..Default::default() }))
-                    },
-                    ..Default::default()
-                }))
+                },
+                ..Default::default()
             },
-        )
+        );
+        match self.existing_id {
+            Some(_) => modal_keyed::<StepEditModalKey>("", body),
+            None => modal_keyed::<StepCreateModalKey>("", body),
+        }
     }
 }
 
-// ==========================================
-// 8. DELETE CONFIRMATION
-// ==========================================
-
-fn related_doc_cell(name: &str, url: &str) -> Markup {
-    if url.is_empty() {
-        field_text(FieldText {
-            value: name,
-            classes: "",
-        })
-    } else {
-        field_link(FieldLink {
-            href: url,
-            label: name,
-            classes: "",
-        })
-    }
+pub struct FlowModalPage {
+    pub step_id: i64,
+    pub existing_id: Option<i64>,
+    pub side: FlowSide,
+    pub form_name: String,
+    pub part_id: String,
+    pub qty_value: String,
+    pub qty_unit: String,
+    pub part_choices: Vec<(String, String)>,
+    pub error: String,
 }
 
-#[derive(Clone)]
-pub struct IssuedWorkOrderDeleteItem {
-    pub kind: String,
-    pub label: String,
-    pub url: String,
-}
-
-#[derive(Generic)]
-pub struct IssuedWorkOrderDeleteModalPage {
-    pub id: i64,
-    pub items: Vec<IssuedWorkOrderDeleteItem>,
-    pub can_delete: bool,
-    pub error: Option<String>,
-}
-
-impl RenderTemplate for IssuedWorkOrderDeleteModalPage {
+impl RenderTemplate for FlowModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let body = if !self.can_delete {
-            let err = self.error.as_deref().unwrap_or("Delete is unavailable.");
-            html! {
-                h3 class="font-bold text-lg" { "Delete unavailable" }
-                div class="alert alert-error my-2 text-sm" { (err) }
+        let ctx = FormCtx::form::<FlowForm>(CsrfToken::current())
+            .value(FlowFormField::PartId, &self.part_id)
+            .value(FlowFormField::QtyValue, &self.qty_value)
+            .value(FlowFormField::QtyUnit, &self.qty_unit)
+            .choices(FlowFormField::PartId, &self.part_choices);
+        let title = match (self.side, self.existing_id) {
+            (FlowSide::Input, None) => "Add input",
+            (FlowSide::Input, Some(_)) => "Edit input",
+            (FlowSide::Output, None) => "Add output",
+            (FlowSide::Output, Some(_)) => "Edit output",
+        };
+        let attrs = match (self.side, self.existing_id) {
+            (FlowSide::Input, Some(id)) => form_hx_post_url::<FlowEditModalKey>(
+                &modal_edit_post_url(InputEditPostRouteTag::new(id), &self.form_name),
+            ),
+            (FlowSide::Output, Some(id)) => form_hx_post_url::<FlowEditModalKey>(
+                &modal_edit_post_url(OutputEditPostRouteTag::new(id), &self.form_name),
+            ),
+            (FlowSide::Input, None) => {
+                form_hx_post_url::<FlowCreateModalKey>(&modal_create_post_url(
+                    InputCreatePostRouteTag::new(self.step_id),
+                    &self.form_name,
+                    "",
+                ))
             }
-        } else {
-            html! {
-                h2 class="text-xl font-bold text-error" { "Delete work order" }
-                p class="my-2" { "The following documents will be permanently deleted:" }
-                ul class="list-disc ml-6 my-3 space-y-1" {
-                    @for item in &self.items {
-                        li {
-                            span class="font-semibold" { (item.kind) ": " }
-                            (related_doc_cell(&item.label, &item.url))
-                        }
-                    }
-                }
-                p class="text-sm text-base-content/70 my-2" { "This cannot be undone." }
-                (form(
-                    &CsrfToken::current(),
-                    FormOpts {
-                        attrs: form_hx_post_route::<IssuedWorkOrderDeleteModalKey, _>(
-                            IssuedWorkOrderDeletePostRouteTag::new(self.id),
-                        ),
-                        form_error: self.error.as_deref(),
-                        actions: html! {
-                            (button_submit(ButtonSubmit {
-                                label: "Confirm Delete",
-                                classes: "btn-error",
-                                ..Default::default()
-                            }))
-                        },
-                        ..Default::default()
-                    },
+            (FlowSide::Output, None) => {
+                form_hx_post_url::<FlowCreateModalKey>(&modal_create_post_url(
+                    OutputCreatePostRouteTag::new(self.step_id),
+                    &self.form_name,
+                    "",
                 ))
             }
         };
-        modal_keyed::<IssuedWorkOrderDeleteModalKey>("", body)
+        let delete = self.existing_id.map(|id| {
+            let (href, name) = match self.side {
+                FlowSide::Input => (InputDeleteGetRouteTag::new(id).url(), "wo.InputDeleteForm"),
+                FlowSide::Output => (
+                    OutputDeleteGetRouteTag::new(id).url(),
+                    "wo.OutputDeleteForm",
+                ),
+            };
+            button_modal_form(ButtonModalForm {
+                label: "Delete",
+                icon_name: Some("trash"),
+                name,
+                href: &href,
+                form_post_url: &href,
+                modal_uid: FlowDeleteModalKey::ID,
+                classes: "btn-error",
+                ..Default::default()
+            })
+        });
+        let body = form(
+            &CsrfToken::current(),
+            FormOpts {
+                title,
+                attrs,
+                form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                inputs: FlowForm::render_inputs(&ctx),
+                actions: html! {
+                    (submit("Save"))
+                    @if let Some(button) = delete {
+                        (button)
+                    }
+                },
+                ..Default::default()
+            },
+        );
+        match self.existing_id {
+            Some(_) => modal_keyed::<FlowEditModalKey>("", body),
+            None => modal_keyed::<FlowCreateModalKey>("", body),
+        }
     }
 }
 
-#[derive(Clone, Generic)]
+pub struct CompleteLineView {
+    pub part_id: i64,
+    pub name: String,
+    pub qty_value: String,
+    pub qty_unit: String,
+}
+
+pub struct CompleteModalPage {
+    pub step_id: i64,
+    pub step_name: String,
+    pub form_name: String,
+    pub inputs: Vec<CompleteLineView>,
+    pub outputs: Vec<CompleteLineView>,
+    pub error: String,
+}
+
+impl RenderTemplate for CompleteModalPage {
+    fn render(&self, _chrome: &ShellChrome) -> Markup {
+        modal_keyed::<CompleteModalKey>(
+            "",
+            form(
+                &CsrfToken::current(),
+                FormOpts {
+                    title: "Record batch",
+                    subtitle: &self.step_name,
+                    attrs: form_hx_post_url::<CompleteModalKey>(&modal_edit_post_url(
+                        CompletePostRouteTag::new(self.step_id),
+                        &self.form_name,
+                    )),
+                    form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
+                    inputs: html! {
+                        h4 class="font-medium" { "Inputs" }
+                        @for line in &self.inputs {
+                            (qty_fields("in", line))
+                        }
+                        h4 class="font-medium mt-2" { "Outputs" }
+                        @for line in &self.outputs {
+                            (qty_fields("out", line))
+                        }
+                    },
+                    actions: submit("Record batch"),
+                    ..Default::default()
+                },
+            ),
+        )
+    }
+}
+
+fn qty_fields(prefix: &str, line: &CompleteLineView) -> Markup {
+    let value_name = format!("{prefix}_value_{}", line.part_id);
+    let unit_name = format!("{prefix}_unit_{}", line.part_id);
+    html! {
+        div class="grid grid-cols-2 gap-2" {
+            label class="form-control" {
+                span class="label-text" { (format!("{} quantity", line.name)) }
+                input class="input input-bordered" type="text" name=(value_name) value=(line.qty_value) {}
+            }
+            label class="form-control" {
+                span class="label-text" { "Unit" }
+                input class="input input-bordered" type="text" name=(unit_name) value=(line.qty_unit) {}
+            }
+        }
+    }
+}
+
 pub struct ConfirmDeleteModalPage {
-    pub modal_uid: String,
+    pub modal_uid: &'static str,
     pub title: String,
     pub message: String,
     pub post_url: String,
@@ -2555,14 +1146,13 @@ pub struct ConfirmDeleteModalPage {
 
 impl RenderTemplate for ConfirmDeleteModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        let target = format!("#{}", self.modal_uid);
-        modal(lariv_core::components::Modal {
-            uid: &self.modal_uid,
+        modal(Modal {
+            uid: self.modal_uid,
             children: delete_confirmation(DeleteConfirmation {
                 title: &self.title,
                 message: &self.message,
-                attrs: lariv_core::components::swap::form_hx_post_selector(&self.post_url, &target),
-                form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
+                attrs: form_hx_post_selector(&self.post_url, &format!("#{}", self.modal_uid)),
+                global_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
                 ..Default::default()
             }),
             ..Default::default()
@@ -2570,274 +1160,114 @@ impl RenderTemplate for ConfirmDeleteModalPage {
     }
 }
 
-// ==========================================
-// 9. PREFERENCES
-// ==========================================
-
-#[derive(Clone, Generic)]
-pub struct WorkOrdersPreferencesPage {
-    pub quotation_number_format: String,
-    pub draft_work_order_pdf_template: String,
-    pub work_order_pdf_template: String,
-    pub quotation_pdf_template: String,
-    pub company_name: String,
-    pub company_address: String,
-    pub company_phone: String,
-    pub company_gstin: String,
-    pub place_of_supply: String,
-    pub default_bank_account: String,
-    pub company_logo_vnode_id: String,
-    pub company_logo_vnode_display: String,
-    pub company_signature_vnode_id: String,
-    pub company_signature_vnode_display: String,
-    pub quotation_email_subject: String,
-    pub quotation_email_body: String,
-    pub default_material_tax_items: Vec<ManyToManyItem>,
-    pub default_machine_tax_items: Vec<ManyToManyItem>,
-    pub error: String,
+pub fn detail_redirect(id: i64) -> String {
+    detail_url(id)
 }
 
-fn pdf_template_editor(
-    title: &str,
-    field_id: &str,
-    value: &str,
-    preview_post_url: &str,
-    default_hint: &str,
-    rows: u32,
-) -> Markup {
-    html! {
-        div class="form-control mb-8" {
-            (code_editor_input(CodeEditorInput {
-                label: title,
-                name: field_id,
-                value,
-                id: field_id,
-                language: "typst",
-                rows,
-                max_height: "26rem",
-                required: false,
-                classes: "",
-                attrs: Default::default(),
-                hint: None,
-            }))
-            textarea id=(format!("{field_id}-default")) hidden readonly { (default_hint) }
-            div class="flex justify-end gap-2 mt-2" {
-                button type="button" class="btn btn-ghost btn-sm"
-                    onclick=(format!(
-                        "if (confirm('This will overwrite the template with the default example template. Continue?')) {{ const ta = document.getElementById('{}'); const def = document.getElementById('{}-default'); if (!ta || !def) return; ta.value = def.value; const root = ta.closest('[data-code-editor-root]'); if (root) {{ root.dispatchEvent(new CustomEvent('code-editor:set', {{ detail: {{ value: def.value }} }})); }} else {{ ta.dispatchEvent(new Event('change', {{ bubbles: true }})); }} }}",
-                        field_id, field_id
-                    )) {
-                    "Use default template"
-                }
-                (PreEscaped(format!(
-                    r#"<button type="button" class="btn btn-outline btn-sm" hx-post="{url}" hx-target="{target}" hx-swap="{swap}" hx-include="closest form" hx-push-url="false">Preview sample PDF</button>"#,
-                    url = escape_attr(preview_post_url),
-                    target = escape_attr(HTMX_TARGET_BODY_MODAL),
-                    swap = escape_attr(HTMX_SWAP_BODY_MODAL),
-                )))
-            }
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::work_order;
 
-impl WorkOrdersPreferencesPage {
-    fn body(&self) -> Markup {
-        let ctx = FormCtx::form::<WorkOrdersPreferencesForm>(CsrfToken::current())
-            .m2m(
-                WorkOrdersPreferencesFormField::DefaultMaterialTaxes,
-                &self.default_material_tax_items,
-            )
-            .m2m(
-                WorkOrdersPreferencesFormField::DefaultMachineTaxes,
-                &self.default_machine_tax_items,
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanyName,
-                self.company_name.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanyAddress,
-                self.company_address.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanyPhone,
-                self.company_phone.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanyGstin,
-                self.company_gstin.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::PlaceOfSupply,
-                self.place_of_supply.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::DefaultBankAccount,
-                self.default_bank_account.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanyLogoVnodeId,
-                self.company_logo_vnode_id.as_str(),
-            )
-            .display(
-                WorkOrdersPreferencesFormField::CompanyLogoVnodeId,
-                self.company_logo_vnode_display.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::CompanySignatureVnodeId,
-                self.company_signature_vnode_id.as_str(),
-            )
-            .display(
-                WorkOrdersPreferencesFormField::CompanySignatureVnodeId,
-                self.company_signature_vnode_display.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::QuotationEmailSubject,
-                self.quotation_email_subject.as_str(),
-            )
-            .value(
-                WorkOrdersPreferencesFormField::QuotationEmailBody,
-                self.quotation_email_body.as_str(),
-            );
-        let tax_fields = html! {
-            @for spec in WorkOrdersPreferencesForm::field_specs() {
-                @if spec.name == WorkOrdersPreferencesFormField::SectionTaxes.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::DefaultMaterialTaxes.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::DefaultMachineTaxes.html_name()
-                {
-                    @let field = FieldRender {
-                        name: spec.name,
-                        label: ctx.label_of(spec),
-                        value: ctx.value_of(spec.name),
-                        required: spec.required,
-                        spec,
-                    };
-                    ((spec.render)(&ctx, &field))
-                }
-            }
+    #[test]
+    fn work_order_form_edits_the_plan_and_detail_has_no_add_buttons() {
+        let page = WorkOrderCreateModalPage {
+            form_name: String::new(),
+            refresh_table: String::new(),
+            title: String::new(),
+            customer_id: String::new(),
+            customer_display: String::new(),
+            folder_vnode_id: String::new(),
+            folder_display: String::new(),
+            parts_json: "[]".into(),
+            presupplied_json: "[]".into(),
+            steps_json: "[]".into(),
+            error: String::new(),
         };
-        let company_fields = html! {
-            @for spec in WorkOrdersPreferencesForm::field_specs() {
-                @if spec.name == WorkOrdersPreferencesFormField::SectionCompany.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanyName.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanyAddress.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanyPhone.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanyGstin.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::PlaceOfSupply.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::DefaultBankAccount.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanyLogoVnodeId.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::CompanySignatureVnodeId.html_name()
-                {
-                    @let field = FieldRender {
-                        name: spec.name,
-                        label: ctx.label_of(spec),
-                        value: ctx.value_of(spec.name),
-                        required: spec.required,
-                        spec,
-                    };
-                    ((spec.render)(&ctx, &field))
-                }
-            }
-        };
-        let email_fields = html! {
-            @for spec in WorkOrdersPreferencesForm::field_specs() {
-                @if spec.name == WorkOrdersPreferencesFormField::SectionEmail.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::QuotationEmailSubject.html_name()
-                    || spec.name == WorkOrdersPreferencesFormField::QuotationEmailBody.html_name()
-                {
-                    @let field = FieldRender {
-                        name: spec.name,
-                        label: ctx.label_of(spec),
-                        value: ctx.value_of(spec.name),
-                        required: spec.required,
-                        spec,
-                    };
-                    ((spec.render)(&ctx, &field))
-                }
-            }
-        };
-        form(
-            &CsrfToken::current(),
-            lariv_core::components::FormOpts {
-                attrs: lariv_core::components::form_hx_post_main_url(
-                    &WorkOrdersPrefsPostRouteTag.url(),
-                ),
-                title: "KDS Quotations Preferences",
-                subtitle: "Configure quotation numbering, seller details shown on quotation and work order PDFs, the default account copied onto new quotations, the quotation email subject and body, default line taxes, and the PDF templates used for draft work orders, work orders, and quotations. PDF templates are Jinja2 (Minijinja) that render Typst source; the result is compiled to PDF. The email templates are plain-text Jinja2.",
-                form_error: Some(self.error.as_str()).filter(|e| !e.is_empty()),
-                inputs: html! {
-                    (label_hint(
-                        "Quotation number format",
-                        Some(crate::quotation_number::QUOTATION_NUMBER_FORMAT_HINT),
-                        html! {
-                            input type="text"
-                                name="quotation_number_format"
-                                class="input input-bordered w-full"
-                                value=(&self.quotation_number_format)
-                                placeholder=(crate::quotation_number::DEFAULT_QUOTATION_NUMBER_FORMAT) {}
-                        },
-                    ))
-                    (tax_fields)
-                    (company_fields)
-                    (email_fields)
-                    (pdf_template_editor(
-                        "Draft Work Order PDF Template",
-                        "draft_work_order_pdf_template",
-                        &self.draft_work_order_pdf_template,
-                        &WorkOrderPdfPreviewPostRouteTag.url(),
-                        crate::pdf_templates::DEFAULT_DRAFT_WORK_ORDER_PDF_TEMPLATE,
-                        18,
-                    ))
-                    (pdf_template_editor(
-                        "Work Order PDF Template",
-                        "work_order_pdf_template",
-                        &self.work_order_pdf_template,
-                        &IssuedWorkOrderPdfPreviewPostRouteTag.url(),
-                        crate::pdf_templates::DEFAULT_WORK_ORDER_PDF_TEMPLATE,
-                        18,
-                    ))
-                    (pdf_template_editor(
-                        "Quotation PDF Template",
-                        "quotation_pdf_template",
-                        &self.quotation_pdf_template,
-                        &InvoicePdfPreviewPostRouteTag.url(),
-                        crate::pdf_templates::DEFAULT_QUOTATION_PDF_TEMPLATE,
-                        18,
-                    ))
+        let html = page.render(&Default::default()).into_string();
+        assert!(html.contains("node-select"), "vnode picker");
+        assert!(
+            html.contains("Select a file or folder"),
+            "vnode placeholder"
+        );
+        assert!(
+            html.contains(">Parts<") || html.contains(">Parts"),
+            "parts label"
+        );
+        assert!(html.contains("Presupplied parts"), "presupplied label");
+        assert!(
+            html.contains(">Steps<") || html.contains(">Steps"),
+            "steps label"
+        );
+        assert!(
+            html.contains("name=\"PresuppliedLinesJson\""),
+            "presupplied lines"
+        );
+        assert!(html.contains("name=\"StepsLinesJson\""), "step lines");
+        assert!(html.contains("Add line"), "line editor");
+        assert!(html.contains("Inputs per batch"), "step inputs");
+        assert!(
+            html.contains("woPlanParts"),
+            "presupplied parts follow parts"
+        );
+
+        let detail = WorkOrderDetailPage {
+            plan: Plan {
+                order: work_order::Model {
+                    id: 1,
+                    created_at: None,
+                    updated_at: None,
+                    title: "Bracket".into(),
+                    customer_id: 1,
+                    folder_vnode_id: 1,
                 },
-                actions: html! {
-                    (button_submit(ButtonSubmit {
-                        label: "Save Preferences",
-                        ..Default::default()
-                    }))
-                },
-                ..Default::default()
+                parts: vec![part::Model {
+                    id: 1,
+                    created_at: None,
+                    updated_at: None,
+                    work_order_id: 1,
+                    name: "Plate".into(),
+                    measure_kind: "quantity".into(),
+                    measure_unit: "Number".into(),
+                }],
+                presupplied: Vec::new(),
+                steps: vec![step::Model {
+                    id: 1,
+                    created_at: None,
+                    updated_at: None,
+                    work_order_id: 1,
+                    name: "Cut".into(),
+                    planned_batches: 2,
+                }],
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                completions: Vec::new(),
+                completion_inputs: Vec::new(),
+                completion_outputs: Vec::new(),
             },
-        )
-    }
-}
-
-impl RenderAppPane for WorkOrdersPreferencesPage {
-    fn render_pane(&self) -> lariv_core::components::AppLayoutHtml {
-        scaffold_pane(
-            wo_menu("preferences"),
-            work_orders_prefs_crumbs(),
-            self.body(),
-        )
-    }
-    fn render_main(&self) -> lariv_core::components::MainContentHtml {
-        scaffold_main(work_orders_prefs_crumbs(), self.body())
-    }
-}
-
-impl RenderTemplate for WorkOrdersPreferencesPage {
-    fn render(&self, chrome: &ShellChrome) -> Markup {
-        app_scaffold(
-            "KDS Quotations Preferences",
-            chrome,
-            wo_menu("preferences"),
-            work_orders_prefs_crumbs(),
-            self.body(),
-        )
+            customer: "Acme".into(),
+            customer_href: "/customers/1/".into(),
+            files_href: "/dashboard/filesystem/1/".into(),
+            files_label: "Drawings".into(),
+            layout: Some(PlanLayout {
+                roles: vec![(1, PartRole::Raw)],
+                part_ranks: vec![graph::RankedNode { id: 1, rank: 0 }],
+                step_ranks: Vec::new(),
+                coverage: Vec::new(),
+            }),
+            layout_error: String::new(),
+        };
+        let html = detail.render(&Default::default()).into_string();
+        assert!(html.contains("Drawings"), "file label");
+        assert!(html.contains("Plate"), "part row");
+        assert!(html.contains("Record batch"), "completion stays");
+        assert!(!html.contains("Add part"), "no add part button");
+        assert!(!html.contains("Add supply"), "no add supply button");
+        assert!(!html.contains("Add step"), "no add step button");
+        assert!(
+            html.contains("width=\"128\""),
+            "graph stays at its own size"
+        );
+        assert!(html.contains("max-h-52"), "graph box is capped");
     }
 }

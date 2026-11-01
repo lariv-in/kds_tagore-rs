@@ -17,8 +17,14 @@ lariv-plugin-finance-creditnotes = { path = "../../lariv-rs/plugins/finance_cred
 lariv-plugin-finance-invoices = { path = "../../lariv-rs/plugins/finance_invoices" }
 lariv-plugin-finance-products = { path = "../../lariv-rs/plugins/finance_products" }
 lariv-plugin-finance-purchases = { path = "../../lariv-rs/plugins/finance_purchases" }
+lariv-plugin-finance-quotations = { path = "../../lariv-rs/plugins/finance_quotations" }
 lariv-plugin-finance-taxes = { path = "../../lariv-rs/plugins/finance_taxes" }
 lariv-plugin-hr = { path = "../../lariv-rs/plugins/hr" }
+lariv-plugin-hr-attendance = { path = "../../lariv-rs/plugins/hr_attendance" }
+lariv-plugin-hr-holidays = { path = "../../lariv-rs/plugins/hr_holidays" }
+lariv-plugin-hr-job-posting = { path = "../../lariv-rs/plugins/hr_job_posting" }
+lariv-plugin-hr-leaves = { path = "../../lariv-rs/plugins/hr_leaves" }
+lariv-plugin-hr-overtime = { path = "../../lariv-rs/plugins/hr_overtime" }
 lariv-plugin-inventory = { path = "../../lariv-rs/plugins/inventory" }
 lariv-plugin-tasks = { path = "../../lariv-rs/plugins/tasks" }
 lariv-plugin-users = { path = "../../lariv-rs/plugins/users" }

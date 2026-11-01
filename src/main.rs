@@ -1,15 +1,15 @@
 #![recursion_limit = "4096"]
 
 use kds_tagore_rs::{
-    accountant_role, delivery, invoice_out_movement, laser_programmer_role, machinery_schedule,
-    marketing_sheet, vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, marketing_sheet,
+    vmc_programmer_role, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
-    contacts, crm, customer, dashboard, documents, filesystem, finance_accounts,
-    finance_creditnotes, finance_indian, finance_invoices, finance_products, finance_purchases,
-    finance_services, finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, signing, tasks,
-    todo, users, website,
+    contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
+    finance_indian, finance_invoices, finance_products, finance_purchases, finance_quotations,
+    finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime,
+    inventory, llm_assistant, otp, pwa, signing, tasks, todo, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -34,7 +34,6 @@ async fn main() -> anyhow::Result<()> {
     let app = filesystem::install(app);
     let app = forms::install(app);
     let app = llm_assistant::install(app);
-    let app = machinery_schedule::install(app);
     let app = finance_accounts::install(app);
     let app = customer::install(app);
     let app = contacts::install(app);
@@ -48,9 +47,9 @@ async fn main() -> anyhow::Result<()> {
     let app = marketing_sheet::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
+    // Services live in the unified product catalog (`product_kind = Services`).
     let app = finance_products::install(app);
-    // Before work orders retarget machine links from products to services.
-    let app = finance_services::install(app);
+    let app = finance_quotations::install(app);
     // After finance_taxes (line taxes) and finance_products (line products).
     let app = work_orders::install(app);
     // Before invoices drop `customers`. Challans reuse an existing company or
@@ -64,10 +63,14 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_indian::install(app);
     let app = dashboard::install(app);
     let app = hr::install(app);
+    let app = hr_holidays::install(app);
+    let app = hr_attendance::install(app);
+    let app = hr_job_posting::install(app);
+    let app = hr_overtime::install(app);
+    let app = hr_leaves::install(app);
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
     let app = website_seed::install(app);
-    let app = documents::install(app);
     let app = signing::install(app);
     // After the apps they patch, so these roles are appended to allowlists those plugins already registered.
     let app = accountant_role::install(app);

@@ -5,15 +5,16 @@
 use std::path::PathBuf;
 
 use kds_tagore_rs::{
-    accountant_role, delivery, invoice_out_movement, laser_programmer_role, machinery_schedule,
-    marketing_sheet, vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, marketing_sheet,
+    vmc_programmer_role, website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_indian, finance_invoices, finance_products, finance_purchases, finance_services,
-    finance_taxes, forms, hr, inventory, llm_assistant, otp, pwa, tasks, users, website,
+    finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms,
+    hr, hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, inventory,
+    llm_assistant, otp, pwa, tasks, users, website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -52,7 +53,6 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = filesystem::install(app);
                 let app = forms::install(app);
                 let app = llm_assistant::install(app);
-                let app = machinery_schedule::install(app);
                 let app = finance_accounts::install(app);
                 let app = customer::install(app);
                 let app = contacts::install(app);
@@ -61,11 +61,15 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = crm::install(app);
                 let app = inventory::install(app);
                 let app = hr::install(app);
+                let app = hr_holidays::install(app);
+                let app = hr_attendance::install(app);
+                let app = hr_job_posting::install(app);
+                let app = hr_overtime::install(app);
+                let app = hr_leaves::install(app);
                 let app = marketing_sheet::install(app);
                 let app = finance_creditnotes::install(app);
                 let app = finance_taxes::install(app);
                 let app = finance_products::install(app);
-                let app = finance_services::install(app);
                 let app = work_orders::install(app);
                 let app = delivery::install(app);
                 let app = finance_invoices::install(app);
@@ -126,11 +130,11 @@ fn kds_tagore_registers_forms_app_tile() {
                     .iter()
                     .find(|t| t.key == "kds_tagore-quotations")
                     .expect("KDS Quotations tile");
-                assert_eq!(quotations.verbose_name, "KDS Quotations");
+                assert_eq!(quotations.verbose_name, "Work orders");
                 assert_eq!(
                     quotations.href.trim_end_matches('/'),
                     "/dashboard/work-orders",
-                    "KDS Quotations tile should open the quotation list"
+                    "Work orders tile should open the work-order list"
                 );
                 assert!(
                     keys.iter().all(|k| *k != "kds_tagore-purchases" && *k != "kds_tagore-payments"),
@@ -150,17 +154,15 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert_eq!(
                     accountant_keys,
                     vec![
-                        "kds_tagore-machinery-schedule".to_string(),
                         "kds_tagore-quotations".to_string(),
                         "p_contacts".to_string(),
                         "p_crm".to_string(),
-                        "p_customer".to_string(),
                         "p_finance_accounts".to_string(),
                         "p_hr".to_string(),
                         "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, Customers, and CRM"
+                    "accountant should see Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM"
                 );
 
                 let mut laser_programmer_keys: Vec<_> = catalog

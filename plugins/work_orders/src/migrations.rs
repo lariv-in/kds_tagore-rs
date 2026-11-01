@@ -36,6 +36,8 @@ mod m00031_drop_orphan_line_products;
 mod m00032_quotation_bank_account;
 mod m00033_machine_services;
 mod m00034_product_stock;
+mod m00035_finance_quotations;
+mod m00036_process_plan;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -78,11 +80,26 @@ impl MigratorTrait for Migrator {
             Box::new(m00032_quotation_bank_account::Migration),
             Box::new(m00033_machine_services::Migration),
             Box::new(m00034_product_stock::Migration),
+            Box::new(m00035_finance_quotations::Migration),
+            Box::new(m00036_process_plan::Migration),
         ]
     }
 }
 
-lariv_core::define_register_migrations! {
-    plugin: WorkOrdersTag;
-    migrator: Migrator;
+#[derive(Clone, Copy, Default)]
+pub struct Hook;
+
+impl<M> lariv_core::migration::MigrationRegistrar<M> for Hook
+where
+    M: frunk::hlist::HList + Clone + lariv_core::migration::CollectMigrations + Send,
+{
+    type Output =
+        impl frunk::hlist::HList + lariv_core::migration::CollectMigrations + Clone + Send;
+
+    fn register_migrations(
+        self,
+        cap: lariv_core::migration::MigrationCapability<M>,
+    ) -> lariv_core::migration::MigrationCapability<Self::Output> {
+        cap.prepend::<WorkOrdersTag, _>(Migrator)
+    }
 }

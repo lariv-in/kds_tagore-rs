@@ -1,222 +1,46 @@
-//! Breadcrumbs and sidebar navigation menu for KDS Quotations.
+//! Breadcrumbs and the work-order sidebar.
 
 use lariv_core::components::{
     Crumb, SidebarMenu, SidebarMenuItem, breadcrumbs, sidebar_menu, sidebar_menu_item_pane,
 };
-use maud::{Markup, html};
+use maud::Markup;
 
-use super::routes::{
-    ComponentDetailRouteTag, DraftWorkOrdersDefaultRouteTag, InvoiceDetailRouteTag,
-    IssuedWorkOrderDetailRouteTag, IssuedWorkOrdersRouteTag, WorkOrderDetailRouteTag,
-    WorkOrdersComponentsRouteTag, WorkOrdersDefaultRouteTag, WorkOrdersMachineDetailRouteTag,
-    WorkOrdersMachinesRouteTag, WorkOrdersPrefsGetRouteTag,
-};
+use super::routes::{WorkOrderDetailRouteTag, WorkOrderListRouteTag};
 
-pub fn work_orders_tab_url(tab: &str) -> String {
-    match tab {
-        "issued" => IssuedWorkOrdersRouteTag.url(),
-        _ => DraftWorkOrdersDefaultRouteTag.url(),
-    }
-}
-
-fn show_preferences() -> bool {
-    lariv_plugin_users::role_authorization::current_auth()
-        .is_none_or(|auth| auth.role != kds_plugin_accountant_role::ACCOUNTANT_ROLE)
-}
-
-pub fn wo_menu(active: &str) -> Markup {
-    let preferences = show_preferences().then(|| {
-        sidebar_menu_item_pane(SidebarMenuItem {
-            title: "Preferences",
-            url: &WorkOrdersPrefsGetRouteTag.url(),
-            active: active == "preferences",
-            ..Default::default()
-        })
-    });
+pub fn menu() -> Markup {
+    let url = WorkOrderListRouteTag.url();
     sidebar_menu(SidebarMenu {
-        title: "KDS Quotations",
-        children: html! {
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Quotations",
-                url: &WorkOrdersDefaultRouteTag.url(),
-                active: active == "invoices",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Work Orders",
-                url: &DraftWorkOrdersDefaultRouteTag.url(),
-                active: active == "orders" || active == "issued",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Components",
-                url: &WorkOrdersComponentsRouteTag.url(),
-                active: active == "components",
-                ..Default::default()
-            }))
-            (sidebar_menu_item_pane(SidebarMenuItem {
-                title: "Machines",
-                url: &WorkOrdersMachinesRouteTag.url(),
-                active: active == "machines",
-                ..Default::default()
-            }))
-            @if let Some(item) = preferences {
-                (item)
-            }
-        },
+        title: "Work orders",
+        children: sidebar_menu_item_pane(SidebarMenuItem {
+            title: "Work orders",
+            url: &url,
+            active: true,
+            ..Default::default()
+        }),
     })
 }
 
-fn entity_crumbs(
-    list_label: &'static str,
-    list_url: &str,
-    name: &str,
-    detail_url: &str,
-    action: Option<&str>,
-) -> Markup {
-    match action {
-        None => breadcrumbs(&[
-            Crumb {
-                label: list_label,
-                href: Some(list_url),
-            },
-            Crumb {
-                label: name,
-                href: None,
-            },
-        ]),
-        Some(act) => breadcrumbs(&[
-            Crumb {
-                label: list_label,
-                href: Some(list_url),
-            },
-            Crumb {
-                label: name,
-                href: Some(detail_url),
-            },
-            Crumb {
-                label: act,
-                href: None,
-            },
-        ]),
-    }
-}
-
-pub fn work_orders_list_crumbs() -> Markup {
+pub fn list_crumbs() -> Markup {
     breadcrumbs(&[Crumb {
-        label: "Work Orders",
+        label: "Work orders",
         href: None,
     }])
 }
 
-pub fn work_order_crumbs(order_number: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Work Orders",
-        &work_orders_tab_url("drafts"),
-        order_number,
-        &WorkOrderDetailRouteTag::new(id).url(),
-        None,
-    )
+pub fn detail_crumbs(title: &str) -> Markup {
+    let list_url = WorkOrderListRouteTag.url();
+    breadcrumbs(&[
+        Crumb {
+            label: "Work orders",
+            href: Some(&list_url),
+        },
+        Crumb {
+            label: title,
+            href: None,
+        },
+    ])
 }
 
-pub fn issued_work_orders_list_crumbs() -> Markup {
-    work_orders_list_crumbs()
-}
-
-pub fn issued_work_order_crumbs(order_number: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Work Orders",
-        &work_orders_tab_url("issued"),
-        order_number,
-        &IssuedWorkOrderDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn machines_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Machines",
-        href: None,
-    }])
-}
-
-pub fn machine_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Machines",
-        &WorkOrdersMachinesRouteTag.url(),
-        name,
-        &WorkOrdersMachineDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn components_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Components",
-        href: None,
-    }])
-}
-
-pub fn component_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Components",
-        &WorkOrdersComponentsRouteTag.url(),
-        name,
-        &ComponentDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn invoices_list_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Quotations",
-        href: None,
-    }])
-}
-
-pub fn invoice_crumbs(invoice_number: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Quotations",
-        &WorkOrdersDefaultRouteTag.url(),
-        invoice_number,
-        &InvoiceDetailRouteTag::new(id).url(),
-        None,
-    )
-}
-
-pub fn work_orders_prefs_crumbs() -> Markup {
-    breadcrumbs(&[Crumb {
-        label: "Preferences",
-        href: None,
-    }])
-}
-
-pub fn work_order_edit_crumbs(order_number: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Work Orders",
-        &work_orders_tab_url("drafts"),
-        order_number,
-        &WorkOrderDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
-}
-
-pub fn component_edit_crumbs(name: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Components",
-        &WorkOrdersComponentsRouteTag.url(),
-        name,
-        &ComponentDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
-}
-
-pub fn invoice_edit_crumbs(invoice_number: &str, id: i64) -> Markup {
-    entity_crumbs(
-        "Quotations",
-        &WorkOrdersDefaultRouteTag.url(),
-        invoice_number,
-        &InvoiceDetailRouteTag::new(id).url(),
-        Some("Edit"),
-    )
+pub fn detail_url(id: i64) -> String {
+    WorkOrderDetailRouteTag::new(id).url()
 }

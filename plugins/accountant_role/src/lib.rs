@@ -1,13 +1,13 @@
 #![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
-//! Deployment role `accountant`: Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, Customers, and CRM.
+//! Deployment role `accountant`: Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM.
 //! HR is read-only holidays, punch in and punch out, the accountant's own leave, and overtime.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
 use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
 use lariv_plugin_crm::routes::{CrmMutate, CrmView};
-use lariv_plugin_customer::routes::{CustomerMutate, CustomerView};
+use lariv_plugin_customer::routes::CustomerMutate;
 use lariv_plugin_finance_accounts::{
     ACCOUNTING_APP_KEY,
     routes::{FinanceAccountsMutate, FinanceAccountsView},
@@ -16,8 +16,13 @@ use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
 use lariv_plugin_finance_purchases::routes::{FinancePurchasesMutate, FinancePurchasesView};
+use lariv_plugin_finance_quotations::accounting_sidebar::QUOTATIONS_APP_KEY;
+use lariv_plugin_finance_quotations::routes::{FinanceQuotationsMutate, FinanceQuotationsView};
 use lariv_plugin_finance_taxes::routes::{FinanceTaxesMutate, FinanceTaxesView};
-use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView, OvertimeView};
+use lariv_plugin_hr_attendance::routes::AttendanceView;
+use lariv_plugin_hr_holidays::routes::HolidayView;
+use lariv_plugin_hr_leaves::routes::LeaveView;
+use lariv_plugin_hr_overtime::routes::OvertimeView;
 use lariv_plugin_inventory::routes::{InventoryMutate, InventoryView};
 use lariv_plugin_tasks::routes::{TasksMutate, TasksView};
 use lariv_plugin_users::{
@@ -33,25 +38,22 @@ const TASKS_APP_KEY: &str = "p_tasks";
 const HR_APP_KEY: &str = "p_hr";
 const INVENTORY_APP_KEY: &str = "p_inventory";
 const CONTACTS_APP_KEY: &str = "p_contacts";
-const CUSTOMERS_APP_KEY: &str = "p_customer";
 const CRM_APP_KEY: &str = "p_crm";
 
-/// Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, Customers, and CRM.
+/// Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Accountant;
 
 impl Accountant {
     pub const NAME: &'static str = "accountant";
     pub const TITLE: &'static str = "Accountant";
-    pub const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, Customers, and CRM.";
+    pub const DESCRIPTION: &'static str = "Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM.";
 }
 
 impl Role for Accountant {
     const NAME: &'static str = "accountant";
     const TITLE: &'static str = "Accountant";
-    const DESCRIPTION: &'static str =
-        "Accounting, Quotations, Machinery Schedule, Tasks, HR, Inventory, Contacts, Customers, and CRM.";
+    const DESCRIPTION: &'static str = "Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM.";
 }
 
 pub mod migrations;
@@ -88,8 +90,8 @@ impl AppsRegistrar for AppsHook {
         let apps = grant_tile(apps, HR_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, INVENTORY_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, CONTACTS_APP_KEY, Accountant::NAME);
-        let apps = grant_tile(apps, CUSTOMERS_APP_KEY, Accountant::NAME);
-        grant_tile(apps, CRM_APP_KEY, Accountant::NAME)
+        let apps = grant_tile(apps, CRM_APP_KEY, Accountant::NAME);
+        grant_tile(apps, QUOTATIONS_APP_KEY, Accountant::NAME)
     }
 }
 
@@ -125,9 +127,10 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<FinanceCreditNotesView>(allow_accountant)
             .patch::<FinancePurchasesView>(allow_accountant)
             .patch::<FinancePurchasesMutate>(allow_accountant)
+            .patch::<FinanceQuotationsView>(allow_accountant)
+            .patch::<FinanceQuotationsMutate>(allow_accountant)
             .patch::<ContactsView>(allow_accountant)
             .patch::<ContactsMutate>(allow_accountant)
-            .patch::<CustomerView>(allow_accountant)
             .patch::<CustomerMutate>(allow_accountant)
             .patch::<CrmView>(allow_accountant)
             .patch::<CrmMutate>(allow_accountant)

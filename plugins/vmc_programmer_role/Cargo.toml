@@ -8,6 +8,9 @@ description = "KDS Tagore VMC programmer deployment role"
 lariv-core = { workspace = true }
 frunk = { workspace = true }
 frunk_core = { workspace = true }
-lariv-plugin-hr = { workspace = true }
+lariv-plugin-hr-attendance = { workspace = true }
+lariv-plugin-hr-holidays = { workspace = true }
+lariv-plugin-hr-leaves = { workspace = true }
+lariv-plugin-hr-overtime = { workspace = true }
 lariv-plugin-tasks = { workspace = true }
 lariv-plugin-users = { workspace = true }

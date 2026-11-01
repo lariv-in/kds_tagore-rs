@@ -1,78 +1,57 @@
-use axum::{
-    Form, Json,
-    body::Body,
-    extract::{Path, Query},
-    http::{StatusCode, Uri, header},
-    response::{IntoResponse, Redirect, Response},
-};
-use chrono::Utc;
-use lariv_core::{
-    components::{
-        ButtonDownload, ManyToManyItem, SharedChromeFolder, SlotCtx, SwapKey, button_download,
-        modal_keyed,
-    },
-    html_form::HtmlFormBody,
-    http::Cap,
-    picker::respond_picker_select,
-    template::RenderAppPane,
-    web::{
-        Htmx, ModalFormQuery, html_built_page_or_app_layout, html_built_page_with_slots,
-        respond_create_modal_done, respond_create_modal_done_fk, respond_edit_modal_done,
-    },
-};
-use lariv_plugin_filesystem::{entities::VNodeEntity, state::FilesystemState};
-use lariv_plugin_users::middleware::{OptionalAuth, RequireAuth};
-use maud::{Markup, html};
+//! Work order HTTP handlers.
+
+use std::collections::HashMap;
+
+use axum::extract::{Form, Path, Query};
+use axum::http::Uri;
+use axum::response::{IntoResponse, Response};
 use rust_decimal::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder, Statement, TransactionTrait,
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::str::FromStr;
 
-use super::filters::{
-    ListQuery, allows_decimal, allows_i64, allows_text, component_fields, draft_work_order_fields,
-    fill_company_fk, issued_work_order_fields, paginate, prepare, quotation_fields,
-    variables_label,
+use lariv_core::components::{ObjectList, SharedChromeFolder, SlotCtx, SwapKey};
+use lariv_core::html_form::HtmlFormBody;
+use lariv_core::http::Cap;
+use lariv_core::template::RenderAppPane;
+use lariv_core::web::{
+    Htmx, ModalFormQuery, QueryPage, QueryPageSize, html_built_page_or_app_layout,
+    html_built_page_with_slots, respond_create_modal_done, respond_edit_modal_done,
 };
-use super::{
-    entities::{
-        WorkOrdersPreferences, component, draft_work_order, draft_work_order_machine_line,
-        draft_work_order_material_line, quotation, quotation_machine_line, quotation_material_line,
-        work_order, work_order_line, work_order_machine_line,
-    },
-    forms::WorkOrdersPreferencesForm,
-    keys::*,
-    line_vars,
-    pdf::{self, PdfError, PdfResult},
-    pdf_templates::{
-        is_stock_draft_work_order_template, is_stock_quotation_template,
-        is_stock_work_order_template,
-    },
-    preferences::{
-        draft_work_order_pdf_template, empty_preferences, load_preferences, opt_text, opt_vnode_id,
-        quotation_email_body, quotation_email_subject, quotation_pdf_template, save_preferences,
-        stored_email_template, work_order_pdf_template,
-    },
-    quotation_number,
-    routes::*,
-    state::WorkOrdersState,
-    tax_assoc,
-    templates::*,
+use lariv_plugin_customer::entities::customer::Entity as CustomerEntity;
+use lariv_plugin_customer::logic::{detail_href, display_name, require_existing};
+use lariv_plugin_filesystem::entities::filesystem_node::Entity as VNodeEntity;
+use lariv_plugin_filesystem::routes::VNodeDetailRouteTag;
+use lariv_plugin_users::middleware::RequireAuth;
+use lariv_plugin_users::state::AuthContext;
+
+use crate::entities::{
+    CompletedStepEntity, PartEntity, PresuppliedPartEntity, StepEntity, StepInputEntity,
+    StepOutputEntity, WorkOrderEntity, completed_step, part, step, step_input, step_output,
+    work_order,
+};
+use crate::forms::{FlowForm, PartForm, PresuppliedForm, StepForm, WorkOrderForm};
+use crate::keys::*;
+use crate::logic::{self, ActualLine, FlowInput, FlowSide, PartInput, PresuppliedInput, StepInput};
+use crate::measure;
+use crate::plan_lines;
+use crate::routes::WorkOrderListRouteTag;
+use crate::state::WorkOrdersState;
+use crate::templates::{
+    CompleteLineView, CompleteModalPage, ConfirmDeleteModalPage, FlowModalPage, PartModalPage,
+    PresuppliedModalPage, StepModalPage, WorkOrderCreateModalPage, WorkOrderDetailPage,
+    WorkOrderEditModalPage, WorkOrderListPage, WorkOrderRow, detail_redirect,
 };
 
-use crate::cascade::{
-    cascade_delete_preview, collect_work_order_cascade, delete_work_order_recursive,
-};
-use crate::entities::work_order::WORK_ORDER_SOURCE_DOC_TYPE;
-use kds_plugin_machinery_schedule::duration::JobDuration;
-use kds_plugin_machinery_schedule::entities::{job, machine};
-use kds_plugin_machinery_schedule::logic::{
-    create_open_job, format_job_duration, parse_job_duration, set_job_source_doc,
-};
-use lariv_formula::{parse_schema_list, parse_values, schema_to_json, values_to_json};
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    #[serde(default)]
+    pub page: QueryPage,
+    #[serde(default)]
+    pub page_size: QueryPageSize,
+}
 
 fn path_and_query(uri: &Uri) -> String {
     uri.path_and_query()
@@ -80,111 +59,91 @@ fn path_and_query(uri: &Uri) -> String {
         .unwrap_or_else(|| uri.path().to_string())
 }
 
-// ==========================================
-// 1. WORK ORDERS
-// ==========================================
+fn modal_response(
+    page: &impl lariv_core::template::RenderTemplate,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+) -> Response {
+    html_built_page_with_slots(page, chrome, &SlotCtx::from_auth(ctx)).into_response()
+}
 
-pub async fn work_orders_list(
+fn reload<M: lariv_core::components::SwapKey>(htmx: &Htmx, work_order_id: i64) -> Response {
+    respond_edit_modal_done::<M>(htmx, &detail_redirect(work_order_id))
+}
+
+fn list_redirect(htmx: &Htmx) -> Response {
+    htmx.redirect(&WorkOrderListRouteTag.url())
+}
+
+fn part_choices(parts: &[part::Model]) -> Vec<(String, String)> {
+    parts
+        .iter()
+        .map(|part| {
+            (
+                part.id.to_string(),
+                format!("{} ({})", part.name, part.measure_unit),
+            )
+        })
+        .collect()
+}
+
+fn parse_part_id(raw: &str) -> Result<i64, String> {
+    let id = raw
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| "Choose a part.".to_string())?;
+    if id <= 0 {
+        Err("Choose a part.".to_string())
+    } else {
+        Ok(id)
+    }
+}
+
+fn parse_batches(raw: &str) -> Result<i32, String> {
+    let count = raw
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "Enter a whole number of batches.".to_string())?;
+    if count <= 0 {
+        Err("Planned batches must be at least 1.".to_string())
+    } else {
+        Ok(count)
+    }
+}
+
+pub async fn list(
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     uri: Uri,
     Query(q): Query<ListQuery>,
 ) -> maud::Markup {
-    let mut prepared = prepare(
-        uri.query().unwrap_or(""),
-        draft_work_order_fields(),
-        state.db.get_database_backend(),
-    );
-    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
-    let orders = draft_work_order::Entity::find()
-        .filter(prepared.condition.clone())
-        .order_by_desc(draft_work_order::Column::Id)
-        .all(&state.db)
+    let page_num = q.page.get();
+    let page_size = q.page_size.get();
+    let paginator = WorkOrderEntity::find()
+        .order_by_desc(work_order::Column::Id)
+        .paginate(&state.db, u64::from(page_size));
+    let total = paginator.num_items().await.unwrap_or(0);
+    let models = paginator
+        .fetch_page(u64::from(page_num.saturating_sub(1)))
         .await
         .unwrap_or_default();
-
-    let all_lines = draft_work_order_material_line::Entity::find()
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let all_machine_lines = draft_work_order_machine_line::Entity::find()
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let mut lines_by_order: HashMap<i64, Vec<draft_work_order_material_line::Model>> =
-        HashMap::new();
-    for line in all_lines {
-        lines_by_order
-            .entry(line.draft_work_order_id)
-            .or_default()
-            .push(line);
+    let mut rows = Vec::with_capacity(models.len());
+    for order in models {
+        let customer = display_name(&state.db, order.customer_id).await;
+        let progress = step_progress(&state.db, order.id).await;
+        rows.push(WorkOrderRow {
+            id: order.id,
+            title: order.title,
+            customer,
+            progress,
+        });
     }
-
-    let mut machine_lines_by_order: HashMap<i64, Vec<draft_work_order_machine_line::Model>> =
-        HashMap::new();
-    for line in all_machine_lines {
-        machine_lines_by_order
-            .entry(line.draft_work_order_id)
-            .or_default()
-            .push(line);
-    }
-
-    let material_ids: Vec<i64> = lines_by_order.values().flatten().map(|l| l.id).collect();
-    let machine_ids: Vec<i64> = machine_lines_by_order
-        .values()
-        .flatten()
-        .map(|l| l.id)
-        .collect();
-    let material_tax_ids =
-        tax_assoc::load_draft_material_line_tax_ids_map(&state.db, &material_ids)
-            .await
-            .unwrap_or_default();
-    let machine_tax_ids = tax_assoc::load_draft_machine_line_tax_ids_map(&state.db, &machine_ids)
-        .await
-        .unwrap_or_default();
-    let material_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &material_tax_ids).await;
-    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &machine_tax_ids).await;
-
-    let orders_with_stats: Vec<(draft_work_order::Model, usize, Decimal)> = orders
-        .into_iter()
-        .map(|o| {
-            let lines = lines_by_order
-                .get(&o.id)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            let machine_lines = machine_lines_by_order
-                .get(&o.id)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            let total =
-                taxed_draft_grand_total(lines, machine_lines, &material_taxes, &machine_taxes);
-            let count = lines.len() + machine_lines.len();
-            (o, count, total)
-        })
-        .filter(|(_, count, total)| {
-            allows_i64(&prepared.post, "lines", *count as i64)
-                && allows_decimal(&prepared.post, "total", *total)
-        })
-        .collect();
-    let (orders_with_stats, page_num, num_pages) =
-        paginate(orders_with_stats, q.page.get(), q.page_size.get());
-
     let page = WorkOrderListPage {
-        orders: orders_with_stats,
-        fields: prepared.fields,
-        filters: prepared.filters,
-        filter_errors: prepared.errors,
-        sort: q.sort.unwrap_or_default(),
+        orders: ObjectList::from_page(rows, page_num, page_size, total),
         path_and_query: path_and_query(&uri),
-        page: page_num,
-        num_pages,
-        page_size: q.page_size.get(),
     };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
     if htmx.targets::<WorkOrderTableKey>() {
         return page.render_table();
     }
@@ -194,4988 +153,1573 @@ pub async fn work_orders_list(
     if htmx.wants_app_layout() {
         return page.render_pane().into();
     }
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx)
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
 }
 
-pub async fn work_order_detail(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let Some(order) = draft_work_order::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response();
-    };
-
-    let lines = draft_work_order_material_line::Entity::find()
-        .filter(draft_work_order_material_line::Column::DraftWorkOrderId.eq(id))
-        .order_by_asc(draft_work_order_material_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = draft_work_order_machine_line::Entity::find()
-        .filter(draft_work_order_machine_line::Column::DraftWorkOrderId.eq(id))
-        .order_by_asc(draft_work_order_machine_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let machine_ids: Vec<i64> = machine_lines.iter().map(|l| l.machine_id).collect();
-    let machines = machine::Entity::find()
-        .filter(machine::Column::Id.is_in(machine_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let machine_map: HashMap<i64, String> =
-        machines.iter().map(|m| (m.id, m.name.clone())).collect();
-    let machine_schemas: HashMap<i64, serde_json::Value> =
-        machines.into_iter().map(|m| (m.id, m.variables)).collect();
-
-    let comp_ids: Vec<i64> = lines.iter().map(|l| l.component_id).collect();
-    let comps = component::Entity::find()
-        .filter(component::Column::Id.is_in(comp_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
-    let component_schemas: HashMap<i64, serde_json::Value> =
-        comps.into_iter().map(|c| (c.id, c.variables)).collect();
-
-    let customer = lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-    let quotation_number = if let Some(qid) = order.quotation_id {
-        quotation::Entity::find_by_id(qid)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|q| q.invoice_number)
-    } else {
-        None
-    };
-
-    let material_ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
-    let machine_line_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let material_tax_ids =
-        tax_assoc::load_draft_material_line_tax_ids_map(&state.db, &material_ids)
-            .await
-            .unwrap_or_default();
-    let machine_tax_ids =
-        tax_assoc::load_draft_machine_line_tax_ids_map(&state.db, &machine_line_ids)
-            .await
-            .unwrap_or_default();
-    let material_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &material_tax_ids).await;
-    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &machine_tax_ids).await;
-
-    let total_amount =
-        taxed_draft_grand_total(&lines, &machine_lines, &material_taxes, &machine_taxes);
-
-    let lines_with_comp: Vec<(
-        draft_work_order_material_line::Model,
-        String,
-        String,
-        Decimal,
-    )> = lines
-        .into_iter()
-        .map(|l| {
-            let c_name = comp_map
-                .get(&l.component_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Component #{}", l.component_id));
-            let taxes = tax_assoc::taxes_for_line(&material_taxes, l.id);
-            let labels = tax_assoc::tax_labels_display(taxes);
-            let taxed = l.taxed_total(taxes);
-            (l, c_name, labels, taxed)
-        })
-        .collect();
-
-    let machine_lines_with_name: Vec<(
-        draft_work_order_machine_line::Model,
-        String,
-        String,
-        Decimal,
-    )> = machine_lines
-        .into_iter()
-        .map(|l| {
-            let m_name = machine_map
-                .get(&l.machine_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Machine #{}", l.machine_id));
-            let taxes = tax_assoc::taxes_for_line(&machine_taxes, l.id);
-            let labels = tax_assoc::tax_labels_display(taxes);
-            let taxed = l.taxed_total(taxes);
-            (l, m_name, labels, taxed)
-        })
-        .collect();
-
-    let page = WorkOrderDetailPage {
-        order,
-        lines: lines_with_comp,
-        machine_lines: machine_lines_with_name,
-        component_schemas,
-        machine_schemas,
-        customer_name: customer.map(|c| c.name),
-        quotation_number,
-        total_amount,
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct EntitySelectQuery {
-    #[serde(default)]
-    pub target_input: Option<String>,
-    #[serde(default, rename = "Name", alias = "name")]
-    pub name: Option<String>,
-}
-
-pub async fn work_order_select(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    uri: Uri,
-    Query(q): Query<EntitySelectQuery>,
-) -> maud::Markup {
-    let mut query = draft_work_order::Entity::find();
-    if let Some(n) = q.name.as_deref().filter(|s| !s.trim().is_empty()) {
-        query = query.filter(draft_work_order::Column::OrderNumber.contains(n));
-    }
-    let orders = query
-        .order_by_desc(draft_work_order::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let page = WorkOrderSelectPage {
-        orders,
-        target_input: q.target_input.unwrap_or_else(|| "work_order_id".into()),
-        path_and_query: uri.to_string(),
-    };
-    respond_picker_select::<WorkOrderSelectTableKey, WorkOrderSelectModalKey, _>(&htmx, &page)
-}
-
-pub async fn fetch_components_meta(
-    db: &sea_orm::DatabaseConnection,
-) -> Vec<super::forms::ComponentMeta> {
-    let comps = component::Entity::find()
-        .order_by_asc(component::Column::Name)
+async fn step_progress(db: &sea_orm::DatabaseConnection, work_order_id: i64) -> String {
+    let steps = StepEntity::find()
+        .filter(step::Column::WorkOrderId.eq(work_order_id))
         .all(db)
         .await
         .unwrap_or_default();
-
-    comps
-        .into_iter()
-        .map(|c| {
-            let variables = match &c.variables {
-                serde_json::Value::Object(m) => m
-                    .iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect(),
-                _ => HashMap::new(),
-            };
-            super::forms::ComponentMeta {
-                id: c.id,
-                name: c.name,
-                variables,
-                cost_formula: c.cost_formula,
-                weight_formula: c.weight_formula,
-            }
+    if steps.is_empty() {
+        return "0/0".to_string();
+    }
+    let ids: Vec<i64> = steps.iter().map(|step| step.id).collect();
+    let completions = CompletedStepEntity::find()
+        .filter(completed_step::Column::StepId.is_in(ids))
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let done = steps
+        .iter()
+        .filter(|step| {
+            let count = completions
+                .iter()
+                .filter(|row| row.step_id == step.id)
+                .count();
+            i32::try_from(count).unwrap_or(i32::MAX) >= step.planned_batches
         })
-        .collect()
+        .count();
+    format!("{done}/{}", steps.len())
 }
 
-fn extra_data_from_value(val: Option<&serde_json::Value>) -> serde_json::Value {
-    match val {
-        Some(serde_json::Value::Object(_)) | Some(serde_json::Value::Array(_)) => {
-            val.cloned().unwrap_or_else(|| serde_json::json!({}))
-        }
-        Some(serde_json::Value::String(s)) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                serde_json::json!({})
-            } else {
-                serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::json!({}))
-            }
-        }
-        _ => serde_json::json!({}),
-    }
-}
-
-fn variables_from_value(val: Option<&serde_json::Value>) -> serde_json::Value {
-    match val {
-        Some(v) => v.clone(),
-        None => serde_json::json!({}),
-    }
-}
-
-fn parse_optional_job_duration(raw: &str, fallback: JobDuration) -> Result<JobDuration, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        Ok(fallback)
-    } else {
-        parse_job_duration(trimmed)
-    }
-}
-
-fn parse_component_variables_list(entries: &[String]) -> Result<serde_json::Value, String> {
-    let schema = parse_schema_list(entries).map_err(|e| e.to_string())?;
-    Ok(schema_to_json(&schema))
-}
-
-fn component_from_form_fields(
-    name: String,
-    cost_formula: String,
-    weight_formula: String,
-    variables: serde_json::Value,
-) -> component::Model {
-    component::Model {
-        id: 0,
-        created_at: None,
-        updated_at: None,
-        name,
-        product_id: 0,
-        cost_formula,
-        weight_formula,
-        variables,
-    }
-}
-
-async fn resolve_and_compute_line_data(
-    db: &sea_orm::DatabaseConnection,
-    component_id: i64,
-    variables_val: Option<&serde_json::Value>,
-    extra_data_val: Option<&serde_json::Value>,
-) -> Result<(sea_orm::prelude::Json, Decimal, sea_orm::prelude::Json), String> {
-    let comp = component::Entity::find_by_id(component_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Component #{} not found", component_id))?;
-
-    let extra_data = extra_data_from_value(extra_data_val);
-    let schema = comp.variables_schema().map_err(|e| e.to_string())?;
-    let raw = line_vars::values_with_entered_units(
-        &schema,
-        &variables_from_value(variables_val),
-        &extra_data,
-    );
-    let values = parse_values(&schema, &raw).map_err(|e| e.to_string())?;
-    let final_cost = comp.get_cost(&values).map_err(|e| e.to_string())?;
-    Ok((values_to_json(&values), final_cost, extra_data))
-}
-
-async fn resolve_and_compute_machine_cost(
-    db: &sea_orm::DatabaseConnection,
-    machine_id: i64,
-    variables_val: Option<&serde_json::Value>,
-    extra_data_val: Option<&serde_json::Value>,
-) -> Result<(sea_orm::prelude::Json, Decimal, String), String> {
-    let mach = machine::Entity::find_by_id(machine_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Machine #{} not found", machine_id))?;
-    let extra_data = extra_data_from_value(extra_data_val);
-    let schema = mach.variables_schema().map_err(|e| e.to_string())?;
-    let raw = line_vars::values_with_entered_units(
-        &schema,
-        &variables_from_value(variables_val),
-        &extra_data,
-    );
-    let values = parse_values(&schema, &raw).map_err(|e| e.to_string())?;
-    let final_cost = mach.get_cost(&values).map_err(|e| e.to_string())?;
-    Ok((values_to_json(&values), final_cost, mach.name))
-}
-
-pub async fn work_order_create_get(
-    Cap(state): Cap<WorkOrdersState>,
+pub async fn create_get(
     Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
+    RequireAuth(ctx): RequireAuth,
     Query(q): Query<ModalFormQuery>,
 ) -> maud::Markup {
-    let components = fetch_components_meta(&state.db).await;
-    let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-    let machines_json = fetch_machines_json(&state.db).await;
     let page = WorkOrderCreateModalPage {
         form_name: q.form_name(),
-        order_number: String::new(),
-        customer_id: None,
-        customer_name: String::new(),
-        duration: String::new(),
-        items_json: "[]".into(),
-        components_json,
-        machine_lines_json: "[]".into(),
-        machines_json,
-        taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
+        refresh_table: q.refresh_table(),
+        title: String::new(),
+        customer_id: String::new(),
+        customer_display: String::new(),
+        folder_vnode_id: String::new(),
+        folder_display: String::new(),
+        parts_json: "[]".to_string(),
+        presupplied_json: "[]".to_string(),
+        steps_json: "[]".to_string(),
         error: String::new(),
     };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
 }
 
-fn i64_from_str_or_zero<'de, D>(deserializer: D) -> Result<i64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let val = serde_json::Value::deserialize(deserializer)?;
-    match val {
-        serde_json::Value::Number(n) => Ok(n.as_i64().unwrap_or(0)),
-        serde_json::Value::String(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Ok(0)
-            } else {
-                trimmed.parse::<i64>().map_err(serde::de::Error::custom)
-            }
-        }
-        serde_json::Value::Null => Ok(0),
-        _ => Err(serde::de::Error::custom("expected integer or string")),
-    }
-}
-
-fn opt_i64_from_str<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let val = serde_json::Value::deserialize(deserializer)?;
-    match val {
-        serde_json::Value::Number(n) => Ok(n.as_i64()),
-        serde_json::Value::String(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                trimmed
-                    .parse::<i64>()
-                    .map(Some)
-                    .map_err(serde::de::Error::custom)
-            }
-        }
-        serde_json::Value::Null => Ok(None),
-        _ => Err(serde::de::Error::custom("expected integer or string")),
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct WorkOrderCreateForm {
-    #[serde(alias = "order_number", default)]
-    pub order_number: String,
-    #[serde(
-        alias = "CustomerID",
-        alias = "customer_id",
-        default,
-        deserialize_with = "i64_from_str_or_zero"
-    )]
-    pub customer_id: i64,
-    #[serde(alias = "items", default)]
-    pub items: Option<String>,
-    #[serde(alias = "machine_lines", default)]
-    pub machine_lines: Option<String>,
-    #[serde(alias = "duration", default)]
-    pub duration: String,
-}
-
-pub async fn work_order_create_post(
+pub async fn create_post(
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     Query(q): Query<ModalFormQuery>,
-    Form(form): Form<WorkOrderCreateForm>,
+    HtmlFormBody(form): HtmlFormBody<WorkOrderForm>,
 ) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let now = Utc::now();
-
-    if form.customer_id <= 0 {
-        let components = fetch_components_meta(&state.db).await;
-        let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-        let machines_json = fetch_machines_json(&state.db).await;
-        let page = WorkOrderCreateModalPage {
-            form_name: q.form_name(),
-            order_number: form.order_number,
-            customer_id: None,
-            customer_name: String::new(),
-            duration: form.duration.clone(),
-            items_json: form.items.unwrap_or_default(),
-            components_json,
-            machine_lines_json: form.machine_lines.unwrap_or_default(),
-            machines_json,
-            taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-            error: "Please select a customer.".into(),
-        };
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()) {
-        let components = fetch_components_meta(&state.db).await;
-        let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-        let machines_json = fetch_machines_json(&state.db).await;
-        let customer_name =
-            lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                .one(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .map(|c| c.name)
-                .unwrap_or_default();
-        let page = WorkOrderCreateModalPage {
-            form_name: q.form_name(),
-            order_number: form.order_number,
-            customer_id: Some(form.customer_id),
-            customer_name,
-            duration: form.duration.clone(),
-            items_json: form.items.unwrap_or_default(),
-            components_json,
-            machine_lines_json: form.machine_lines.unwrap_or_default(),
-            machines_json,
-            taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-            error: e,
-        };
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let duration = match parse_optional_job_duration(&form.duration, JobDuration::default()) {
-        Ok(d) => d,
-        Err(e) => {
-            let components = fetch_components_meta(&state.db).await;
-            let components_json =
-                serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-            let machines_json = fetch_machines_json(&state.db).await;
-            let customer_name =
-                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                    .one(&state.db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|c| c.name)
-                    .unwrap_or_default();
-            let page = WorkOrderCreateModalPage {
-                form_name: q.form_name(),
-                order_number: form.order_number,
-                customer_id: Some(form.customer_id),
-                customer_name,
-                duration: form.duration.clone(),
-                items_json: form.items.unwrap_or_default(),
-                components_json,
-                machine_lines_json: form.machine_lines.unwrap_or_default(),
-                machines_json,
-                taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-                error: format!("Invalid duration: {e}"),
-            };
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
+    let draft = match plan_lines::parse_plan(
+        &form.parts_lines_json,
+        &form.presupplied_lines_json,
+        &form.steps_lines_json,
+    ) {
+        Ok(draft) => draft,
+        Err(error) => return create_error(&state, &chrome, &ctx, &q, &form, error).await,
     };
-
-    let model = draft_work_order::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        order_number: Set(form.order_number.trim().to_string()),
-        customer_id: Set(form.customer_id),
-        quotation_id: Set(None),
-        duration: Set(duration),
+    let customer_id = match require_existing(&state.db, form.customer_id).await {
+        Ok(id) => id,
+        Err(error) => return create_error(&state, &chrome, &ctx, &q, &form, error).await,
     };
-
-    match model.insert(&state.db).await {
-        Ok(saved) => {
-            if let Some(items_str) = form.items.as_deref().filter(|s| !s.trim().is_empty()) {
-                if let Ok(items) =
-                    serde_json::from_str::<Vec<super::forms::DraftWorkOrderLineInput>>(items_str)
-                {
-                    for item in items {
-                        if item.component_id <= 0 {
-                            continue;
-                        }
-                        if let Ok((vars_json, final_cost, extra_data)) =
-                            resolve_and_compute_line_data(
-                                &state.db,
-                                item.component_id,
-                                item.variables.as_ref(),
-                                item.extra_data.as_ref(),
-                            )
-                            .await
-                            && let Ok(product_id) = crate::line_product::component_product_id(
-                                &state.db,
-                                item.component_id,
-                            )
-                            .await
-                        {
-                            let line_am = draft_work_order_material_line::ActiveModel {
-                                id: Default::default(),
-                                created_at: Set(Some(now)),
-                                updated_at: Set(Some(now)),
-                                draft_work_order_id: Set(saved.id),
-                                component_id: Set(item.component_id),
-                                product_id: Set(product_id),
-                                variables: Set(vars_json),
-                                final_cost: Set(final_cost),
-                                extra_data: Set(extra_data),
-                            };
-                            if let Ok(line) = line_am.insert(&state.db).await {
-                                let _ = tax_assoc::set_draft_material_line_taxes(
-                                    &state.db,
-                                    line.id,
-                                    &tax_assoc::normalize_tax_ids(&item.tax_ids),
-                                )
-                                .await;
-                            }
-                        }
-                    }
-                }
-            }
-
-            sync_machine_lines(&state.db, saved.id, form.machine_lines, now).await;
-
-            respond_create_modal_done::<WorkOrderCreateModalKey>(
-                &htmx,
-                &q.refresh_table(),
-                &WorkOrderDetailRouteTag::new(saved.id).url(),
-            )
-        }
-        Err(e) => {
-            let customer_name =
-                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                    .one(&state.db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|c| c.name)
-                    .unwrap_or_default();
-            let components = fetch_components_meta(&state.db).await;
-            let components_json =
-                serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-            let machines_json = fetch_machines_json(&state.db).await;
-            let page = WorkOrderCreateModalPage {
-                form_name: q.form_name(),
-                order_number: form.order_number,
-                customer_id: Some(form.customer_id),
-                customer_name,
-                duration: form.duration.clone(),
-                items_json: form.items.unwrap_or_default(),
-                components_json,
-                machine_lines_json: form.machine_lines.unwrap_or_default(),
-                machines_json,
-                taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-                error: e.to_string(),
-            };
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
+    let folder = match require_vnode(&state.db, form.folder_vnode_id).await {
+        Ok(id) => id,
+        Err(error) => return create_error(&state, &chrome, &ctx, &q, &form, error).await,
+    };
+    let saved = match logic::create_work_order(
+        &state.db,
+        logic::NewWorkOrder {
+            title: form.title.clone(),
+            customer_id,
+            folder_vnode_id: folder,
+        },
+    )
+    .await
+    {
+        Ok(saved) => saved,
+        Err(error) => return create_error(&state, &chrome, &ctx, &q, &form, error).await,
+    };
+    if let Err(error) = logic::replace_plan_lines(&state.db, saved.id, &draft).await {
+        let _ = logic::delete_work_order(&state.db, saved.id).await;
+        return create_error(&state, &chrome, &ctx, &q, &form, error).await;
     }
+    respond_create_modal_done::<WorkOrderCreateModalKey>(&htmx, "", &detail_redirect(saved.id))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct WorkOrderEditForm {
-    #[serde(alias = "order_number", default)]
-    pub order_number: String,
-    #[serde(
-        alias = "CustomerID",
-        alias = "customer_id",
-        default,
-        deserialize_with = "i64_from_str_or_zero"
-    )]
-    pub customer_id: i64,
-    #[serde(alias = "items", default)]
-    pub items: Option<String>,
-    #[serde(alias = "machine_lines", default)]
-    pub machine_lines: Option<String>,
-    #[serde(alias = "duration", default)]
-    pub duration: String,
+async fn create_error(
+    state: &WorkOrdersState,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    q: &ModalFormQuery,
+    form: &WorkOrderForm,
+    error: String,
+) -> Response {
+    let fields = form_fields(&state.db, form).await;
+    let page = WorkOrderCreateModalPage {
+        form_name: q.form_name(),
+        refresh_table: q.refresh_table(),
+        title: fields.title,
+        customer_id: fields.customer_id,
+        customer_display: fields.customer_display,
+        folder_vnode_id: fields.folder_vnode_id,
+        folder_display: fields.folder_display,
+        parts_json: fields.parts_json,
+        presupplied_json: fields.presupplied_json,
+        steps_json: fields.steps_json,
+        error,
+    };
+    modal_response(&page, chrome, ctx)
 }
 
-pub async fn work_order_edit_get(
+pub async fn detail(
+    Path(id): Path<i64>,
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
 ) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let order = match draft_work_order::Entity::find_by_id(id)
+    let Some(page) = detail_page(&state, id).await else {
+        return list_redirect(&htmx);
+    };
+    if htmx.targets::<WorkOrderGraphKey>() {
+        return page.render_graph().into_response();
+    }
+    html_built_page_or_app_layout(&page, &htmx, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
+}
+
+async fn detail_page(state: &WorkOrdersState, id: i64) -> Option<WorkOrderDetailPage> {
+    let plan = logic::load_plan(&state.db, id).await.ok()?;
+    let customer = display_name(&state.db, plan.order.customer_id).await;
+    let customer_href = CustomerEntity::find_by_id(plan.order.customer_id)
         .one(&state.db)
         .await
-    {
-        Ok(Some(o)) => o,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
+        .ok()
+        .flatten()
+        .map(|row| detail_href(&row))
+        .unwrap_or_default();
+    let files_href = VNodeDetailRouteTag::new(plan.order.folder_vnode_id).url();
+    let files_label = vnode_label(&state.db, plan.order.folder_vnode_id).await;
+    let (layout, layout_error) = match logic::plan_graph(&plan) {
+        Ok(graph) => match crate::graph::layout(&graph) {
+            Ok(layout) => (Some(layout), String::new()),
+            Err(crate::graph::Cycle) => (None, "This plan has a cycle.".to_string()),
+        },
+        Err(error) => (None, error),
     };
-    let customer_name =
-        lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|c| c.name)
-            .unwrap_or_default();
+    Some(WorkOrderDetailPage {
+        plan,
+        customer,
+        customer_href,
+        files_href,
+        files_label,
+        layout,
+        layout_error,
+    })
+}
 
-    let items_json = draft_material_lines_json(&state.db, id).await;
-    let components = fetch_components_meta(&state.db).await;
-    let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-    let machines_json = fetch_machines_json(&state.db).await;
-    let machine_lines_json = machine_lines_json(&state.db, id).await;
-
+pub async fn edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    let Some(plan) = logic::load_plan(&state.db, id).await.ok() else {
+        return list_redirect(&htmx);
+    };
+    let encoded = plan_lines::encode_plan(
+        &plan.parts,
+        &plan.presupplied,
+        &plan.steps,
+        &plan.inputs,
+        &plan.outputs,
+    );
     let page = WorkOrderEditModalPage {
         id,
         form_name: q.form_name(),
-        order_number: order.order_number,
-        customer_id: order.customer_id,
-        customer_name,
-        duration: format_job_duration(order.duration),
-        items_json,
-        components_json,
-        machine_lines_json,
-        machines_json,
-        taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
+        title: plan.order.title.clone(),
+        customer_id: plan.order.customer_id.to_string(),
+        customer_display: display_name(&state.db, plan.order.customer_id).await,
+        folder_vnode_id: plan.order.folder_vnode_id.to_string(),
+        folder_display: vnode_label(&state.db, plan.order.folder_vnode_id).await,
+        parts_json: encoded.parts_json,
+        presupplied_json: encoded.presupplied_json,
+        steps_json: encoded.steps_json,
         error: String::new(),
     };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
+    modal_response(&page, &chrome, &ctx)
 }
 
-pub async fn work_order_edit_post(
+pub async fn edit_post(
+    Path(id): Path<i64>,
     Cap(state): Cap<WorkOrdersState>,
     Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
+    RequireAuth(ctx): RequireAuth,
     htmx: Htmx,
     Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    Form(form): Form<WorkOrderEditForm>,
-) -> impl IntoResponse {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let existing = match draft_work_order::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-    {
-        Ok(Some(o)) => o,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
-    };
-
-    if form.customer_id <= 0 {
-        let components = fetch_components_meta(&state.db).await;
-        let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-        let machines_json = fetch_machines_json(&state.db).await;
-        let page = WorkOrderEditModalPage {
-            id,
-            form_name: q.form_name(),
-            order_number: form.order_number,
-            customer_id: 0,
-            customer_name: String::new(),
-            duration: form.duration.clone(),
-            items_json: form.items.unwrap_or_default(),
-            components_json,
-            machine_lines_json: form.machine_lines.unwrap_or_default(),
-            machines_json,
-            taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-            error: "Please select a customer.".into(),
-        };
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()) {
-        let components = fetch_components_meta(&state.db).await;
-        let components_json = serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-        let machines_json = fetch_machines_json(&state.db).await;
-        let customer_name =
-            lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                .one(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .map(|c| c.name)
-                .unwrap_or_default();
-        let page = WorkOrderEditModalPage {
-            id,
-            form_name: q.form_name(),
-            order_number: form.order_number,
-            customer_id: form.customer_id,
-            customer_name,
-            duration: form.duration.clone(),
-            items_json: form.items.unwrap_or_default(),
-            components_json,
-            machine_lines_json: form.machine_lines.unwrap_or_default(),
-            machines_json,
-            taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-            error: e,
-        };
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let now = Utc::now();
-    let duration = match parse_optional_job_duration(&form.duration, existing.duration) {
-        Ok(d) => d,
-        Err(e) => {
-            let components = fetch_components_meta(&state.db).await;
-            let components_json =
-                serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-            let machines_json = fetch_machines_json(&state.db).await;
-            let customer_name =
-                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                    .one(&state.db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|c| c.name)
-                    .unwrap_or_default();
-            let page = WorkOrderEditModalPage {
-                id,
-                form_name: q.form_name(),
-                order_number: form.order_number,
-                customer_id: form.customer_id,
-                customer_name,
-                duration: form.duration.clone(),
-                items_json: form.items.unwrap_or_default(),
-                components_json,
-                machine_lines_json: form.machine_lines.unwrap_or_default(),
-                machines_json,
-                taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-                error: format!("Invalid duration: {e}"),
-            };
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-    let mut am: draft_work_order::ActiveModel = existing.into();
-    am.updated_at = Set(Some(now));
-    am.order_number = Set(form.order_number.trim().to_string());
-    am.customer_id = Set(form.customer_id);
-    am.duration = Set(duration);
-
-    match am.update(&state.db).await {
-        Ok(_) => {
-            // Synchronize items if submitted
-            if let Some(items_str) = form.items.as_deref().filter(|s| !s.trim().is_empty()) {
-                if let Ok(items) =
-                    serde_json::from_str::<Vec<super::forms::DraftWorkOrderLineInput>>(items_str)
-                {
-                    let _ = draft_work_order_material_line::Entity::delete_many()
-                        .filter(draft_work_order_material_line::Column::DraftWorkOrderId.eq(id))
-                        .exec(&state.db)
-                        .await;
-
-                    for item in items {
-                        if item.component_id <= 0 {
-                            continue;
-                        }
-                        if let Ok((vars_json, final_cost, extra_data)) =
-                            resolve_and_compute_line_data(
-                                &state.db,
-                                item.component_id,
-                                item.variables.as_ref(),
-                                item.extra_data.as_ref(),
-                            )
-                            .await
-                            && let Ok(product_id) = crate::line_product::component_product_id(
-                                &state.db,
-                                item.component_id,
-                            )
-                            .await
-                        {
-                            let line_am = draft_work_order_material_line::ActiveModel {
-                                id: Default::default(),
-                                created_at: Set(Some(now)),
-                                updated_at: Set(Some(now)),
-                                draft_work_order_id: Set(id),
-                                component_id: Set(item.component_id),
-                                product_id: Set(product_id),
-                                variables: Set(vars_json),
-                                final_cost: Set(final_cost),
-                                extra_data: Set(extra_data),
-                            };
-                            if let Ok(line) = line_am.insert(&state.db).await {
-                                let _ = tax_assoc::set_draft_material_line_taxes(
-                                    &state.db,
-                                    line.id,
-                                    &tax_assoc::normalize_tax_ids(&item.tax_ids),
-                                )
-                                .await;
-                            }
-                        }
-                    }
-                }
-            }
-
-            sync_machine_lines(&state.db, id, form.machine_lines, now).await;
-
-            respond_edit_modal_done::<WorkOrderEditModalKey>(
-                &htmx,
-                &WorkOrderDetailRouteTag::new(id).url(),
-            )
-        }
-        Err(e) => {
-            let customer_name =
-                lariv_plugin_contacts::entities::company::Entity::find_by_id(form.customer_id)
-                    .one(&state.db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|c| c.name)
-                    .unwrap_or_default();
-            let components = fetch_components_meta(&state.db).await;
-            let components_json =
-                serde_json::to_string(&components).unwrap_or_else(|_| "[]".into());
-            let machines_json = fetch_machines_json(&state.db).await;
-            let page = WorkOrderEditModalPage {
-                id,
-                form_name: q.form_name(),
-                order_number: form.order_number,
-                customer_id: form.customer_id,
-                customer_name,
-                duration: form.duration.clone(),
-                items_json: form.items.unwrap_or_default(),
-                components_json,
-                machine_lines_json: form.machine_lines.unwrap_or_default(),
-                machines_json,
-                taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-                error: e.to_string(),
-            };
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-pub async fn work_order_delete_get(
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = ConfirmDeleteModalPage {
-        modal_uid: WorkOrderDeleteModalKey::ID.to_string(),
-        title: "Delete Work Order".into(),
-        message: "Are you sure you want to delete this work order? All associated line items will also be deleted.".into(),
-        post_url: WorkOrderDeletePostRouteTag::new(id).url(),
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn work_order_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
+    HtmlFormBody(form): HtmlFormBody<WorkOrderForm>,
 ) -> Response {
-    let _ = draft_work_order::Entity::delete_by_id(id)
-        .exec(&state.db)
-        .await;
-    htmx.redirect(&DraftWorkOrdersDefaultRouteTag.url())
-}
-
-// ==========================================
-// 1b. DRAFT WORK ORDER LINES
-// ==========================================
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct WorkOrderLineEditForm {
-    #[serde(
-        alias = "DraftWorkOrderID",
-        alias = "draft_work_order_id",
-        default,
-        deserialize_with = "opt_i64_from_str"
-    )]
-    pub draft_work_order_id: Option<i64>,
-    #[serde(
-        alias = "ComponentID",
-        alias = "component_id",
-        default,
-        deserialize_with = "i64_from_str_or_zero"
-    )]
-    pub component_id: i64,
-    #[serde(alias = "variables", default)]
-    pub variables: String,
-    #[serde(alias = "quantity", default)]
-    pub quantity: String,
-    #[serde(alias = "extra_data", default)]
-    pub extra_data: Option<String>,
-    #[serde(alias = "taxes", default)]
-    pub taxes: Vec<i64>,
-}
-
-pub async fn work_order_line_edit_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let line = match draft_work_order_material_line::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
+    let draft = match plan_lines::parse_plan(
+        &form.parts_lines_json,
+        &form.presupplied_lines_json,
+        &form.steps_lines_json,
+    ) {
+        Ok(draft) => draft,
+        Err(error) => return edit_error(&state, &chrome, &ctx, id, &q, &form, error).await,
+    };
+    let customer_id = match require_existing(&state.db, form.customer_id).await {
+        Ok(customer_id) => customer_id,
+        Err(error) => return edit_error(&state, &chrome, &ctx, id, &q, &form, error).await,
+    };
+    let folder = match require_vnode(&state.db, form.folder_vnode_id).await {
+        Ok(folder) => folder,
+        Err(error) => return edit_error(&state, &chrome, &ctx, id, &q, &form, error).await,
+    };
+    if let Err(error) =
+        logic::update_work_order(&state.db, id, &form.title, customer_id, folder).await
     {
-        Ok(Some(l)) => l,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
-    };
-    let order = draft_work_order::Entity::find_by_id(line.draft_work_order_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten();
-    let label = order
-        .map(|o| format!("{} (#{})", o.order_number, o.id))
-        .unwrap_or_else(|| format!("#{}", line.draft_work_order_id));
-
-    let comp = component::Entity::find_by_id(line.component_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten();
-    let comp_label = comp.map(|c| c.name).unwrap_or_default();
-
-    let extra_data = line.extra_data_str();
-    let tax_ids = tax_assoc::load_draft_material_line_tax_ids(&state.db, line.id)
-        .await
-        .unwrap_or_default();
-    let tax_items = tax_items_for_ids(&state.db, &tax_ids).await;
-    let page = WorkOrderLineEditModalPage {
-        id,
-        draft_work_order_id: line.draft_work_order_id,
-        draft_work_order_label: label,
-        form_name: q.form_name(),
-        component_id: line.component_id,
-        component_label: comp_label,
-        variables: serde_json::to_string(&line.variables).unwrap_or_else(|_| "{}".into()),
-        extra_data,
-        tax_items,
-        error: String::new(),
-    };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn work_order_line_edit_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    Form(form): Form<WorkOrderLineEditForm>,
-) -> impl IntoResponse {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let existing = match draft_work_order_material_line::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-    {
-        Ok(Some(l)) => l,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
-    };
-    let target_order_id = form
-        .draft_work_order_id
-        .unwrap_or(existing.draft_work_order_id);
-
-    if form.component_id <= 0 {
-        let order = draft_work_order::Entity::find_by_id(target_order_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten();
-        let label = order
-            .map(|o| format!("{} (#{})", o.order_number, o.id))
-            .unwrap_or_else(|| format!("#{}", target_order_id));
-        let page = WorkOrderLineEditModalPage {
-            id,
-            draft_work_order_id: target_order_id,
-            draft_work_order_label: label,
-            form_name: q.form_name(),
-            component_id: form.component_id,
-            component_label: String::new(),
-            variables: form.variables,
-            extra_data: form.extra_data.unwrap_or_default(),
-            tax_items: tax_items_for_ids(&state.db, &form.taxes).await,
-            error: "Please select a component.".into(),
-        };
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
+        return edit_error(&state, &chrome, &ctx, id, &q, &form, error).await;
     }
-
-    let comp_label = component::Entity::find_by_id(form.component_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|c| c.name)
-        .unwrap_or_default();
-
-    let vars_val = serde_json::Value::String(form.variables.clone());
-    let extra_val = form.extra_data.clone().map(serde_json::Value::String);
-
-    match resolve_and_compute_line_data(
-        &state.db,
-        form.component_id,
-        Some(&vars_val),
-        extra_val.as_ref(),
-    )
-    .await
-    {
-        Ok((vars_json, final_cost, extra_data)) => {
-            let Ok(product_id) =
-                crate::line_product::component_product_id(&state.db, form.component_id).await
-            else {
-                let order = draft_work_order::Entity::find_by_id(target_order_id)
-                    .one(&state.db)
-                    .await
-                    .ok()
-                    .flatten();
-                let label = order
-                    .map(|o| format!("{} (#{})", o.order_number, o.id))
-                    .unwrap_or_else(|| format!("#{}", target_order_id));
-                let page = WorkOrderLineEditModalPage {
-                    id,
-                    draft_work_order_id: target_order_id,
-                    draft_work_order_label: label,
-                    form_name: q.form_name(),
-                    component_id: form.component_id,
-                    component_label: comp_label,
-                    variables: form.variables,
-                    extra_data: form.extra_data.unwrap_or_default(),
-                    tax_items: tax_items_for_ids(&state.db, &form.taxes).await,
-                    error: "Could not link this line to a product.".into(),
-                };
-                return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-            };
-            let now = Utc::now();
-            let mut am: draft_work_order_material_line::ActiveModel = existing.clone().into();
-            am.updated_at = Set(Some(now));
-            am.draft_work_order_id = Set(target_order_id);
-            am.component_id = Set(form.component_id);
-            am.product_id = Set(product_id);
-            am.variables = Set(vars_json);
-            am.final_cost = Set(final_cost);
-            am.extra_data = Set(extra_data);
-
-            match am.update(&state.db).await {
-                Ok(_) => {
-                    let _ = tax_assoc::set_draft_material_line_taxes(
-                        &state.db,
-                        id,
-                        &tax_assoc::normalize_tax_ids(&form.taxes),
-                    )
-                    .await;
-                    respond_edit_modal_done::<WorkOrderLineEditModalKey>(
-                        &htmx,
-                        &WorkOrderDetailRouteTag::new(target_order_id).url(),
-                    )
-                }
-                Err(e) => {
-                    let order = draft_work_order::Entity::find_by_id(target_order_id)
-                        .one(&state.db)
-                        .await
-                        .ok()
-                        .flatten();
-                    let label = order
-                        .map(|o| format!("{} (#{})", o.order_number, o.id))
-                        .unwrap_or_else(|| format!("#{}", target_order_id));
-                    let page = WorkOrderLineEditModalPage {
-                        id,
-                        draft_work_order_id: target_order_id,
-                        draft_work_order_label: label,
-                        form_name: q.form_name(),
-                        component_id: form.component_id,
-                        component_label: comp_label,
-                        variables: form.variables,
-                        extra_data: form.extra_data.unwrap_or_default(),
-                        tax_items: tax_items_for_ids(&state.db, &form.taxes).await,
-                        error: e.to_string(),
-                    };
-                    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-                }
-            }
-        }
-        Err(err) => {
-            let order = draft_work_order::Entity::find_by_id(target_order_id)
-                .one(&state.db)
-                .await
-                .ok()
-                .flatten();
-            let label = order
-                .map(|o| format!("{} (#{})", o.order_number, o.id))
-                .unwrap_or_else(|| format!("#{}", target_order_id));
-            let page = WorkOrderLineEditModalPage {
-                id,
-                draft_work_order_id: target_order_id,
-                draft_work_order_label: label,
-                form_name: q.form_name(),
-                component_id: form.component_id,
-                component_label: comp_label,
-                variables: form.variables,
-                extra_data: form.extra_data.unwrap_or_default(),
-                tax_items: tax_items_for_ids(&state.db, &form.taxes).await,
-                error: err,
-            };
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
+    match logic::replace_plan_lines(&state.db, id, &draft).await {
+        Ok(()) => reload::<WorkOrderEditModalKey>(&htmx, id),
+        Err(error) => edit_error(&state, &chrome, &ctx, id, &q, &form, error).await,
     }
 }
 
-pub async fn work_order_line_delete_get(
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = ConfirmDeleteModalPage {
-        modal_uid: WorkOrderLineDeleteModalKey::ID.to_string(),
-        title: "Delete Line Item".into(),
-        message: "Are you sure you want to delete this line item?".into(),
-        post_url: WorkOrderLineDeletePostRouteTag::new(id).url(),
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn work_order_line_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let draft_work_order_id = if let Ok(Some(line)) =
-        draft_work_order_material_line::Entity::find_by_id(id)
-            .one(&state.db)
-            .await
-    {
-        let wid = line.draft_work_order_id;
-        let _ = draft_work_order_material_line::Entity::delete_by_id(id)
-            .exec(&state.db)
-            .await;
-        wid
-    } else {
-        return htmx.redirect(&DraftWorkOrdersDefaultRouteTag.url());
-    };
-    htmx.redirect(&WorkOrderDetailRouteTag::new(draft_work_order_id).url())
-}
-
-// ==========================================
-// 1c. DRAFT WORK ORDER MACHINE LINES
-// ==========================================
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct WorkOrderMachineLineFormData {
-    #[serde(
-        alias = "DraftWorkOrderID",
-        alias = "draft_work_order_id",
-        default,
-        deserialize_with = "opt_i64_from_str"
-    )]
-    pub draft_work_order_id: Option<i64>,
-    #[serde(
-        alias = "MachineID",
-        alias = "machine_id",
-        default,
-        deserialize_with = "i64_from_str_or_zero"
-    )]
-    pub machine_id: i64,
-    #[serde(alias = "Variables", alias = "variables", default)]
-    pub variables: String,
-    #[serde(alias = "Rate", alias = "rate", default)]
-    pub rate: String,
-    #[serde(alias = "Duration", alias = "duration", default)]
-    pub duration: String,
-    #[serde(alias = "Taxes", alias = "taxes", default)]
-    pub taxes: Vec<i64>,
-}
-
-async fn machine_line_machine_label(db: &sea_orm::DatabaseConnection, machine_id: i64) -> String {
-    machine::Entity::find_by_id(machine_id)
-        .one(db)
-        .await
-        .ok()
-        .flatten()
-        .map(|m| m.name)
-        .unwrap_or_default()
-}
-
-async fn fetch_machines_json(db: &sea_orm::DatabaseConnection) -> String {
-    let machines = machine::Entity::find()
-        .order_by_asc(machine::Column::Name)
-        .all(db)
-        .await
-        .unwrap_or_default();
-    let rows: Vec<serde_json::Value> = machines
-        .into_iter()
-        .map(|m| {
-            serde_json::json!({
-                "id": m.id,
-                "name": m.name,
-                "variables": m.variables,
-                "cost_formula": m.cost_formula,
-            })
-        })
-        .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
-}
-
-fn taxed_draft_grand_total(
-    lines: &[draft_work_order_material_line::Model],
-    machine_lines: &[draft_work_order_machine_line::Model],
-    material_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-    machine_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-) -> Decimal {
-    let materials: Decimal = lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(material_taxes, l.id)))
-        .sum();
-    let machines: Decimal = machine_lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(machine_taxes, l.id)))
-        .sum();
-    materials + machines
-}
-
-fn taxed_quotation_grand_total(
-    material_lines: &[quotation_material_line::Model],
-    machine_lines: &[quotation_machine_line::Model],
-    material_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-    machine_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-) -> Decimal {
-    let materials: Decimal = material_lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(material_taxes, l.id)))
-        .sum();
-    let machines: Decimal = machine_lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(machine_taxes, l.id)))
-        .sum();
-    materials + machines
-}
-
-async fn tax_items_for_ids(db: &sea_orm::DatabaseConnection, ids: &[i64]) -> Vec<ManyToManyItem> {
-    let taxes = lariv_plugin_finance_taxes::scope::load_taxes_by_ids(db, ids)
-        .await
-        .unwrap_or_default();
-    taxes
-        .into_iter()
-        .map(|t| {
-            ManyToManyItem::new(
-                t.id.to_string(),
-                lariv_plugin_finance_taxes::scope::tax_label(&t),
-            )
-        })
-        .collect()
-}
-
-async fn draft_material_lines_json(db: &sea_orm::DatabaseConnection, order_id: i64) -> String {
-    let lines = draft_work_order_material_line::Entity::find()
-        .filter(draft_work_order_material_line::Column::DraftWorkOrderId.eq(order_id))
-        .order_by_asc(draft_work_order_material_line::Column::Id)
-        .all(db)
-        .await
-        .unwrap_or_default();
-    let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
-    let tax_map = tax_assoc::load_draft_material_line_tax_ids_map(db, &ids)
-        .await
-        .unwrap_or_default();
-    let rows: Vec<serde_json::Value> = lines
-        .into_iter()
-        .map(|l| {
-            let mut v = serde_json::to_value(&l).unwrap_or_else(|_| serde_json::json!({}));
-            if let serde_json::Value::Object(ref mut m) = v {
-                m.insert(
-                    "tax_ids".into(),
-                    serde_json::json!(tax_map.get(&l.id).cloned().unwrap_or_default()),
-                );
-            }
-            v
-        })
-        .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
-}
-
-async fn machine_lines_json(db: &sea_orm::DatabaseConnection, order_id: i64) -> String {
-    let machine_lines = draft_work_order_machine_line::Entity::find()
-        .filter(draft_work_order_machine_line::Column::DraftWorkOrderId.eq(order_id))
-        .order_by_asc(draft_work_order_machine_line::Column::Id)
-        .all(db)
-        .await
-        .unwrap_or_default();
-    let ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let tax_map = tax_assoc::load_draft_machine_line_tax_ids_map(db, &ids)
-        .await
-        .unwrap_or_default();
-    let rows: Vec<serde_json::Value> = machine_lines
-        .into_iter()
-        .map(|l| {
-            serde_json::json!({
-                "id": l.id,
-                "db_id": l.id,
-                "machine_id": l.machine_id,
-                "variables": l.variables,
-                "tax_ids": tax_map.get(&l.id).cloned().unwrap_or_default(),
-            })
-        })
-        .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
-}
-
-fn validate_machine_lines_json(ml_str: Option<&str>) -> Result<(), String> {
-    let Some(s) = ml_str.filter(|s| !s.trim().is_empty()) else {
-        return Ok(());
-    };
-    let _: Vec<super::forms::DraftWorkOrderMachineLineInput> =
-        serde_json::from_str(s).map_err(|_| "Invalid machine lines data.".to_string())?;
-    Ok(())
-}
-
-/// A typed unit price overrides the cost formula. An empty price leaves the cost to the formula.
-fn optional_non_negative_cost(raw: &Option<String>) -> Result<Option<Decimal>, String> {
-    let Some(raw) = raw.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) else {
-        return Ok(None);
-    };
-    let cost: Decimal = raw.parse().map_err(|_| "invalid unit price".to_string())?;
-    if cost < Decimal::ZERO {
-        return Err("unit price must be non-negative".to_string());
-    }
-    Ok(Some(cost))
-}
-
-fn line_cost_or_formula(explicit: &Option<String>, formula: Decimal) -> Result<Decimal, String> {
-    Ok(optional_non_negative_cost(explicit)?.unwrap_or(formula))
-}
-
-fn validate_quotation_line_prices(
-    material: Option<&str>,
-    machine: Option<&str>,
-) -> Result<(), String> {
-    if let Some(s) = material.filter(|s| !s.trim().is_empty()) {
-        let lines: Vec<super::forms::DraftWorkOrderMaterialLineInput> =
-            serde_json::from_str(s).map_err(|_| "Invalid material lines data.".to_string())?;
-        for line in &lines {
-            optional_non_negative_cost(&line.final_cost)?;
-        }
-    }
-    if let Some(s) = machine.filter(|s| !s.trim().is_empty()) {
-        let lines: Vec<super::forms::DraftWorkOrderMachineLineInput> =
-            serde_json::from_str(s).map_err(|_| "Invalid machine lines data.".to_string())?;
-        for line in &lines {
-            optional_non_negative_cost(&line.final_cost)?;
-        }
-    }
-    Ok(())
-}
-
-async fn latest_child_id(
-    db: &sea_orm::DatabaseConnection,
-    table: &str,
-    parent_col: &str,
-    parent_id: i64,
-) -> Option<i64> {
-    let backend = db.get_database_backend();
-    let ph = match backend {
-        sea_orm::DatabaseBackend::Postgres => "$1",
-        _ => "?",
-    };
-    let sql = format!("SELECT id FROM {table} WHERE {parent_col} = {ph} ORDER BY id DESC LIMIT 1");
-    let row = db
-        .query_one_raw(Statement::from_sql_and_values(
-            backend,
-            sql,
-            [parent_id.into()],
-        ))
-        .await
-        .ok()
-        .flatten()?;
-    row.try_get::<i64>("", "id").ok()
-}
-
-async fn sync_machine_lines(
-    db: &sea_orm::DatabaseConnection,
-    order_id: i64,
-    ml_str: Option<String>,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    let Some(s) = ml_str.as_deref().filter(|s| !s.trim().is_empty()) else {
-        return;
-    };
-    let Ok(lines) = serde_json::from_str::<Vec<super::forms::DraftWorkOrderMachineLineInput>>(s)
-    else {
-        return;
-    };
-    let _ = draft_work_order_machine_line::Entity::delete_many()
-        .filter(draft_work_order_machine_line::Column::DraftWorkOrderId.eq(order_id))
-        .exec(db)
-        .await;
-    for line in lines {
-        if line.machine_id <= 0 {
-            continue;
-        }
-        let Ok((vars_json, final_cost, _machine_name)) = resolve_and_compute_machine_cost(
-            db,
-            line.machine_id,
-            line.variables.as_ref(),
-            line.extra_data.as_ref(),
-        )
-        .await
-        else {
-            continue;
-        };
-        let Ok(product_id) = crate::line_product::machine_product_id(db, line.machine_id).await
-        else {
-            continue;
-        };
-        let am = draft_work_order_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            draft_work_order_id: Set(order_id),
-            machine_id: Set(line.machine_id),
-            product_id: Set(product_id),
-            variables: Set(vars_json),
-            final_cost: Set(final_cost),
-        };
-        let line_id = match am.insert(db).await {
-            Ok(saved) => Some(saved.id),
-            Err(_) => {
-                latest_child_id(
-                    db,
-                    "draft_work_order_machine_lines",
-                    "draft_work_order_id",
-                    order_id,
-                )
-                .await
-            }
-        };
-        if let Some(line_id) = line_id {
-            let _ = tax_assoc::set_draft_machine_line_taxes(
-                db,
-                line_id,
-                &tax_assoc::normalize_tax_ids(&line.tax_ids),
-            )
-            .await;
-        }
-    }
-}
-
-async fn components_json(db: &sea_orm::DatabaseConnection) -> String {
-    let components = fetch_components_meta(db).await;
-    serde_json::to_string(&components).unwrap_or_else(|_| "[]".into())
-}
-
-async fn machine_line_remarks_text(
-    db: &sea_orm::DatabaseConnection,
-    submitted: &str,
-    product_id: i64,
-) -> String {
-    if !submitted.trim().is_empty() {
-        return submitted.trim().to_string();
-    }
-    let remarks = crate::line_product::product_remarks_by_id(db, &[product_id]).await;
-    crate::line_product::remarks_with_product_default(
-        submitted,
-        remarks.get(&product_id).map(String::as_str),
-    )
-}
-
-async fn invoice_material_lines_json(db: &sea_orm::DatabaseConnection, invoice_id: i64) -> String {
-    let lines = quotation_material_line::Entity::find()
-        .filter(quotation_material_line::Column::InvoiceId.eq(invoice_id))
-        .order_by_asc(quotation_material_line::Column::Id)
-        .all(db)
-        .await
-        .unwrap_or_default();
-    let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
-    let tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &ids)
-        .await
-        .unwrap_or_default();
-    let rows: Vec<serde_json::Value> = lines
-        .into_iter()
-        .map(|l| {
-            let mut v = serde_json::to_value(&l).unwrap_or_else(|_| serde_json::json!({}));
-            if let serde_json::Value::Object(ref mut m) = v {
-                m.insert(
-                    "tax_ids".into(),
-                    serde_json::json!(tax_map.get(&l.id).cloned().unwrap_or_default()),
-                );
-            }
-            v
-        })
-        .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
-}
-
-async fn invoice_machine_lines_json(db: &sea_orm::DatabaseConnection, invoice_id: i64) -> String {
-    let lines = quotation_machine_line::Entity::find()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(invoice_id))
-        .order_by_asc(quotation_machine_line::Column::Id)
-        .all(db)
-        .await
-        .unwrap_or_default();
-    let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
-    let product_ids: Vec<i64> = lines.iter().map(|l| l.product_id).collect();
-    let tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &ids)
-        .await
-        .unwrap_or_default();
-    let product_remarks = crate::line_product::product_remarks_by_id(db, &product_ids).await;
-    let rows: Vec<serde_json::Value> = lines
-        .into_iter()
-        .map(|l| {
-            let remarks = crate::line_product::remarks_with_product_default(
-                &l.remarks,
-                product_remarks.get(&l.product_id).map(String::as_str),
-            );
-            serde_json::json!({
-                "id": l.id,
-                "db_id": l.id,
-                "machine_id": l.machine_id,
-                "product_id": l.product_id,
-                "variables": l.variables,
-                "final_cost": l.final_cost,
-                "tax_ids": tax_map.get(&l.id).cloned().unwrap_or_default(),
-                "remarks": remarks,
-            })
-        })
-        .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
-}
-
-async fn sync_invoice_material_lines(
-    db: &sea_orm::DatabaseConnection,
-    invoice_id: i64,
-    lines_str: Option<String>,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    let Some(s) = lines_str.as_deref().filter(|s| !s.trim().is_empty()) else {
-        return;
-    };
-    let Ok(items) = serde_json::from_str::<Vec<super::forms::DraftWorkOrderLineInput>>(s) else {
-        return;
-    };
-    let _ = quotation_material_line::Entity::delete_many()
-        .filter(quotation_material_line::Column::InvoiceId.eq(invoice_id))
-        .exec(db)
-        .await;
-    for item in items {
-        if item.component_id <= 0 {
-            continue;
-        }
-        if let Ok((vars_json, formula_cost, extra_data)) = resolve_and_compute_line_data(
-            db,
-            item.component_id,
-            item.variables.as_ref(),
-            item.extra_data.as_ref(),
-        )
-        .await
-            && let Ok(final_cost) = line_cost_or_formula(&item.final_cost, formula_cost)
-            && let Ok(product_id) =
-                crate::line_product::component_product_id(db, item.component_id).await
-        {
-            let line_am = quotation_material_line::ActiveModel {
-                id: Default::default(),
-                created_at: Set(Some(now)),
-                updated_at: Set(Some(now)),
-                invoice_id: Set(invoice_id),
-                component_id: Set(item.component_id),
-                product_id: Set(product_id),
-                variables: Set(vars_json),
-                final_cost: Set(final_cost),
-                extra_data: Set(extra_data),
-                remarks: Set(item.remarks.trim().to_string()),
-            };
-            if let Ok(saved) = line_am.insert(db).await {
-                let _ = tax_assoc::set_quotation_material_line_taxes(
-                    db,
-                    saved.id,
-                    &tax_assoc::normalize_tax_ids(&item.tax_ids),
-                )
-                .await;
-            }
-        }
-    }
-}
-
-async fn sync_invoice_machine_lines(
-    db: &sea_orm::DatabaseConnection,
-    invoice_id: i64,
-    ml_str: Option<String>,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    let Some(s) = ml_str.as_deref().filter(|s| !s.trim().is_empty()) else {
-        return;
-    };
-    let Ok(lines) = serde_json::from_str::<Vec<super::forms::DraftWorkOrderMachineLineInput>>(s)
-    else {
-        return;
-    };
-    let _ = quotation_machine_line::Entity::delete_many()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(invoice_id))
-        .exec(db)
-        .await;
-    for line in lines {
-        if line.machine_id <= 0 {
-            continue;
-        }
-        let Ok((vars_json, formula_cost, machine_name)) = resolve_and_compute_machine_cost(
-            db,
-            line.machine_id,
-            line.variables.as_ref(),
-            line.extra_data.as_ref(),
-        )
-        .await
-        else {
-            continue;
-        };
-        let Ok(final_cost) = line_cost_or_formula(&line.final_cost, formula_cost) else {
-            continue;
-        };
-        let Ok(product_id) = crate::line_product::machine_product_id(db, line.machine_id).await
-        else {
-            continue;
-        };
-        let remarks = machine_line_remarks_text(db, &line.remarks, product_id).await;
-        let am = quotation_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            invoice_id: Set(invoice_id),
-            machine_id: Set(Some(line.machine_id)),
-            product_id: Set(product_id),
-            name: Set(machine_name),
-            variables: Set(vars_json),
-            final_cost: Set(final_cost),
-            remarks: Set(remarks),
-        };
-        let line_id = match am.insert(db).await {
-            Ok(saved) => Some(saved.id),
-            Err(_) => {
-                latest_child_id(db, "kds_quotation_machine_lines", "invoice_id", invoice_id).await
-            }
-        };
-        if let Some(line_id) = line_id {
-            let _ = tax_assoc::set_quotation_machine_line_taxes(
-                db,
-                line_id,
-                &tax_assoc::normalize_tax_ids(&line.tax_ids),
-            )
-            .await;
-        }
-    }
-}
-
-async fn sync_invoice_lines(
-    db: &sea_orm::DatabaseConnection,
-    invoice_id: i64,
-    material_lines_str: Option<String>,
-    machine_lines_str: Option<String>,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    sync_invoice_material_lines(db, invoice_id, material_lines_str, now).await;
-    sync_invoice_machine_lines(db, invoice_id, machine_lines_str, now).await;
-}
-
-pub async fn work_order_machine_line_edit_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let line = match draft_work_order_machine_line::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-    {
-        Ok(Some(l)) => l,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
-    };
-    let order = draft_work_order::Entity::find_by_id(line.draft_work_order_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten();
-    let label = order
-        .map(|o| format!("{} (#{})", o.order_number, o.id))
-        .unwrap_or_else(|| format!("#{}", line.draft_work_order_id));
-
-    let machine_label = machine_line_machine_label(&state.db, line.machine_id).await;
-    let tax_ids = tax_assoc::load_draft_machine_line_tax_ids(&state.db, line.id)
-        .await
-        .unwrap_or_default();
-    let tax_items = tax_items_for_ids(&state.db, &tax_ids).await;
-
-    let vars_str = serde_json::to_string(&line.variables).unwrap_or_else(|_| "{}".into());
-    let page = WorkOrderMachineLineEditModalPage {
-        id,
-        form_name: q.form_name(),
-        draft_work_order_id: line.draft_work_order_id,
-        draft_work_order_label: label,
-        machine_id: line.machine_id,
-        machine_label,
-        variables: vars_str,
-        tax_items,
-        error: String::new(),
-    };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn work_order_machine_line_edit_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    Form(form): Form<WorkOrderMachineLineFormData>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let existing = match draft_work_order_machine_line::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-    {
-        Ok(Some(l)) => l,
-        _ => return Redirect::to(&DraftWorkOrdersDefaultRouteTag.url()).into_response(),
-    };
-    let target_order_id = form
-        .draft_work_order_id
-        .unwrap_or(existing.draft_work_order_id);
-    let vars_raw = if form.variables.trim().is_empty() {
-        form.duration.clone()
-    } else {
-        form.variables.clone()
-    };
-
-    if form.machine_id <= 0 {
-        return late_render_edit_error(
-            &state.db,
-            &chrome,
-            &slot_ctx,
-            &q,
-            id,
-            target_order_id,
-            "Please select a machine.".into(),
-            0,
-            String::new(),
-            vars_raw,
-            form.taxes.clone(),
-        )
-        .await;
-    }
-
-    let machine_label = machine_line_machine_label(&state.db, form.machine_id).await;
-    let vars_val = serde_json::Value::String(vars_raw.clone());
-    let computed =
-        resolve_and_compute_machine_cost(&state.db, form.machine_id, Some(&vars_val), None).await;
-
-    let (vars_json, final_cost) = match computed {
-        Ok((v, c, _)) => (v, c),
-        Err(e) => {
-            return late_render_edit_error(
-                &state.db,
-                &chrome,
-                &slot_ctx,
-                &q,
-                id,
-                target_order_id,
-                e,
-                form.machine_id,
-                machine_label,
-                vars_raw,
-                form.taxes.clone(),
-            )
-            .await;
-        }
-    };
-
-    let product_id = match crate::line_product::machine_product_id(&state.db, form.machine_id).await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            return late_render_edit_error(
-                &state.db,
-                &chrome,
-                &slot_ctx,
-                &q,
-                id,
-                target_order_id,
-                e,
-                form.machine_id,
-                machine_label,
-                vars_raw,
-                form.taxes.clone(),
-            )
-            .await;
-        }
-    };
-
-    let now = Utc::now();
-    let mut am: draft_work_order_machine_line::ActiveModel = existing.into();
-    am.updated_at = Set(Some(now));
-    am.draft_work_order_id = Set(target_order_id);
-    am.machine_id = Set(form.machine_id);
-    am.product_id = Set(product_id);
-    am.variables = Set(vars_json);
-    am.final_cost = Set(final_cost);
-
-    match am.update(&state.db).await {
-        Ok(_) => {
-            let _ = tax_assoc::set_draft_machine_line_taxes(
-                &state.db,
-                id,
-                &tax_assoc::normalize_tax_ids(&form.taxes),
-            )
-            .await;
-            respond_edit_modal_done::<WorkOrderMachineLineEditModalKey>(
-                &htmx,
-                &WorkOrderDetailRouteTag::new(target_order_id).url(),
-            )
-        }
-        Err(e) => {
-            late_render_edit_error(
-                &state.db,
-                &chrome,
-                &slot_ctx,
-                &q,
-                id,
-                target_order_id,
-                e.to_string(),
-                form.machine_id,
-                machine_label,
-                vars_raw,
-                form.taxes.clone(),
-            )
-            .await
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn late_render_edit_error(
-    db: &sea_orm::DatabaseConnection,
+async fn edit_error(
+    state: &WorkOrdersState,
     chrome: &SharedChromeFolder,
-    slot_ctx: &SlotCtx,
-    q: &ModalFormQuery,
+    ctx: &AuthContext,
     id: i64,
-    target_order_id: i64,
+    q: &ModalFormQuery,
+    form: &WorkOrderForm,
     error: String,
-    machine_id: i64,
-    machine_label: String,
-    variables: String,
-    taxes: Vec<i64>,
 ) -> Response {
-    let order = draft_work_order::Entity::find_by_id(target_order_id)
-        .one(db)
-        .await
-        .ok()
-        .flatten();
-    let label = order
-        .map(|o| format!("{} (#{})", o.order_number, o.id))
-        .unwrap_or_else(|| format!("#{}", target_order_id));
-    let tax_items = tax_items_for_ids(db, &taxes).await;
-    let page = WorkOrderMachineLineEditModalPage {
+    let fields = form_fields(&state.db, form).await;
+    let page = WorkOrderEditModalPage {
         id,
         form_name: q.form_name(),
-        draft_work_order_id: target_order_id,
-        draft_work_order_label: label,
-        machine_id,
-        machine_label,
-        variables,
-        tax_items,
+        title: fields.title,
+        customer_id: fields.customer_id,
+        customer_display: fields.customer_display,
+        folder_vnode_id: fields.folder_vnode_id,
+        folder_display: fields.folder_display,
+        parts_json: fields.parts_json,
+        presupplied_json: fields.presupplied_json,
+        steps_json: fields.steps_json,
         error,
     };
-    html_built_page_with_slots(&page, chrome, slot_ctx).into_response()
+    modal_response(&page, chrome, ctx)
 }
 
-pub async fn work_order_machine_line_delete_get(
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = ConfirmDeleteModalPage {
-        modal_uid: WorkOrderMachineLineDeleteModalKey::ID.to_string(),
-        title: "Delete Machine Line".into(),
-        message: "Are you sure you want to delete this machine line?".into(),
-        post_url: WorkOrderMachineLineDeletePostRouteTag::new(id).url(),
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
+struct PostedOrderForm {
+    title: String,
+    customer_id: String,
+    customer_display: String,
+    folder_vnode_id: String,
+    folder_display: String,
+    parts_json: String,
+    presupplied_json: String,
+    steps_json: String,
 }
 
-pub async fn work_order_machine_line_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let draft_work_order_id = if let Ok(Some(line)) =
-        draft_work_order_machine_line::Entity::find_by_id(id)
-            .one(&state.db)
-            .await
-    {
-        let wid = line.draft_work_order_id;
-        let _ = draft_work_order_machine_line::Entity::delete_by_id(id)
-            .exec(&state.db)
-            .await;
-        wid
+async fn form_fields(db: &DatabaseConnection, form: &WorkOrderForm) -> PostedOrderForm {
+    PostedOrderForm {
+        title: form.title.clone(),
+        customer_id: positive_id(form.customer_id),
+        customer_display: if form.customer_id > 0 {
+            display_name(db, form.customer_id).await
+        } else {
+            String::new()
+        },
+        folder_vnode_id: positive_id(form.folder_vnode_id),
+        folder_display: vnode_label(db, form.folder_vnode_id).await,
+        parts_json: form.parts_lines_json.clone(),
+        presupplied_json: form.presupplied_lines_json.clone(),
+        steps_json: form.steps_lines_json.clone(),
+    }
+}
+
+fn positive_id(id: i64) -> String {
+    if id > 0 {
+        id.to_string()
     } else {
-        return htmx.redirect(&DraftWorkOrdersDefaultRouteTag.url());
-    };
-    htmx.redirect(&WorkOrderDetailRouteTag::new(draft_work_order_id).url())
-}
-
-pub async fn component_select(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    uri: Uri,
-    Query(q): Query<EntitySelectQuery>,
-) -> maud::Markup {
-    let mut query = component::Entity::find();
-    if let Some(n) = q.name.as_deref().filter(|s| !s.trim().is_empty()) {
-        query = query.filter(component::Column::Name.contains(n));
-    }
-    let components = query
-        .order_by_desc(component::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let page = ComponentSelectPage {
-        components,
-        target_input: q.target_input.unwrap_or_else(|| "component_id".into()),
-        path_and_query: uri.to_string(),
-    };
-    respond_picker_select::<ComponentSelectTableKey, ComponentSelectModalKey, _>(&htmx, &page)
-}
-
-// ==========================================
-// 2. COMPONENTS
-// ==========================================
-
-pub async fn components_list(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    uri: Uri,
-    Query(q): Query<ListQuery>,
-) -> maud::Markup {
-    let prepared = prepare(
-        uri.query().unwrap_or(""),
-        component_fields(),
-        state.db.get_database_backend(),
-    );
-    let comps = component::Entity::find()
-        .filter(prepared.condition)
-        .order_by_asc(component::Column::Name)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let comps: Vec<_> = comps
-        .into_iter()
-        .filter(|comp| {
-            let label = variables_label(&comp.variables);
-            let raw = comp.variables.to_string();
-            allows_text(&prepared.post, "variables", &[label.as_str(), raw.as_str()])
-        })
-        .collect();
-    let (comps, page_num, num_pages) = paginate(comps, q.page.get(), q.page_size.get());
-
-    let page = ComponentListPage {
-        components: comps,
-        fields: prepared.fields,
-        filters: prepared.filters,
-        filter_errors: prepared.errors,
-        sort: q.sort.unwrap_or_default(),
-        path_and_query: path_and_query(&uri),
-        page: page_num,
-        num_pages,
-        page_size: q.page_size.get(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    if htmx.targets::<ComponentTableKey>() {
-        return page.render_table();
-    }
-    if htmx.wants_main_content() {
-        return page.render_main().into();
-    }
-    if htmx.wants_app_layout() {
-        return page.render_pane().into();
-    }
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx)
-}
-
-pub async fn component_detail(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let Some(comp) = component::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return Redirect::to(&WorkOrdersComponentsRouteTag.url()).into_response();
-    };
-
-    let page = ComponentDetailPage { component: comp };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-}
-
-pub use super::forms::{ComponentCreateForm, ComponentEditForm, ComponentForm};
-
-fn empty_component_create_page(
-    q: &ModalFormQuery,
-    name: String,
-    cost_formula: String,
-    weight_formula: String,
-    variables: Vec<String>,
-    error: String,
-) -> ComponentCreateModalPage {
-    ComponentCreateModalPage {
-        form_name: q.form_name(),
-        refresh_table: q.refresh_table(),
-        target_input: q.target_input(),
-        name,
-        variables,
-        cost_formula,
-        weight_formula,
-        error,
+        String::new()
     }
 }
 
-fn empty_component_edit_page(
-    id: i64,
-    q: &ModalFormQuery,
-    name: String,
-    cost_formula: String,
-    weight_formula: String,
-    variables: Vec<String>,
-    error: String,
-) -> ComponentEditModalPage {
-    ComponentEditModalPage {
-        id,
-        form_name: q.form_name(),
-        name,
-        variables,
-        cost_formula,
-        weight_formula,
-        error,
-    }
-}
-
-pub async fn component_create_get(
-    Cap(_state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-) -> maud::Markup {
-    let page = empty_component_create_page(
-        &q,
-        String::new(),
-        String::new(),
-        String::new(),
-        Vec::new(),
-        String::new(),
-    );
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn component_create_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    HtmlFormBody(form): HtmlFormBody<ComponentForm>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-
-    if form.name.trim().is_empty() {
-        let page = empty_component_create_page(
-            &q,
-            form.name,
-            form.cost_formula,
-            form.weight_formula,
-            form.variables,
-            "Component name is required.".into(),
-        );
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let variables = match parse_component_variables_list(&form.variables) {
-        Ok(v) => v,
-        Err(e) => {
-            let page = empty_component_create_page(
-                &q,
-                form.name,
-                form.cost_formula,
-                form.weight_formula,
-                form.variables,
-                e,
-            );
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    let probe = component_from_form_fields(
-        form.name.trim().to_string(),
-        form.cost_formula.clone(),
-        form.weight_formula.clone(),
-        variables.clone(),
-    );
-    if let Err(e) = probe.validate_formulas() {
-        let page = empty_component_create_page(
-            &q,
-            form.name,
-            form.cost_formula,
-            form.weight_formula,
-            form.variables,
-            e.to_string(),
-        );
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let now = Utc::now();
-    let product_id = match crate::line_product::save_component_product(
-        &state.db,
-        0,
-        form.name.trim(),
-        &variables,
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            let page = empty_component_create_page(
-                &q,
-                form.name,
-                probe.cost_formula,
-                probe.weight_formula,
-                form.variables,
-                e,
-            );
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    let model = component::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        name: Set(form.name.trim().to_string()),
-        product_id: Set(product_id),
-        cost_formula: Set(form.cost_formula),
-        weight_formula: Set(form.weight_formula),
-        variables: Set(variables),
-    };
-
-    match model.insert(&state.db).await {
-        Ok(saved) => respond_create_modal_done_fk::<ComponentCreateModalKey>(
-            &htmx,
-            &q.refresh_table(),
-            &ComponentDetailRouteTag::new(saved.id).url(),
-            saved.id,
-            &saved.name,
-            &q.target_input(),
-        ),
-        Err(e) => {
-            let page = empty_component_create_page(
-                &q,
-                form.name,
-                probe.cost_formula,
-                probe.weight_formula,
-                form.variables,
-                e.to_string(),
-            );
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-pub async fn component_edit_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let comp = match component::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(c)) => c,
-        _ => return Redirect::to(&WorkOrdersComponentsRouteTag.url()).into_response(),
-    };
-
-    let page = empty_component_edit_page(
-        id,
-        &q,
-        comp.name,
-        comp.cost_formula,
-        comp.weight_formula,
-        super::forms::schema_entries_from_json(&comp.variables),
-        String::new(),
-    );
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn component_edit_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    HtmlFormBody(form): HtmlFormBody<ComponentForm>,
-) -> impl IntoResponse {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let existing = match component::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(c)) => c,
-        _ => return Redirect::to(&WorkOrdersComponentsRouteTag.url()).into_response(),
-    };
-
-    if form.name.trim().is_empty() {
-        let page = empty_component_edit_page(
-            id,
-            &q,
-            form.name,
-            form.cost_formula,
-            form.weight_formula,
-            form.variables,
-            "Component name is required.".into(),
-        );
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let variables = match parse_component_variables_list(&form.variables) {
-        Ok(v) => v,
-        Err(e) => {
-            let page = empty_component_edit_page(
-                id,
-                &q,
-                form.name,
-                form.cost_formula,
-                form.weight_formula,
-                form.variables,
-                e,
-            );
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    let probe = component_from_form_fields(
-        form.name.trim().to_string(),
-        form.cost_formula.clone(),
-        form.weight_formula.clone(),
-        variables.clone(),
-    );
-    if let Err(e) = probe.validate_formulas() {
-        let page = empty_component_edit_page(
-            id,
-            &q,
-            form.name,
-            form.cost_formula,
-            form.weight_formula,
-            form.variables,
-            e.to_string(),
-        );
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let product_id = match crate::line_product::save_component_product(
-        &state.db,
-        existing.product_id,
-        form.name.trim(),
-        &variables,
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            let page = empty_component_edit_page(
-                id,
-                &q,
-                form.name,
-                form.cost_formula,
-                form.weight_formula,
-                form.variables,
-                e,
-            );
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    let now = Utc::now();
-    let mut am: component::ActiveModel = existing.into();
-    am.updated_at = Set(Some(now));
-    am.name = Set(form.name.trim().to_string());
-    am.product_id = Set(product_id);
-    am.cost_formula = Set(form.cost_formula);
-    am.weight_formula = Set(form.weight_formula);
-    am.variables = Set(variables);
-
-    match am.update(&state.db).await {
-        Ok(_) => respond_edit_modal_done::<ComponentEditModalKey>(
-            &htmx,
-            &ComponentDetailRouteTag::new(id).url(),
-        ),
-        Err(e) => {
-            let page = empty_component_edit_page(
-                id,
-                &q,
-                form.name,
-                probe.cost_formula,
-                probe.weight_formula,
-                form.variables,
-                e.to_string(),
-            );
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-pub async fn component_delete_get(
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = ConfirmDeleteModalPage {
-        modal_uid: ComponentDeleteModalKey::ID.to_string(),
-        title: "Delete Component".into(),
-        message: "Are you sure you want to delete this component?".into(),
-        post_url: ComponentDeletePostRouteTag::new(id).url(),
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn component_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let _ = component::Entity::delete_by_id(id).exec(&state.db).await;
-    htmx.redirect(&WorkOrdersComponentsRouteTag.url())
-}
-
-// ==========================================
-// 7. QUOTATIONS
-// ==========================================
-
-pub async fn invoices_list(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    uri: Uri,
-    Query(q): Query<ListQuery>,
-) -> maud::Markup {
-    let mut prepared = prepare(
-        uri.query().unwrap_or(""),
-        quotation_fields(),
-        state.db.get_database_backend(),
-    );
-    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
-    let invoices = quotation::Entity::find()
-        .filter(prepared.condition.clone())
-        .order_by_desc(quotation::Column::Date)
-        .order_by_desc(quotation::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let mut customer_names = Vec::with_capacity(invoices.len());
-    let mut grand_totals = Vec::with_capacity(invoices.len());
-    for inv in &invoices {
-        let name = lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|c| c.name)
-            .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
-        customer_names.push(name);
-        let mlines = quotation_material_line::Entity::find()
-            .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
-            .all(&state.db)
-            .await
-            .unwrap_or_default();
-        let mlmach = quotation_machine_line::Entity::find()
-            .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
-            .all(&state.db)
-            .await
-            .unwrap_or_default();
-        let mat_ids: Vec<i64> = mlines.iter().map(|l| l.id).collect();
-        let mach_ids: Vec<i64> = mlmach.iter().map(|l| l.id).collect();
-        let mat_tax_ids = tax_assoc::load_quotation_material_line_tax_ids_map(&state.db, &mat_ids)
-            .await
-            .unwrap_or_default();
-        let mach_tax_ids = tax_assoc::load_quotation_machine_line_tax_ids_map(&state.db, &mach_ids)
-            .await
-            .unwrap_or_default();
-        let mat_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &mat_tax_ids).await;
-        let mach_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &mach_tax_ids).await;
-        grand_totals.push(taxed_quotation_grand_total(
-            &mlines,
-            &mlmach,
-            &mat_taxes,
-            &mach_taxes,
-        ));
-    }
-    let rows: Vec<_> = invoices
-        .into_iter()
-        .zip(customer_names)
-        .zip(grand_totals)
-        .map(|((invoice, name), total)| (invoice, name, total))
-        .filter(|(_, _, total)| allows_decimal(&prepared.post, "total", *total))
-        .collect();
-    let (rows, page_num, num_pages) = paginate(rows, q.page.get(), q.page_size.get());
-    let mut invoices = Vec::with_capacity(rows.len());
-    let mut customer_names = Vec::with_capacity(rows.len());
-    let mut grand_totals = Vec::with_capacity(rows.len());
-    for (invoice, name, total) in rows {
-        invoices.push(invoice);
-        customer_names.push(name);
-        grand_totals.push(total);
-    }
-
-    let page = InvoiceListPage {
-        invoices,
-        customer_names,
-        grand_totals,
-        fields: prepared.fields,
-        filters: prepared.filters,
-        filter_errors: prepared.errors,
-        sort: q.sort.unwrap_or_default(),
-        path_and_query: path_and_query(&uri),
-        page: page_num,
-        num_pages,
-        page_size: q.page_size.get(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    if htmx.targets::<InvoiceTableKey>() {
-        return page.render_table();
-    }
-    if htmx.wants_main_content() {
-        return page.render_main().into();
-    }
-    if htmx.wants_app_layout() {
-        return page.render_pane().into();
-    }
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx)
-}
-
-pub async fn invoice_detail(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let Some(inv) = quotation::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response();
-    };
-
-    let machine_lines_raw = quotation_machine_line::Entity::find()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_machine_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let material_lines_raw = quotation_material_line::Entity::find()
-        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_material_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let machine_ids: Vec<i64> = machine_lines_raw
-        .iter()
-        .filter_map(|l| l.machine_id)
-        .collect();
-    let machines = machine::Entity::find()
-        .filter(machine::Column::Id.is_in(machine_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let machine_map: HashMap<i64, String> =
-        machines.iter().map(|m| (m.id, m.name.clone())).collect();
-    let machine_schemas: HashMap<i64, serde_json::Value> =
-        machines.into_iter().map(|m| (m.id, m.variables)).collect();
-
-    let comp_ids: Vec<i64> = material_lines_raw.iter().map(|l| l.component_id).collect();
-    let comps = component::Entity::find()
-        .filter(component::Column::Id.is_in(comp_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
-    let component_schemas: HashMap<i64, serde_json::Value> =
-        comps.into_iter().map(|c| (c.id, c.variables)).collect();
-
-    let mat_ids: Vec<i64> = material_lines_raw.iter().map(|l| l.id).collect();
-    let mach_ids: Vec<i64> = machine_lines_raw.iter().map(|l| l.id).collect();
-    let mat_tax_ids = tax_assoc::load_quotation_material_line_tax_ids_map(&state.db, &mat_ids)
-        .await
-        .unwrap_or_default();
-    let mach_tax_ids = tax_assoc::load_quotation_machine_line_tax_ids_map(&state.db, &mach_ids)
-        .await
-        .unwrap_or_default();
-    let material_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &mat_tax_ids).await;
-    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &mach_tax_ids).await;
-
-    let material_lines: Vec<(quotation_material_line::Model, String, String, Decimal)> =
-        material_lines_raw
-            .iter()
-            .cloned()
-            .map(|l| {
-                let c_name = comp_map
-                    .get(&l.component_id)
-                    .cloned()
-                    .unwrap_or_else(|| format!("Component #{}", l.component_id));
-                let taxes = tax_assoc::taxes_for_line(&material_taxes, l.id);
-                let labels = tax_assoc::tax_labels_display(taxes);
-                let taxed = l.taxed_total(taxes);
-                (l, c_name, labels, taxed)
-            })
-            .collect();
-
-    let product_ids: Vec<i64> = machine_lines_raw.iter().map(|l| l.product_id).collect();
-    let product_remarks = crate::line_product::product_remarks_by_id(&state.db, &product_ids).await;
-    let machine_lines: Vec<(quotation_machine_line::Model, String, String, Decimal)> =
-        machine_lines_raw
-            .iter()
-            .cloned()
-            .map(|mut l| {
-                l.remarks = crate::line_product::remarks_with_product_default(
-                    &l.remarks,
-                    product_remarks.get(&l.product_id).map(String::as_str),
-                );
-                let m_name = l
-                    .machine_id
-                    .and_then(|id| machine_map.get(&id).cloned())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| l.name.clone());
-                let taxes = tax_assoc::taxes_for_line(&machine_taxes, l.id);
-                let labels = tax_assoc::tax_labels_display(taxes);
-                let taxed = l.taxed_total(taxes);
-                (l, m_name, labels, taxed)
-            })
-            .collect();
-
-    let grand_total = taxed_quotation_grand_total(
-        &material_lines_raw,
-        &machine_lines_raw,
-        &material_taxes,
-        &machine_taxes,
-    );
-
-    let customer_name =
-        lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|c| c.name)
-            .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
-
-    let page = InvoiceDetailPage {
-        invoice: inv,
-        machine_lines,
-        material_lines,
-        component_schemas,
-        machine_schemas,
-        grand_total,
-        customer_name,
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-}
-
-async fn customer_name_by_id(db: &sea_orm::DatabaseConnection, id: i64) -> String {
+async fn require_vnode(db: &DatabaseConnection, id: i64) -> Result<i64, String> {
     if id <= 0 {
-        return String::new();
+        return Err("Select a file or folder.".to_string());
     }
-    lariv_plugin_contacts::entities::company::Entity::find_by_id(id)
+    let found = VNodeEntity::find_by_id(id)
         .one(db)
         .await
-        .ok()
-        .flatten()
-        .map(|c| c.name)
-        .unwrap_or_default()
+        .map_err(|err| err.to_string())?;
+    if found.is_none() {
+        return Err("Select a file or folder.".to_string());
+    }
+    Ok(id)
 }
 
-/// Re-render the create modal with the submitted fields intact. HTMX `outerMorph`s
-/// this over the open modal, so dropping any field here looks like a full reset.
-async fn invoice_create_error_modal(
-    db: &sea_orm::DatabaseConnection,
-    form_name: String,
-    form: &InvoiceFormData,
-    error: String,
-) -> InvoiceCreateModalPage {
-    InvoiceCreateModalPage {
-        form_name,
-        invoice_number: form.invoice_number.clone(),
-        date: form.date.clone(),
-        customer_id: (form.customer_id > 0).then_some(form.customer_id),
-        customer_name: customer_name_by_id(db, form.customer_id).await,
-        bank_account: form.bank_account.clone(),
-        remarks: form.remarks.clone(),
-        material_lines_json: form.material_lines.clone().unwrap_or_default(),
-        machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
-        components_json: components_json(db).await,
-        machines_json: fetch_machines_json(db).await,
-        taxes_json: tax_assoc::taxes_catalog_json(db).await,
-        error,
+async fn vnode_label(db: &DatabaseConnection, id: i64) -> String {
+    if id <= 0 {
+        return "Files".to_string();
     }
-}
-
-async fn invoice_edit_error_modal(
-    db: &sea_orm::DatabaseConnection,
-    id: i64,
-    form_name: String,
-    form: &InvoiceFormData,
-    error: String,
-) -> InvoiceEditModalPage {
-    InvoiceEditModalPage {
-        id,
-        form_name,
-        invoice_number: form.invoice_number.clone(),
-        date: form.date.clone(),
-        customer_id: form.customer_id,
-        customer_name: customer_name_by_id(db, form.customer_id).await,
-        bank_account: form.bank_account.clone(),
-        remarks: form.remarks.clone(),
-        material_lines_json: form.material_lines.clone().unwrap_or_default(),
-        machine_lines_json: form.machine_lines.clone().unwrap_or_default(),
-        components_json: components_json(db).await,
-        machines_json: fetch_machines_json(db).await,
-        taxes_json: tax_assoc::taxes_catalog_json(db).await,
-        error,
-    }
-}
-
-pub async fn invoice_create_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-) -> maud::Markup {
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let components_json = components_json(&state.db).await;
-    let machines_json = fetch_machines_json(&state.db).await;
-    let bank_account = load_preferences(&state.db)
-        .await
-        .ok()
-        .and_then(|prefs| prefs.default_bank_account)
-        .unwrap_or_default();
-
-    let page = InvoiceCreateModalPage {
-        form_name: q.form_name(),
-        invoice_number: String::new(),
-        date: today,
-        customer_id: None,
-        customer_name: String::new(),
-        bank_account,
-        remarks: String::new(),
-        material_lines_json: "[]".into(),
-        machine_lines_json: "[]".into(),
-        components_json,
-        machines_json,
-        taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct InvoiceFormData {
-    #[serde(alias = "invoice_number", default)]
-    pub invoice_number: String,
-    #[serde(alias = "date", default)]
-    pub date: String,
-    #[serde(
-        alias = "customer_id",
-        alias = "CustomerID",
-        default,
-        deserialize_with = "i64_from_str_or_zero"
-    )]
-    pub customer_id: i64,
-    #[serde(alias = "material_lines", default)]
-    pub material_lines: Option<String>,
-    #[serde(alias = "machine_lines", default)]
-    pub machine_lines: Option<String>,
-    #[serde(alias = "bank_account", default)]
-    pub bank_account: String,
-    #[serde(alias = "remarks", default)]
-    pub remarks: String,
-}
-
-pub async fn invoice_create_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Form(form): Form<InvoiceFormData>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-
-    if form.customer_id <= 0 {
-        let page = invoice_create_error_modal(
-            &state.db,
-            q.form_name(),
-            &form,
-            "Please select a customer.".into(),
-        )
-        .await;
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let date = match chrono::NaiveDate::parse_from_str(form.date.trim(), "%Y-%m-%d") {
-        Ok(d) => d,
-        Err(_) => {
-            let page = invoice_create_error_modal(
-                &state.db,
-                q.form_name(),
-                &form,
-                "Invalid date format. Use YYYY-MM-DD.".into(),
-            )
-            .await;
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()).and_then(|_| {
-        validate_quotation_line_prices(
-            form.material_lines.as_deref(),
-            form.machine_lines.as_deref(),
-        )
-    }) {
-        let page = invoice_create_error_modal(&state.db, q.form_name(), &form, e).await;
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let invoice_number =
-        match quotation_number::resolve_quotation_number(&state.db, &form.invoice_number, date)
-            .await
-        {
-            Ok(n) => n,
-            Err(e) => {
-                let page = invoice_create_error_modal(
-                    &state.db,
-                    q.form_name(),
-                    &form,
-                    format!("Failed to assign quotation number: {e}"),
-                )
-                .await;
-                return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-            }
-        };
-
-    let now = Utc::now();
-    let model = quotation::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        date: Set(date),
-        customer_id: Set(form.customer_id),
-        invoice_number: Set(invoice_number),
-        bank_account: Set(opt_text(&form.bank_account)),
-        remarks: Set(form.remarks.trim().to_string()),
-    };
-
-    match model.insert(&state.db).await {
-        Ok(saved) => {
-            sync_invoice_lines(
-                &state.db,
-                saved.id,
-                form.material_lines,
-                form.machine_lines,
-                now,
-            )
-            .await;
-            respond_create_modal_done::<InvoiceCreateModalKey>(
-                &htmx,
-                &q.refresh_table(),
-                &InvoiceDetailRouteTag::new(saved.id).url(),
-            )
-        }
-        Err(e) => {
-            let page =
-                invoice_create_error_modal(&state.db, q.form_name(), &form, e.to_string()).await;
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-pub async fn invoice_edit_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-
-    let customer_name =
-        lariv_plugin_contacts::entities::company::Entity::find_by_id(inv.customer_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|c| c.name)
-            .unwrap_or_else(|| format!("Customer #{}", inv.customer_id));
-
-    let material_lines_json = invoice_material_lines_json(&state.db, inv.id).await;
-    let machine_lines_json = invoice_machine_lines_json(&state.db, inv.id).await;
-    let components_json = components_json(&state.db).await;
-    let machines_json = fetch_machines_json(&state.db).await;
-
-    let page = InvoiceEditModalPage {
-        id,
-        form_name: q.form_name(),
-        invoice_number: inv.invoice_number,
-        date: inv.date.to_string(),
-        customer_id: inv.customer_id,
-        bank_account: inv.bank_account.unwrap_or_default(),
-        remarks: inv.remarks,
-        customer_name,
-        material_lines_json,
-        machine_lines_json,
-        components_json,
-        machines_json,
-        taxes_json: tax_assoc::taxes_catalog_json(&state.db).await,
-        error: String::new(),
-    };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn invoice_edit_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    Form(form): Form<InvoiceFormData>,
-) -> impl IntoResponse {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let existing = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-
-    let date =
-        chrono::NaiveDate::parse_from_str(form.date.trim(), "%Y-%m-%d").unwrap_or(existing.date);
-
-    if let Err(e) = validate_machine_lines_json(form.machine_lines.as_deref()).and_then(|_| {
-        validate_quotation_line_prices(
-            form.material_lines.as_deref(),
-            form.machine_lines.as_deref(),
-        )
-    }) {
-        let page = invoice_edit_error_modal(&state.db, id, q.form_name(), &form, e).await;
-        return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-    }
-
-    let invoice_number =
-        match quotation_number::resolve_quotation_number(&state.db, &form.invoice_number, date)
-            .await
-        {
-            Ok(n) => n,
-            Err(e) => {
-                let page = invoice_edit_error_modal(
-                    &state.db,
-                    id,
-                    q.form_name(),
-                    &form,
-                    format!("Failed to assign quotation number: {e}"),
-                )
-                .await;
-                return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-            }
-        };
-
-    let now = Utc::now();
-    let mut am: quotation::ActiveModel = existing.into();
-    am.updated_at = Set(Some(now));
-    am.invoice_number = Set(invoice_number);
-    am.date = Set(date);
-    am.customer_id = Set(form.customer_id);
-    am.bank_account = Set(opt_text(&form.bank_account));
-    am.remarks = Set(form.remarks.trim().to_string());
-
-    match am.update(&state.db).await {
-        Ok(_) => {
-            sync_invoice_lines(&state.db, id, form.material_lines, form.machine_lines, now).await;
-            respond_edit_modal_done::<InvoiceEditModalKey>(
-                &htmx,
-                &InvoiceDetailRouteTag::new(id).url(),
-            )
-        }
-        Err(e) => {
-            let page =
-                invoice_edit_error_modal(&state.db, id, q.form_name(), &form, e.to_string()).await;
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-pub async fn invoice_delete_get(
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = ConfirmDeleteModalPage {
-        modal_uid: InvoiceDeleteModalKey::ID.to_string(),
-        title: "Delete Quotation".into(),
-        message: "Are you sure you want to delete this quotation?".into(),
-        post_url: InvoiceDeletePostRouteTag::new(id).url(),
-        error: String::new(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn invoice_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let _ = quotation::Entity::delete_by_id(id).exec(&state.db).await;
-    htmx.redirect(&WorkOrdersInvoicesRouteTag.url())
-}
-
-/// Duplicate a quotation, its lines, and their taxes. The copy gets today's date
-/// and a newly assigned quotation number.
-async fn copy_quotation(
-    db: &sea_orm::DatabaseConnection,
-    quotation_id: i64,
-) -> Result<i64, String> {
-    let inv = quotation::Entity::find_by_id(quotation_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quotation not found".to_string())?;
-
-    let material_lines = quotation_material_line::Entity::find()
-        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_material_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
-    let mat_tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = quotation_machine_line::Entity::find()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_machine_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let mach_tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
-        .await
-        .unwrap_or_default();
-
-    let date = chrono::Local::now().date_naive();
-    let invoice_number = quotation_number::resolve_quotation_number(db, "", date)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let now = Utc::now();
-    let txn = db.begin().await.map_err(|e| e.to_string())?;
-    let saved = quotation::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        date: Set(date),
-        customer_id: Set(inv.customer_id),
-        invoice_number: Set(invoice_number),
-        bank_account: Set(inv.bank_account),
-        remarks: Set(inv.remarks),
-    }
-    .insert(&txn)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for line in material_lines {
-        let copied = quotation_material_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            invoice_id: Set(saved.id),
-            component_id: Set(line.component_id),
-            product_id: Set(line.product_id),
-            variables: Set(line.variables),
-            final_cost: Set(line.final_cost),
-            extra_data: Set(line.extra_data),
-            remarks: Set(line.remarks),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mat_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_quotation_material_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    for line in machine_lines {
-        let copied = quotation_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            invoice_id: Set(saved.id),
-            machine_id: Set(line.machine_id),
-            product_id: Set(line.product_id),
-            name: Set(line.name),
-            variables: Set(line.variables),
-            final_cost: Set(line.final_cost),
-            remarks: Set(line.remarks),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mach_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_quotation_machine_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    txn.commit().await.map_err(|e| e.to_string())?;
-    Ok(saved.id)
-}
-
-pub async fn invoice_copy_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    match copy_quotation(&state.db, id).await {
-        Ok(new_id) => htmx.redirect(&InvoiceDetailRouteTag::new(new_id).url()),
-        Err(_) => htmx.redirect(&InvoiceDetailRouteTag::new(id).url()),
-    }
-}
-
-fn quotation_invoice_remarks(remarks: &str) -> Option<String> {
-    let text = remarks.trim();
-    if text.is_empty() {
-        None
-    } else {
-        Some(text.to_string())
-    }
-}
-
-fn quotation_invoice_line(
-    product_id: i64,
-    variables: serde_json::Value,
-    tax_ids: Vec<i64>,
-    remarks: &str,
-    rate: Decimal,
-) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftLinePending, String> {
-    if product_id <= 0 {
-        return Err("a quotation line is not linked to a product".into());
-    }
-    Ok(
-        lariv_plugin_finance_invoices::logic::draft::DraftLinePending {
-            product_id,
-            rate: Some(rate.normalize().to_string()),
-            quantity: "1".into(),
-            variables: Some(variables),
-            tax_ids: Some(tax_ids),
-            remarks: quotation_invoice_remarks(remarks),
-        },
-    )
-}
-
-fn quotation_invoice_service_line(
-    service_id: i64,
-    variables: serde_json::Value,
-    tax_ids: Vec<i64>,
-    remarks: &str,
-) -> Result<lariv_plugin_finance_invoices::logic::draft::DraftServiceLinePending, String> {
-    if service_id <= 0 {
-        return Err("a quotation machine line is not linked to a service".into());
-    }
-    Ok(
-        lariv_plugin_finance_invoices::logic::draft::DraftServiceLinePending {
-            service_id,
-            rate: None,
-            quantity: "1".into(),
-            variables: Some(variables),
-            tax_ids: Some(tax_ids),
-            remarks: quotation_invoice_remarks(remarks),
-        },
-    )
-}
-
-/// Copy quotation lines onto a new draft invoice for the same company.
-async fn create_draft_invoice_from_quotation(
-    db: &sea_orm::DatabaseConnection,
-    quotation_id: i64,
-) -> Result<i64, String> {
-    use lariv_plugin_finance_invoices::logic::draft::{CreateDraftInput, create_draft_invoice};
-    use lariv_plugin_finance_invoices::logic::draft_payment_term::{
-        default_payment_term_lines_json, parse_payment_term_lines_json,
-    };
-    use lariv_plugin_finance_invoices::logic::preferences::load_invoice_preferences;
-
-    let inv = quotation::Entity::find_by_id(quotation_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quotation not found".to_string())?;
-
-    let material_lines = quotation_material_line::Entity::find()
-        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_material_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
-    let mat_tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = quotation_machine_line::Entity::find()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_machine_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let mach_tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
-        .await
-        .unwrap_or_default();
-
-    let mut service_lines = Vec::new();
-    for line in machine_lines {
-        service_lines.push(quotation_invoice_service_line(
-            line.product_id,
-            line.variables,
-            mach_tax_map.get(&line.id).cloned().unwrap_or_default(),
-            &line.remarks,
-        )?);
-    }
-    let mut lines = Vec::new();
-    for line in material_lines {
-        lines.push(quotation_invoice_line(
-            line.product_id,
-            line.variables,
-            mat_tax_map.get(&line.id).cloned().unwrap_or_default(),
-            &line.remarks,
-            line.final_cost,
-        )?);
-    }
-    if lines.is_empty() && service_lines.is_empty() {
-        return Err("This quotation has no lines to invoice.".into());
-    }
-
-    let prefs = load_invoice_preferences(db).await;
-    let datetime = inv
-        .date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| "invalid quotation date".to_string())?
-        .and_utc();
-    let reference = {
-        let number = inv.invoice_number.trim();
-        if number.is_empty() {
-            None
-        } else {
-            Some(number.to_string())
-        }
-    };
-    let remarks = {
-        let text = inv.remarks.trim();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text.to_string())
-        }
-    };
-
-    let customer_id =
-        lariv_plugin_crm::logic::customer::create_for_party(db, inv.customer_id, 0).await?;
-    let draft = create_draft_invoice(
-        db,
-        CreateDraftInput {
-            number: None,
-            reference,
-            eway_bill_number: None,
-            payment_reference: None,
-            bank_account: inv
-                .bank_account
-                .clone()
-                .filter(|account| !account.trim().is_empty())
-                .or(prefs.default_bank_account),
-            remarks,
-            datetime,
-            delivery_date: None,
-            customer_id,
-            payment_term_lines: parse_payment_term_lines_json(&default_payment_term_lines_json())?,
-            header_tax_ids: Vec::new(),
-            lines,
-            service_lines,
-        },
-        "UTC",
-    )
-    .await?;
-    Ok(draft.id)
-}
-
-pub async fn invoice_create_draft_invoice_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-    let page = InvoiceCreateDraftInvoiceModalPage {
-        id,
-        form_name: q.form_name(),
-        quotation_number: inv.invoice_number,
-        error: String::new(),
-    };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn invoice_create_draft_invoice_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-
-    match create_draft_invoice_from_quotation(&state.db, id).await {
-        Ok(draft_id) => respond_create_modal_done::<InvoiceCreateDraftInvoiceModalKey>(
-            &htmx,
-            &q.refresh_table(),
-            &lariv_plugin_finance_invoices::routes::DraftInvoiceDetailRouteTag::new(draft_id).url(),
-        ),
-        Err(e) => {
-            let page = InvoiceCreateDraftInvoiceModalPage {
-                id,
-                form_name: q.form_name(),
-                quotation_number: inv.invoice_number,
-                error: e,
-            };
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-/// Copy a quotation into a final work order and schedule its machines as a job.
-async fn create_work_order_from_quotation(
-    db: &sea_orm::DatabaseConnection,
-    quotation_id: i64,
-    duration: JobDuration,
-) -> Result<i64, String> {
-    let inv = quotation::Entity::find_by_id(quotation_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quotation not found".to_string())?;
-
-    let material_lines = quotation_material_line::Entity::find()
-        .filter(quotation_material_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_material_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
-    let mat_tax_map = tax_assoc::load_quotation_material_line_tax_ids_map(db, &mat_ids)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = quotation_machine_line::Entity::find()
-        .filter(quotation_machine_line::Column::InvoiceId.eq(inv.id))
-        .order_by_asc(quotation_machine_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let mach_tax_map = tax_assoc::load_quotation_machine_line_tax_ids_map(db, &mach_ids)
-        .await
-        .unwrap_or_default();
-
-    let mut machine_ids: Vec<i64> = Vec::new();
-    for ql in &machine_lines {
-        if let Some(machine_id) = ql.machine_id.filter(|id| *id > 0) {
-            if !machine_ids.contains(&machine_id) {
-                machine_ids.push(machine_id);
-            }
-        }
-    }
-
-    let now = Utc::now();
-    let order_number = inv.invoice_number.clone();
-    let job_name = if order_number.trim().is_empty() {
-        format!("Work Order from {}", inv.invoice_number)
-    } else {
-        order_number.clone()
-    };
-    let remarks = format!("Work order from quotation {}", inv.invoice_number);
-
-    let txn = db.begin().await.map_err(|e| e.to_string())?;
-    let job = create_open_job(&txn, job_name, duration, &machine_ids, remarks).await?;
-
-    let saved = work_order::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        order_number: Set(order_number),
-        customer_id: Set(inv.customer_id),
-        quotation_id: Set(Some(inv.id)),
-        job_id: Set(Some(job.id)),
-        duration: Set(duration),
-    }
-    .insert(&txn)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    set_job_source_doc(&txn, job.id, WORK_ORDER_SOURCE_DOC_TYPE, saved.id).await?;
-
-    for ql in material_lines {
-        let line = work_order_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            work_order_id: Set(saved.id),
-            component_id: Set(ql.component_id),
-            product_id: Set(ql.product_id),
-            variables: Set(ql.variables.clone()),
-            final_cost: Set(ql.final_cost),
-            extra_data: Set(ql.extra_data.clone()),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mat_tax_map.get(&ql.id).cloned().unwrap_or_default();
-        tax_assoc::set_work_order_material_line_taxes(&txn, line.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    for ql in machine_lines {
-        let product_id = match ql.machine_id.filter(|id| *id > 0) {
-            Some(machine_id) => crate::line_product::machine_product_id(&txn, machine_id).await?,
-            None => ql.product_id,
-        };
-        let line = work_order_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            work_order_id: Set(saved.id),
-            machine_id: Set(ql.machine_id.filter(|id| *id > 0)),
-            product_id: Set(product_id),
-            name: Set(ql.name.clone()),
-            variables: Set(ql.variables.clone()),
-            final_cost: Set(ql.final_cost),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mach_tax_map.get(&ql.id).cloned().unwrap_or_default();
-        tax_assoc::set_work_order_machine_line_taxes(&txn, line.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    txn.commit().await.map_err(|e| e.to_string())?;
-    Ok(saved.id)
-}
-
-pub async fn invoice_create_work_order_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-
-    let page = InvoiceCreateWorkOrderModalPage {
-        id,
-        form_name: q.form_name(),
-        quotation_number: inv.invoice_number,
-        duration: String::new(),
-        error: String::new(),
-    };
-    html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct InvoiceCreateWorkOrderFormData {
-    #[serde(alias = "duration", default)]
-    pub duration: String,
-}
-
-pub async fn invoice_create_work_order_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Query(q): Query<ModalFormQuery>,
-    Path(id): Path<i64>,
-    Form(form): Form<InvoiceCreateWorkOrderFormData>,
-) -> Response {
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    let inv = match quotation::Entity::find_by_id(id).one(&state.db).await {
-        Ok(Some(i)) => i,
-        _ => return Redirect::to(&WorkOrdersInvoicesRouteTag.url()).into_response(),
-    };
-
-    let duration = match parse_job_duration(&form.duration) {
-        Ok(d) => d,
-        Err(e) => {
-            let page = InvoiceCreateWorkOrderModalPage {
-                id,
-                form_name: q.form_name(),
-                quotation_number: inv.invoice_number,
-                duration: form.duration.clone(),
-                error: format!("Invalid duration: {e}"),
-            };
-            return html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response();
-        }
-    };
-
-    match create_work_order_from_quotation(&state.db, id, duration).await {
-        Ok(order_id) => respond_create_modal_done::<InvoiceCreateWorkOrderModalKey>(
-            &htmx,
-            &q.refresh_table(),
-            &IssuedWorkOrderDetailRouteTag::new(order_id).url(),
-        ),
-        Err(e) => {
-            let page = InvoiceCreateWorkOrderModalPage {
-                id,
-                form_name: q.form_name(),
-                quotation_number: inv.invoice_number,
-                duration: form.duration,
-                error: e,
-            };
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-/// Convert a draft work order into a work order, then delete the draft.
-async fn convert_draft_to_work_order(
-    db: &sea_orm::DatabaseConnection,
-    draft_id: i64,
-) -> Result<i64, String> {
-    let draft = draft_work_order::Entity::find_by_id(draft_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Draft work order not found".to_string())?;
-
-    let material_lines = draft_work_order_material_line::Entity::find()
-        .filter(draft_work_order_material_line::Column::DraftWorkOrderId.eq(draft.id))
-        .order_by_asc(draft_work_order_material_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
-    let mat_tax_map = tax_assoc::load_draft_material_line_tax_ids_map(db, &mat_ids)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = draft_work_order_machine_line::Entity::find()
-        .filter(draft_work_order_machine_line::Column::DraftWorkOrderId.eq(draft.id))
-        .order_by_asc(draft_work_order_machine_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let mach_tax_map = tax_assoc::load_draft_machine_line_tax_ids_map(db, &mach_ids)
-        .await
-        .unwrap_or_default();
-
-    let mut machine_ids: Vec<i64> = Vec::new();
-    for line in &machine_lines {
-        if line.machine_id > 0 && !machine_ids.contains(&line.machine_id) {
-            machine_ids.push(line.machine_id);
-        }
-    }
-
-    let machines = machine::Entity::find()
-        .filter(machine::Column::Id.is_in(machine_ids.clone()))
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let machine_names: HashMap<i64, String> =
-        machines.into_iter().map(|m| (m.id, m.name)).collect();
-
-    let now = Utc::now();
-    let order_number = draft.order_number.clone();
-    let job_name = if order_number.trim().is_empty() {
-        format!("Work Order #{draft_id}")
-    } else {
-        order_number.clone()
-    };
-    let remarks = if order_number.trim().is_empty() {
-        "Work order from draft".to_string()
-    } else {
-        format!("Work order from draft {order_number}")
-    };
-
-    let txn = db.begin().await.map_err(|e| e.to_string())?;
-    let job = create_open_job(&txn, job_name, draft.duration, &machine_ids, remarks).await?;
-
-    let saved = work_order::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        order_number: Set(order_number),
-        customer_id: Set(draft.customer_id),
-        quotation_id: Set(draft.quotation_id),
-        job_id: Set(Some(job.id)),
-        duration: Set(draft.duration),
-    }
-    .insert(&txn)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    set_job_source_doc(&txn, job.id, WORK_ORDER_SOURCE_DOC_TYPE, saved.id).await?;
-
-    for line in material_lines {
-        let copied = work_order_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            work_order_id: Set(saved.id),
-            component_id: Set(line.component_id),
-            product_id: Set(line.product_id),
-            variables: Set(line.variables.clone()),
-            final_cost: Set(line.final_cost),
-            extra_data: Set(line.extra_data.clone()),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mat_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_work_order_material_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    for line in machine_lines {
-        let name = machine_names
-            .get(&line.machine_id)
-            .cloned()
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| format!("Machine #{}", line.machine_id));
-        let product_id = if line.machine_id > 0 {
-            crate::line_product::machine_product_id(&txn, line.machine_id).await?
-        } else {
-            line.product_id
-        };
-        let copied = work_order_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            work_order_id: Set(saved.id),
-            machine_id: Set(if line.machine_id > 0 {
-                Some(line.machine_id)
-            } else {
-                None
-            }),
-            name: Set(name),
-            product_id: Set(product_id),
-            variables: Set(line.variables.clone()),
-            final_cost: Set(line.final_cost),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mach_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_work_order_machine_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    draft_work_order::Entity::delete_by_id(draft.id)
-        .exec(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    txn.commit().await.map_err(|e| e.to_string())?;
-    Ok(saved.id)
-}
-
-pub async fn work_order_convert_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    match convert_draft_to_work_order(&state.db, id).await {
-        Ok(order_id) => htmx.redirect(&IssuedWorkOrderDetailRouteTag::new(order_id).url()),
-        Err(_) => htmx.redirect(&WorkOrderDetailRouteTag::new(id).url()),
-    }
-}
-
-/// Copy a work order into a new draft without deleting the work order.
-async fn new_draft_from_work_order(
-    db: &sea_orm::DatabaseConnection,
-    work_order_id: i64,
-) -> Result<i64, String> {
-    let order = work_order::Entity::find_by_id(work_order_id)
-        .one(db)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Work order not found".to_string())?;
-
-    let material_lines = work_order_line::Entity::find()
-        .filter(work_order_line::Column::WorkOrderId.eq(order.id))
-        .order_by_asc(work_order_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mat_ids: Vec<i64> = material_lines.iter().map(|l| l.id).collect();
-    let mat_tax_map = tax_assoc::load_work_order_material_line_tax_ids_map(db, &mat_ids)
-        .await
-        .unwrap_or_default();
-
-    let machine_lines = work_order_machine_line::Entity::find()
-        .filter(work_order_machine_line::Column::WorkOrderId.eq(order.id))
-        .order_by_asc(work_order_machine_line::Column::Id)
-        .all(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mach_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let mach_tax_map = tax_assoc::load_work_order_machine_line_tax_ids_map(db, &mach_ids)
-        .await
-        .unwrap_or_default();
-
-    let now = Utc::now();
-    let txn = db.begin().await.map_err(|e| e.to_string())?;
-
-    let saved = draft_work_order::ActiveModel {
-        id: Default::default(),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        order_number: Set(order.order_number.clone()),
-        customer_id: Set(order.customer_id),
-        quotation_id: Set(order.quotation_id),
-        duration: Set(order.duration),
-    }
-    .insert(&txn)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for line in material_lines {
-        let copied = draft_work_order_material_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            draft_work_order_id: Set(saved.id),
-            component_id: Set(line.component_id),
-            product_id: Set(line.product_id),
-            variables: Set(line.variables.clone()),
-            final_cost: Set(line.final_cost),
-            extra_data: Set(line.extra_data.clone()),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mat_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_draft_material_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    for line in machine_lines {
-        let Some(machine_id) = line.machine_id.filter(|id| *id > 0) else {
-            continue;
-        };
-        let product_id = crate::line_product::machine_product_id(&txn, machine_id).await?;
-        let copied = draft_work_order_machine_line::ActiveModel {
-            id: Default::default(),
-            created_at: Set(Some(now)),
-            updated_at: Set(Some(now)),
-            draft_work_order_id: Set(saved.id),
-            machine_id: Set(machine_id),
-            product_id: Set(product_id),
-            variables: Set(line.variables.clone()),
-            final_cost: Set(line.final_cost),
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| e.to_string())?;
-        let tax_ids = mach_tax_map.get(&line.id).cloned().unwrap_or_default();
-        tax_assoc::set_draft_machine_line_taxes(&txn, copied.id, &tax_ids)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    txn.commit().await.map_err(|e| e.to_string())?;
-    Ok(saved.id)
-}
-
-pub async fn issued_work_order_new_draft_post(
-    Cap(state): Cap<WorkOrdersState>,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    match new_draft_from_work_order(&state.db, id).await {
-        Ok(draft_id) => htmx.redirect(&WorkOrderDetailRouteTag::new(draft_id).url()),
-        Err(_) => htmx.redirect(&IssuedWorkOrderDetailRouteTag::new(id).url()),
-    }
-}
-
-fn taxed_work_order_grand_total(
-    lines: &[work_order_line::Model],
-    machine_lines: &[work_order_machine_line::Model],
-    material_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-    machine_taxes: &HashMap<i64, Vec<lariv_plugin_finance_taxes::entities::tax::Model>>,
-) -> Decimal {
-    let materials: Decimal = lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(material_taxes, l.id)))
-        .sum();
-    let machines: Decimal = machine_lines
-        .iter()
-        .map(|l| l.taxed_total(tax_assoc::taxes_for_line(machine_taxes, l.id)))
-        .sum();
-    materials + machines
-}
-
-pub async fn issued_work_orders_list(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    uri: Uri,
-    Query(q): Query<ListQuery>,
-) -> maud::Markup {
-    let mut prepared = prepare(
-        uri.query().unwrap_or(""),
-        issued_work_order_fields(),
-        state.db.get_database_backend(),
-    );
-    fill_company_fk(&state.db, &mut prepared.filters, "customer_id").await;
-    let orders = work_order::Entity::find()
-        .filter(prepared.condition.clone())
-        .order_by_desc(work_order::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let all_lines = work_order_line::Entity::find()
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let all_machine_lines = work_order_machine_line::Entity::find()
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let mut lines_by_order: HashMap<i64, Vec<work_order_line::Model>> = HashMap::new();
-    for line in all_lines {
-        lines_by_order
-            .entry(line.work_order_id)
-            .or_default()
-            .push(line);
-    }
-    let mut machine_lines_by_order: HashMap<i64, Vec<work_order_machine_line::Model>> =
-        HashMap::new();
-    for line in all_machine_lines {
-        machine_lines_by_order
-            .entry(line.work_order_id)
-            .or_default()
-            .push(line);
-    }
-
-    let material_ids: Vec<i64> = lines_by_order.values().flatten().map(|l| l.id).collect();
-    let machine_ids: Vec<i64> = machine_lines_by_order
-        .values()
-        .flatten()
-        .map(|l| l.id)
-        .collect();
-    let material_tax_ids =
-        tax_assoc::load_work_order_material_line_tax_ids_map(&state.db, &material_ids)
-            .await
-            .unwrap_or_default();
-    let machine_tax_ids =
-        tax_assoc::load_work_order_machine_line_tax_ids_map(&state.db, &machine_ids)
-            .await
-            .unwrap_or_default();
-    let material_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &material_tax_ids).await;
-    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &machine_tax_ids).await;
-
-    let mut customer_names = Vec::with_capacity(orders.len());
-    let mut job_labels = Vec::with_capacity(orders.len());
-    let mut totals = Vec::with_capacity(orders.len());
-    let mut line_counts = Vec::with_capacity(orders.len());
-    for o in &orders {
-        let name = lariv_plugin_contacts::entities::company::Entity::find_by_id(o.customer_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|c| c.name)
-            .unwrap_or_else(|| format!("Customer #{}", o.customer_id));
-        customer_names.push(name);
-        job_labels.push(match o.job_id {
-            Some(id) => format!("#{id}"),
-            None => "—".into(),
-        });
-        let lines = lines_by_order
-            .get(&o.id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        let machine_lines = machine_lines_by_order
-            .get(&o.id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        totals.push(taxed_work_order_grand_total(
-            lines,
-            machine_lines,
-            &material_taxes,
-            &machine_taxes,
-        ));
-        line_counts.push(lines.len() + machine_lines.len());
-    }
-    let rows: Vec<_> = orders
-        .into_iter()
-        .zip(customer_names)
-        .zip(job_labels)
-        .zip(line_counts)
-        .zip(totals)
-        .map(|((((order, name), job), count), total)| (order, name, job, count, total))
-        .filter(|(_, _, _, count, total)| {
-            allows_i64(&prepared.post, "lines", *count as i64)
-                && allows_decimal(&prepared.post, "total", *total)
-        })
-        .collect();
-    let (rows, page_num, num_pages) = paginate(rows, q.page.get(), q.page_size.get());
-    let mut orders = Vec::with_capacity(rows.len());
-    let mut customer_names = Vec::with_capacity(rows.len());
-    let mut job_labels = Vec::with_capacity(rows.len());
-    let mut line_counts = Vec::with_capacity(rows.len());
-    let mut totals = Vec::with_capacity(rows.len());
-    for (order, name, job, count, total) in rows {
-        orders.push(order);
-        customer_names.push(name);
-        job_labels.push(job);
-        line_counts.push(count);
-        totals.push(total);
-    }
-
-    let page = IssuedWorkOrderListPage {
-        orders,
-        customer_names,
-        job_labels,
-        line_counts,
-        totals,
-        fields: prepared.fields,
-        filters: prepared.filters,
-        filter_errors: prepared.errors,
-        sort: q.sort.unwrap_or_default(),
-        path_and_query: path_and_query(&uri),
-        page: page_num,
-        num_pages,
-        page_size: q.page_size.get(),
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    if htmx.targets::<IssuedWorkOrderTableKey>() {
-        return page.render_table();
-    }
-    if htmx.wants_main_content() {
-        return page.render_main().into();
-    }
-    if htmx.wants_app_layout() {
-        return page.render_pane().into();
-    }
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx)
-}
-
-pub async fn issued_work_order_detail(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    let Some(order) = work_order::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return Redirect::to(&IssuedWorkOrdersRouteTag.url()).into_response();
-    };
-
-    let lines = work_order_line::Entity::find()
-        .filter(work_order_line::Column::WorkOrderId.eq(id))
-        .order_by_asc(work_order_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let machine_lines = work_order_machine_line::Entity::find()
-        .filter(work_order_machine_line::Column::WorkOrderId.eq(id))
-        .order_by_asc(work_order_machine_line::Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-
-    let machine_ids: Vec<i64> = machine_lines.iter().filter_map(|l| l.machine_id).collect();
-    let machines = machine::Entity::find()
-        .filter(machine::Column::Id.is_in(machine_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let machine_map: HashMap<i64, String> =
-        machines.iter().map(|m| (m.id, m.name.clone())).collect();
-    let machine_schemas: HashMap<i64, serde_json::Value> =
-        machines.into_iter().map(|m| (m.id, m.variables)).collect();
-
-    let comp_ids: Vec<i64> = lines.iter().map(|l| l.component_id).collect();
-    let comps = component::Entity::find()
-        .filter(component::Column::Id.is_in(comp_ids))
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    let comp_map: HashMap<i64, String> = comps.iter().map(|c| (c.id, c.name.clone())).collect();
-    let component_schemas: HashMap<i64, serde_json::Value> =
-        comps.into_iter().map(|c| (c.id, c.variables)).collect();
-
-    let customer = lariv_plugin_contacts::entities::company::Entity::find_by_id(order.customer_id)
-        .one(&state.db)
-        .await
-        .ok()
-        .flatten();
-
-    let quotation_number = if let Some(qid) = order.quotation_id {
-        quotation::Entity::find_by_id(qid)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|q| q.invoice_number)
-    } else {
-        None
-    };
-
-    let job_name = if let Some(job_id) = order.job_id {
-        job::Entity::find_by_id(job_id)
-            .one(&state.db)
-            .await
-            .ok()
-            .flatten()
-            .map(|j| j.name)
-    } else {
-        None
-    };
-
-    let material_ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
-    let machine_line_ids: Vec<i64> = machine_lines.iter().map(|l| l.id).collect();
-    let material_tax_ids =
-        tax_assoc::load_work_order_material_line_tax_ids_map(&state.db, &material_ids)
-            .await
-            .unwrap_or_default();
-    let machine_tax_ids =
-        tax_assoc::load_work_order_machine_line_tax_ids_map(&state.db, &machine_line_ids)
-            .await
-            .unwrap_or_default();
-    let material_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &material_tax_ids).await;
-    let machine_taxes = tax_assoc::resolve_taxes_by_line_id(&state.db, &machine_tax_ids).await;
-
-    let total_amount =
-        taxed_work_order_grand_total(&lines, &machine_lines, &material_taxes, &machine_taxes);
-
-    let lines_with_comp: Vec<(work_order_line::Model, String, String, Decimal)> = lines
-        .into_iter()
-        .map(|l| {
-            let c_name = comp_map
-                .get(&l.component_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Component #{}", l.component_id));
-            let taxes = tax_assoc::taxes_for_line(&material_taxes, l.id);
-            let labels = tax_assoc::tax_labels_display(taxes);
-            let taxed = l.taxed_total(taxes);
-            (l, c_name, labels, taxed)
-        })
-        .collect();
-
-    let machine_lines_with_name: Vec<(work_order_machine_line::Model, String, String, Decimal)> =
-        machine_lines
-            .into_iter()
-            .map(|l| {
-                let m_name = l
-                    .machine_id
-                    .and_then(|id| machine_map.get(&id).cloned())
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| {
-                        if l.name.trim().is_empty() {
-                            l.machine_id
-                                .map(|id| format!("Machine #{id}"))
-                                .unwrap_or_else(|| "Machine".into())
-                        } else {
-                            l.name.clone()
-                        }
-                    });
-                let taxes = tax_assoc::taxes_for_line(&machine_taxes, l.id);
-                let labels = tax_assoc::tax_labels_display(taxes);
-                let taxed = l.taxed_total(taxes);
-                (l, m_name, labels, taxed)
-            })
-            .collect();
-
-    let page = IssuedWorkOrderDetailPage {
-        order,
-        lines: lines_with_comp,
-        machine_lines: machine_lines_with_name,
-        component_schemas,
-        machine_schemas,
-        customer_name: customer.map(|c| c.name),
-        quotation_number,
-        job_name,
-        total_amount,
-    };
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-}
-
-pub async fn issued_work_order_delete_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    Path(id): Path<i64>,
-) -> maud::Markup {
-    let page = build_issued_work_order_delete_modal(&state.db, id, None).await;
-    let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-    html_built_page_with_slots(&page, &chrome, &slot_ctx)
-}
-
-pub async fn issued_work_order_delete_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    auth: OptionalAuth,
-    htmx: Htmx,
-    Path(id): Path<i64>,
-) -> Response {
-    match delete_work_order_recursive(&state.db, id).await {
-        Ok(()) => htmx.redirect(&IssuedWorkOrdersRouteTag.url()),
-        Err(e) => {
-            tracing::error!(error = %e, id, "failed to delete work order");
-            let page =
-                build_issued_work_order_delete_modal(&state.db, id, Some(e.to_string())).await;
-            let slot_ctx = auth.0.as_ref().map(SlotCtx::from_auth).unwrap_or_default();
-            html_built_page_with_slots(&page, &chrome, &slot_ctx).into_response()
-        }
-    }
-}
-
-async fn build_issued_work_order_delete_modal(
-    db: &sea_orm::DatabaseConnection,
-    id: i64,
-    error: Option<String>,
-) -> IssuedWorkOrderDeleteModalPage {
-    let (items, collect_error) = match collect_work_order_cascade(db, id).await {
-        Ok(graph) => match cascade_delete_preview(db, &graph).await {
-            Ok(items) => (
-                items
-                    .into_iter()
-                    .map(|item| IssuedWorkOrderDeleteItem {
-                        kind: item.kind,
-                        label: item.label,
-                        url: item.url,
-                    })
-                    .collect(),
-                None,
-            ),
-            Err(e) => (Vec::new(), Some(e.to_string())),
-        },
-        Err(e) => (Vec::new(), Some(e.to_string())),
-    };
-    IssuedWorkOrderDeleteModalPage {
-        id,
-        items,
-        can_delete: collect_error.is_none(),
-        error: collect_error.or(error),
-    }
-}
-
-// ==========================================
-// 8. FORMULA CALCULATE API
-// ==========================================
-
-#[derive(Debug, Deserialize)]
-pub struct CalculateRequest {
-    #[serde(default)]
-    pub component_id: Option<i64>,
-    #[serde(default)]
-    pub machine_id: Option<i64>,
-    #[serde(default)]
-    pub variables: serde_json::Value,
-    #[serde(default)]
-    pub extra_data: Option<serde_json::Value>,
-}
-
-pub async fn calculate_api(
-    Cap(state): Cap<WorkOrdersState>,
-    Json(payload): Json<CalculateRequest>,
-) -> impl IntoResponse {
-    let raw_vars = variables_from_value(Some(&payload.variables));
-    if let Some(component_id) = payload.component_id.filter(|id| *id > 0) {
-        let extra = extra_data_from_value(payload.extra_data.as_ref());
-        let comp = match component::Entity::find_by_id(component_id)
-            .one(&state.db)
-            .await
-        {
-            Ok(Some(c)) => c,
-            Ok(None) => {
-                return Json(serde_json::json!({
-                    "error": format!("Component #{component_id} not found")
-                }));
-            }
-            Err(e) => {
-                return Json(serde_json::json!({ "error": e.to_string() }));
-            }
-        };
-        let schema = match comp.variables_schema() {
-            Ok(s) => s,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        let raw_for_parse = line_vars::values_with_entered_units(&schema, &raw_vars, &extra);
-        let values = match parse_values(&schema, &raw_for_parse) {
-            Ok(v) => v,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        let weight = match comp.get_weight(&values) {
-            Ok(w) => w,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        let cost = match comp.get_cost(&values) {
-            Ok(c) => c,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        return Json(serde_json::json!({ "weight": weight, "cost": cost }));
-    }
-
-    if let Some(machine_id) = payload.machine_id.filter(|id| *id > 0) {
-        let mach = match machine::Entity::find_by_id(machine_id).one(&state.db).await {
-            Ok(Some(m)) => m,
-            Ok(None) => {
-                return Json(serde_json::json!({
-                    "error": format!("Machine #{machine_id} not found")
-                }));
-            }
-            Err(e) => {
-                return Json(serde_json::json!({ "error": e.to_string() }));
-            }
-        };
-        let schema = match mach.variables_schema() {
-            Ok(s) => s,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        let extra = extra_data_from_value(payload.extra_data.as_ref());
-        let raw_for_parse = line_vars::values_with_entered_units(&schema, &raw_vars, &extra);
-        let values = match parse_values(&schema, &raw_for_parse) {
-            Ok(v) => v,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        let cost = match mach.get_cost(&values) {
-            Ok(c) => c,
-            Err(e) => return Json(serde_json::json!({ "error": e.to_string() })),
-        };
-        return Json(serde_json::json!({ "cost": cost }));
-    }
-
-    Json(serde_json::json!({
-        "error": "component_id or machine_id is required"
-    }))
-}
-
-// ==========================================
-// 10. PDF EXPORT + PREFERENCES
-// ==========================================
-
-const WORK_ORDER_PDF_PREVIEW_CACHE_DIR: &str = "lariv-work-orders-pdf-preview";
-
-fn preview_cache_dir() -> PathBuf {
-    std::env::temp_dir().join(WORK_ORDER_PDF_PREVIEW_CACHE_DIR)
-}
-
-fn preview_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{}-{}", std::process::id(), nanos)
-}
-
-fn is_valid_preview_token(token: &str) -> bool {
-    !token.is_empty()
-        && token.len() <= 64
-        && token
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
-fn preview_pdf_path(token: &str) -> PathBuf {
-    preview_cache_dir().join(format!("{token}.pdf"))
-}
-
-fn store_preview_pdf(token: &str, bytes: &[u8]) -> Result<(), String> {
-    let dir = preview_cache_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create preview cache: {e}"))?;
-    std::fs::write(preview_pdf_path(token), bytes).map_err(|e| format!("write preview pdf: {e}"))
-}
-
-fn remove_preview_pdf(token: &str) {
-    let path = preview_pdf_path(token);
-    if let Err(e) = std::fs::remove_file(&path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!(error = %e, path = %path.display(), "failed to remove preview pdf");
-        }
-    }
-}
-
-fn cleanup_stale_previews(max_age_secs: u64) {
-    let Ok(read_dir) = std::fs::read_dir(preview_cache_dir()) else {
-        return;
-    };
-    let cutoff = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(max_age_secs))
-        .unwrap_or(std::time::UNIX_EPOCH);
-    for entry in read_dir.flatten() {
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        let Ok(modified) = meta.modified() else {
-            continue;
-        };
-        if modified < cutoff {
-            if let Err(e) = std::fs::remove_file(entry.path()) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!(
-                        error = %e,
-                        path = %entry.path().display(),
-                        "failed to remove stale preview pdf"
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn pdf_error_response(err: PdfError) -> Response {
-    match err {
-        PdfError::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
-        PdfError::Message(msg) => {
-            tracing::error!("kds quotations pdf: {msg}");
-            (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
-        }
-    }
-}
-
-fn pdf_ok_response(result: PdfResult) -> Response {
-    let filename = format!("{}.pdf", result.filename_base);
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/pdf".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{filename}\""),
-            ),
-        ],
-        Body::from(result.bytes),
-    )
-        .into_response()
-}
-
-fn render_pdf_modal(title: &str, pdf_url: &str) -> Markup {
-    modal_keyed::<WorkOrdersPdfModalKey>(
-        "max-w-6xl w-[95vw]",
-        html! {
-            div class="flex items-center justify-between gap-3 mb-3 pr-10" {
-                h3 class="text-lg font-semibold" { (title) }
-                (button_download(ButtonDownload {
-                    label: "Download",
-                    href: pdf_url,
-                    classes: "btn-outline btn-sm",
-                    ..Default::default()
-                }))
-            }
-            div class="relative w-full h-[75vh]" x-data="{ loading: true }" {
-                div
-                    class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded border border-base-300 bg-base-100"
-                    x-show="loading"
-                    x-cloak
-                {
-                    span class="loading loading-spinner loading-lg" {}
-                    p class="text-sm opacity-70" { "Generating PDF…" }
-                }
-                iframe
-                    src=(pdf_url)
-                    class="w-full h-full border border-base-300 rounded bg-white"
-                    title=(title)
-                    x-on:load="loading = false" {}
-            }
-        },
-    )
-}
-
-fn render_pdf_modal_error(message: &str) -> Markup {
-    modal_keyed::<WorkOrdersPdfModalKey>(
-        "max-w-2xl",
-        html! {
-            h3 class="text-lg font-semibold mb-2" { "PDF preview failed" }
-            p class="text-error whitespace-pre-wrap" { (message) }
-        },
-    )
-}
-
-fn render_preview_modal(pdf_url: &str, error: Option<&str>) -> Markup {
-    if let Some(err) = error {
-        return modal_keyed::<WorkOrdersPdfPreviewModalKey>(
-            "max-w-2xl",
-            html! {
-                h3 class="text-lg font-semibold mb-2" { "KDS Quotations PDF preview failed" }
-                p class="text-error whitespace-pre-wrap" { (err) }
-            },
-        );
-    }
-    modal_keyed::<WorkOrdersPdfPreviewModalKey>(
-        "max-w-6xl w-[95vw]",
-        html! {
-            h3 class="text-lg font-semibold mb-3" { "KDS Quotations PDF preview (sample data)" }
-            iframe
-                src=(pdf_url)
-                class="w-full h-[75vh] border border-base-300 rounded bg-white"
-                title="KDS Quotations PDF preview" {}
-        },
-    )
-}
-
-async fn prefs_page(
-    db: &sea_orm::DatabaseConnection,
-    prefs: WorkOrdersPreferences,
-    default_material_tax_ids: Option<&[i64]>,
-    default_machine_tax_ids: Option<&[i64]>,
-    error: String,
-) -> WorkOrdersPreferencesPage {
-    let mat_ids = match default_material_tax_ids {
-        Some(ids) => ids.to_vec(),
-        None => tax_assoc::load_default_material_tax_ids(db)
-            .await
-            .unwrap_or_default(),
-    };
-    let mach_ids = match default_machine_tax_ids {
-        Some(ids) => ids.to_vec(),
-        None => tax_assoc::load_default_machine_tax_ids(db)
-            .await
-            .unwrap_or_default(),
-    };
-    let email_subject = quotation_email_subject(&prefs).to_string();
-    let email_body = quotation_email_body(&prefs).to_string();
-    WorkOrdersPreferencesPage {
-        draft_work_order_pdf_template: draft_work_order_pdf_template(&prefs).to_string(),
-        work_order_pdf_template: work_order_pdf_template(&prefs).to_string(),
-        quotation_pdf_template: quotation_pdf_template(&prefs).to_string(),
-        quotation_number_format: prefs.quotation_number_format.unwrap_or_default(),
-        company_name: prefs.company_name.unwrap_or_default(),
-        company_address: prefs.company_address.unwrap_or_default(),
-        company_phone: prefs.company_phone.unwrap_or_default(),
-        company_gstin: prefs.company_gstin.unwrap_or_default(),
-        place_of_supply: prefs.place_of_supply.unwrap_or_default(),
-        default_bank_account: prefs.default_bank_account.unwrap_or_default(),
-        company_logo_vnode_id: fk_value(prefs.company_logo_vnode_id),
-        company_logo_vnode_display: load_vnode_display(db, prefs.company_logo_vnode_id).await,
-        company_signature_vnode_id: fk_value(prefs.company_signature_vnode_id),
-        company_signature_vnode_display: load_vnode_display(db, prefs.company_signature_vnode_id)
-            .await,
-        quotation_email_subject: email_subject,
-        quotation_email_body: email_body,
-        default_material_tax_items: tax_items_for_ids(db, &mat_ids).await,
-        default_machine_tax_items: tax_items_for_ids(db, &mach_ids).await,
-        error,
-    }
-}
-
-fn fk_value(id: Option<i64>) -> String {
-    id.filter(|&id| id > 0).unwrap_or(0).to_string()
-}
-
-async fn load_vnode_display(db: &sea_orm::DatabaseConnection, id: Option<i64>) -> String {
-    let Some(id) = id.filter(|&id| id > 0) else {
-        return String::new();
-    };
     VNodeEntity::find_by_id(id)
         .one(db)
         .await
         .ok()
         .flatten()
-        .map(|n| n.name)
+        .map(|node| node.name)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Files".to_string())
+}
+
+pub async fn delete_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    if WorkOrderEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return list_redirect(&htmx);
+    }
+    modal_response(
+        &confirm(
+            WorkOrderDeleteModalKey::ID,
+            "Delete work order",
+            "This deletes the plan. Recorded batches must be removed first.",
+            &crate::routes::WorkOrderDeletePostRouteTag::new(id).url(),
+            "",
+        ),
+        &chrome,
+        &ctx,
+    )
+}
+
+pub async fn delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    match logic::delete_work_order(&state.db, id).await {
+        Ok(()) => list_redirect(&htmx),
+        Err(error) => modal_response(
+            &confirm(
+                WorkOrderDeleteModalKey::ID,
+                "Delete work order",
+                "This deletes the plan. Recorded batches must be removed first.",
+                &crate::routes::WorkOrderDeletePostRouteTag::new(id).url(),
+                &error,
+            ),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn part_create_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    Query(q): Query<ModalFormQuery>,
+) -> maud::Markup {
+    let page = PartModalPage {
+        work_order_id: id,
+        existing_id: None,
+        form_name: q.form_name(),
+        name: String::new(),
+        measure_kind: "quantity".to_string(),
+        measure_unit: "Number".to_string(),
+        kind_choices: measure::kind_choices(),
+        error: String::new(),
+    };
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn part_create_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<PartForm>,
+) -> Response {
+    match logic::save_part(&state.db, part_input(id, None, &form)).await {
+        Ok(saved) => reload::<PartCreateModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(
+            &PartModalPage {
+                work_order_id: id,
+                existing_id: None,
+                form_name: q.form_name(),
+                name: form.name,
+                measure_kind: form.measure_kind,
+                measure_unit: form.measure_unit,
+                kind_choices: measure::kind_choices(),
+                error,
+            },
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn part_edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    let Some(part) = PartEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    modal_response(
+        &PartModalPage {
+            work_order_id: part.work_order_id,
+            existing_id: Some(part.id),
+            form_name: q.form_name(),
+            name: part.name,
+            measure_kind: part.measure_kind,
+            measure_unit: part.measure_unit,
+            kind_choices: measure::kind_choices(),
+            error: String::new(),
+        },
+        &chrome,
+        &ctx,
+    )
+}
+
+pub async fn part_edit_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<PartForm>,
+) -> Response {
+    let Some(existing) = PartEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    match logic::save_part(
+        &state.db,
+        part_input(existing.work_order_id, Some(id), &form),
+    )
+    .await
+    {
+        Ok(saved) => reload::<PartEditModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(
+            &PartModalPage {
+                work_order_id: existing.work_order_id,
+                existing_id: Some(id),
+                form_name: q.form_name(),
+                name: form.name,
+                measure_kind: form.measure_kind,
+                measure_unit: form.measure_unit,
+                kind_choices: measure::kind_choices(),
+                error,
+            },
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn part_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    let page = confirm(
+        PartDeleteModalKey::ID,
+        "Delete part",
+        "Remove this part from the work order.",
+        &crate::routes::PartDeletePostRouteTag::new(id).url(),
+        "",
+    );
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn part_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    match logic::delete_part(&state.db, id).await {
+        Ok(work_order_id) => reload::<PartDeleteModalKey>(&htmx, work_order_id),
+        Err(error) => modal_response(
+            &confirm(
+                PartDeleteModalKey::ID,
+                "Delete part",
+                "Remove this part from the work order.",
+                &crate::routes::PartDeletePostRouteTag::new(id).url(),
+                &error,
+            ),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn presupplied_create_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    Query(q): Query<ModalFormQuery>,
+) -> maud::Markup {
+    let parts = parts_for(&state, id).await;
+    let page = PresuppliedModalPage {
+        work_order_id: id,
+        existing_id: None,
+        form_name: q.form_name(),
+        part_id: String::new(),
+        qty_value: String::new(),
+        qty_unit: String::new(),
+        part_choices: part_choices(&parts),
+        error: String::new(),
+    };
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn presupplied_create_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<PresuppliedForm>,
+) -> Response {
+    let parts = parts_for(&state, id).await;
+    let part_id = match parse_part_id(&form.part_id) {
+        Ok(part_id) => part_id,
+        Err(error) => {
+            return modal_response(
+                &presupplied_page(id, None, &q, &form, &parts, error),
+                &chrome,
+                &ctx,
+            );
+        }
+    };
+    match logic::save_presupplied(
+        &state.db,
+        PresuppliedInput {
+            work_order_id: id,
+            existing_id: None,
+            part_id,
+            qty_value: form.qty_value.clone(),
+            qty_unit: form.qty_unit.clone(),
+        },
+    )
+    .await
+    {
+        Ok(saved) => reload::<PresuppliedCreateModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(
+            &presupplied_page(id, None, &q, &form, &parts, error),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn presupplied_edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    let Some(line) = PresuppliedPartEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    let parts = parts_for(&state, line.work_order_id).await;
+    modal_response(
+        &PresuppliedModalPage {
+            work_order_id: line.work_order_id,
+            existing_id: Some(line.id),
+            form_name: q.form_name(),
+            part_id: line.part_id.to_string(),
+            qty_value: line.qty_value.normalize().to_string(),
+            qty_unit: line.qty_unit,
+            part_choices: part_choices(&parts),
+            error: String::new(),
+        },
+        &chrome,
+        &ctx,
+    )
+}
+
+pub async fn presupplied_edit_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<PresuppliedForm>,
+) -> Response {
+    let Some(existing) = PresuppliedPartEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    let parts = parts_for(&state, existing.work_order_id).await;
+    let part_id = match parse_part_id(&form.part_id) {
+        Ok(part_id) => part_id,
+        Err(error) => {
+            return modal_response(
+                &presupplied_page(existing.work_order_id, Some(id), &q, &form, &parts, error),
+                &chrome,
+                &ctx,
+            );
+        }
+    };
+    match logic::save_presupplied(
+        &state.db,
+        PresuppliedInput {
+            work_order_id: existing.work_order_id,
+            existing_id: Some(id),
+            part_id,
+            qty_value: form.qty_value.clone(),
+            qty_unit: form.qty_unit.clone(),
+        },
+    )
+    .await
+    {
+        Ok(saved) => reload::<PresuppliedEditModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(
+            &presupplied_page(existing.work_order_id, Some(id), &q, &form, &parts, error),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn presupplied_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    let page = confirm(
+        PresuppliedDeleteModalKey::ID,
+        "Delete supply",
+        "Remove this presupplied quantity. Recorded batches stay as they are.",
+        &crate::routes::PresuppliedDeletePostRouteTag::new(id).url(),
+        "",
+    );
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn presupplied_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    match logic::delete_presupplied(&state.db, id).await {
+        Ok(work_order_id) => reload::<PresuppliedDeleteModalKey>(&htmx, work_order_id),
+        Err(error) => modal_response(
+            &confirm(
+                PresuppliedDeleteModalKey::ID,
+                "Delete supply",
+                "Remove this presupplied quantity. Recorded batches stay as they are.",
+                &crate::routes::PresuppliedDeletePostRouteTag::new(id).url(),
+                &error,
+            ),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn step_create_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    Query(q): Query<ModalFormQuery>,
+) -> maud::Markup {
+    let page = StepModalPage {
+        work_order_id: id,
+        existing_id: None,
+        form_name: q.form_name(),
+        name: String::new(),
+        planned_batches: "1".to_string(),
+        error: String::new(),
+    };
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn step_create_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<StepForm>,
+) -> Response {
+    let planned_batches = match parse_batches(&form.planned_batches) {
+        Ok(count) => count,
+        Err(error) => {
+            return modal_response(&step_page(id, None, &q, &form, error), &chrome, &ctx);
+        }
+    };
+    match logic::save_step(
+        &state.db,
+        StepInput {
+            work_order_id: id,
+            existing_id: None,
+            name: form.name.clone(),
+            planned_batches,
+        },
+    )
+    .await
+    {
+        Ok(saved) => reload::<StepCreateModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(&step_page(id, None, &q, &form, error), &chrome, &ctx),
+    }
+}
+
+pub async fn step_edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    let Some(step) = StepEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    modal_response(
+        &StepModalPage {
+            work_order_id: step.work_order_id,
+            existing_id: Some(step.id),
+            form_name: q.form_name(),
+            name: step.name,
+            planned_batches: step.planned_batches.to_string(),
+            error: String::new(),
+        },
+        &chrome,
+        &ctx,
+    )
+}
+
+pub async fn step_edit_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<StepForm>,
+) -> Response {
+    let Some(existing) = StepEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    let planned_batches = match parse_batches(&form.planned_batches) {
+        Ok(count) => count,
+        Err(error) => {
+            return modal_response(
+                &step_page(existing.work_order_id, Some(id), &q, &form, error),
+                &chrome,
+                &ctx,
+            );
+        }
+    };
+    match logic::save_step(
+        &state.db,
+        StepInput {
+            work_order_id: existing.work_order_id,
+            existing_id: Some(id),
+            name: form.name.clone(),
+            planned_batches,
+        },
+    )
+    .await
+    {
+        Ok(saved) => reload::<StepEditModalKey>(&htmx, saved.work_order_id),
+        Err(error) => modal_response(
+            &step_page(existing.work_order_id, Some(id), &q, &form, error),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn step_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    let page = confirm(
+        StepDeleteModalKey::ID,
+        "Delete step",
+        "Delete recorded batches before deleting this step.",
+        &crate::routes::StepDeletePostRouteTag::new(id).url(),
+        "",
+    );
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn step_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    match logic::delete_step(&state.db, id).await {
+        Ok(work_order_id) => reload::<StepDeleteModalKey>(&htmx, work_order_id),
+        Err(error) => modal_response(
+            &confirm(
+                StepDeleteModalKey::ID,
+                "Delete step",
+                "Delete recorded batches before deleting this step.",
+                &crate::routes::StepDeletePostRouteTag::new(id).url(),
+                &error,
+            ),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+pub async fn input_create_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    flow_create_page(&state, &chrome, &ctx, &htmx, id, FlowSide::Input, &q).await
+}
+
+pub async fn output_create_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    flow_create_page(&state, &chrome, &ctx, &htmx, id, FlowSide::Output, &q).await
+}
+
+pub async fn input_create_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<FlowForm>,
+) -> Response {
+    flow_save(
+        &modal_ctx(&state, &chrome, &ctx, &htmx),
+        id,
+        None,
+        FlowSide::Input,
+        &q,
+        form,
+    )
+    .await
+}
+
+pub async fn output_create_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<FlowForm>,
+) -> Response {
+    flow_save(
+        &modal_ctx(&state, &chrome, &ctx, &htmx),
+        id,
+        None,
+        FlowSide::Output,
+        &q,
+        form,
+    )
+    .await
+}
+
+pub async fn input_edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    flow_edit_page(&state, &chrome, &ctx, &htmx, id, FlowSide::Input, &q).await
+}
+
+pub async fn output_edit_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    flow_edit_page(&state, &chrome, &ctx, &htmx, id, FlowSide::Output, &q).await
+}
+
+pub async fn input_edit_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<FlowForm>,
+) -> Response {
+    flow_edit_save(
+        &modal_ctx(&state, &chrome, &ctx, &htmx),
+        id,
+        FlowSide::Input,
+        &q,
+        form,
+    )
+    .await
+}
+
+pub async fn output_edit_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    HtmlFormBody(form): HtmlFormBody<FlowForm>,
+) -> Response {
+    flow_edit_save(
+        &modal_ctx(&state, &chrome, &ctx, &htmx),
+        id,
+        FlowSide::Output,
+        &q,
+        form,
+    )
+    .await
+}
+
+pub async fn input_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    delete_flow_page(&chrome, &ctx, id, FlowSide::Input, "").await
+}
+
+pub async fn output_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    delete_flow_page(&chrome, &ctx, id, FlowSide::Output, "").await
+}
+
+pub async fn input_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    delete_flow(&state, &chrome, &ctx, &htmx, id, FlowSide::Input).await
+}
+
+pub async fn output_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    delete_flow(&state, &chrome, &ctx, &htmx, id, FlowSide::Output).await
+}
+
+pub async fn complete_get(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+) -> Response {
+    let Some(step) = StepEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    let parts = parts_for(&state, step.work_order_id).await;
+    let inputs = StepInputEntity::find()
+        .filter(step_input::Column::StepId.eq(id))
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let outputs = StepOutputEntity::find()
+        .filter(step_output::Column::StepId.eq(id))
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let page = CompleteModalPage {
+        step_id: id,
+        step_name: step.name,
+        form_name: q.form_name(),
+        inputs: inputs
+            .iter()
+            .map(|line| complete_line(&parts, line.part_id, &line.qty_value, &line.qty_unit))
+            .collect(),
+        outputs: outputs
+            .iter()
+            .map(|line| complete_line(&parts, line.part_id, &line.qty_value, &line.qty_unit))
+            .collect(),
+        error: String::new(),
+    };
+    modal_response(&page, &chrome, &ctx)
+}
+
+pub async fn complete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+    Query(q): Query<ModalFormQuery>,
+    Form(form): Form<HashMap<String, String>>,
+) -> Response {
+    let Some(step) = StepEntity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(&htmx);
+    };
+    let inputs = match actuals(&form, "in") {
+        Ok(lines) => lines,
+        Err(error) => return complete_error(&state, &chrome, &ctx, &step, &q, &form, error).await,
+    };
+    let outputs = match actuals(&form, "out") {
+        Ok(lines) => lines,
+        Err(error) => return complete_error(&state, &chrome, &ctx, &step, &q, &form, error).await,
+    };
+    match logic::complete_step(&state.db, id, ctx.user.id, inputs, outputs).await {
+        Ok(_) => reload::<CompleteModalKey>(&htmx, step.work_order_id),
+        Err(error) => complete_error(&state, &chrome, &ctx, &step, &q, &form, error).await,
+    }
+}
+
+pub async fn completion_delete_get(
+    Path(id): Path<i64>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+) -> maud::Markup {
+    let page = confirm(
+        CompletionDeleteModalKey::ID,
+        "Delete batch",
+        "Remove this recorded batch.",
+        &crate::routes::CompletionDeletePostRouteTag::new(id).url(),
+        "",
+    );
+    html_built_page_with_slots(&page, &chrome, &SlotCtx::from_auth(&ctx))
+}
+
+pub async fn completion_delete_post(
+    Path(id): Path<i64>,
+    Cap(state): Cap<WorkOrdersState>,
+    Cap(chrome): Cap<SharedChromeFolder>,
+    RequireAuth(ctx): RequireAuth,
+    htmx: Htmx,
+) -> Response {
+    match logic::delete_completion(&state.db, id).await {
+        Ok(work_order_id) => reload::<CompletionDeleteModalKey>(&htmx, work_order_id),
+        Err(error) => modal_response(
+            &confirm(
+                CompletionDeleteModalKey::ID,
+                "Delete batch",
+                "Remove this recorded batch.",
+                &crate::routes::CompletionDeletePostRouteTag::new(id).url(),
+                &error,
+            ),
+            &chrome,
+            &ctx,
+        ),
+    }
+}
+
+fn confirm(
+    modal_uid: &'static str,
+    title: &str,
+    message: &str,
+    post_url: &str,
+    error: &str,
+) -> ConfirmDeleteModalPage {
+    ConfirmDeleteModalPage {
+        modal_uid,
+        title: title.to_string(),
+        message: message.to_string(),
+        post_url: post_url.to_string(),
+        error: error.to_string(),
+    }
+}
+
+fn part_input(work_order_id: i64, existing_id: Option<i64>, form: &PartForm) -> PartInput {
+    PartInput {
+        work_order_id,
+        existing_id,
+        name: form.name.clone(),
+        measure_kind: form.measure_kind.clone(),
+        measure_unit: form.measure_unit.clone(),
+    }
+}
+
+fn presupplied_page(
+    work_order_id: i64,
+    existing_id: Option<i64>,
+    q: &ModalFormQuery,
+    form: &PresuppliedForm,
+    parts: &[part::Model],
+    error: String,
+) -> PresuppliedModalPage {
+    PresuppliedModalPage {
+        work_order_id,
+        existing_id,
+        form_name: q.form_name(),
+        part_id: form.part_id.clone(),
+        qty_value: form.qty_value.clone(),
+        qty_unit: form.qty_unit.clone(),
+        part_choices: part_choices(parts),
+        error,
+    }
+}
+
+fn step_page(
+    work_order_id: i64,
+    existing_id: Option<i64>,
+    q: &ModalFormQuery,
+    form: &StepForm,
+    error: String,
+) -> StepModalPage {
+    StepModalPage {
+        work_order_id,
+        existing_id,
+        form_name: q.form_name(),
+        name: form.name.clone(),
+        planned_batches: form.planned_batches.clone(),
+        error,
+    }
+}
+
+async fn parts_for(state: &WorkOrdersState, work_order_id: i64) -> Vec<part::Model> {
+    PartEntity::find()
+        .filter(part::Column::WorkOrderId.eq(work_order_id))
+        .all(&state.db)
+        .await
         .unwrap_or_default()
 }
 
-fn quotation_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
-    lariv_plugin_users::roles::Superuser::matches(&ctx.role)
-        || ctx.role == kds_plugin_accountant_role::ACCOUNTANT_ROLE
-}
-
-fn preferences_staff(ctx: &lariv_plugin_users::state::AuthContext) -> bool {
-    lariv_plugin_users::roles::Superuser::matches(&ctx.role)
-}
-
-/// HTTP handler: `get /work-orders/preferences`.
-pub async fn preferences_get(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    RequireAuth(ctx): RequireAuth,
-    htmx: Htmx,
+async fn flow_create_page(
+    state: &WorkOrdersState,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    htmx: &Htmx,
+    step_id: i64,
+    side: FlowSide,
+    q: &ModalFormQuery,
 ) -> Response {
-    if !preferences_staff(&ctx) {
-        return Redirect::to(&WorkOrdersDefaultRouteTag.url()).into_response();
+    let Some(step) = StepEntity::find_by_id(step_id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return list_redirect(htmx);
+    };
+    let parts = parts_for(state, step.work_order_id).await;
+    modal_response(
+        &FlowModalPage {
+            step_id,
+            existing_id: None,
+            side,
+            form_name: q.form_name(),
+            part_id: String::new(),
+            qty_value: String::new(),
+            qty_unit: String::new(),
+            part_choices: part_choices(&parts),
+            error: String::new(),
+        },
+        chrome,
+        ctx,
+    )
+}
+
+struct ModalCtx<'a> {
+    state: &'a WorkOrdersState,
+    chrome: &'a SharedChromeFolder,
+    ctx: &'a AuthContext,
+    htmx: &'a Htmx,
+}
+
+fn modal_ctx<'a>(
+    state: &'a WorkOrdersState,
+    chrome: &'a SharedChromeFolder,
+    ctx: &'a AuthContext,
+    htmx: &'a Htmx,
+) -> ModalCtx<'a> {
+    ModalCtx {
+        state,
+        chrome,
+        ctx,
+        htmx,
     }
-    let slot_ctx = SlotCtx::from_auth(&ctx);
-    let prefs = match load_preferences(&state.db).await {
-        Ok(p) => p,
-        Err(e) => {
-            let page = prefs_page(
-                &state.db,
-                empty_preferences(),
-                None,
-                None,
-                format!("Failed to load preferences: {e}"),
-            )
-            .await;
-            return html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response();
+}
+
+async fn flow_save(
+    req: &ModalCtx<'_>,
+    step_id: i64,
+    existing_id: Option<i64>,
+    side: FlowSide,
+    q: &ModalFormQuery,
+    form: FlowForm,
+) -> Response {
+    let parts = StepEntity::find_by_id(step_id)
+        .one(&req.state.db)
+        .await
+        .ok()
+        .flatten();
+    let Some(step) = parts else {
+        return list_redirect(req.htmx);
+    };
+    let part_rows = parts_for(req.state, step.work_order_id).await;
+    let part_id = match parse_part_id(&form.part_id) {
+        Ok(part_id) => part_id,
+        Err(error) => {
+            return modal_response(
+                &flow_page(step_id, existing_id, side, q, &form, &part_rows, error),
+                req.chrome,
+                req.ctx,
+            );
         }
     };
-    let page = prefs_page(&state.db, prefs, None, None, String::new()).await;
-    html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-}
-
-/// HTTP handler: `post /work-orders/preferences`.
-pub async fn preferences_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(chrome): Cap<SharedChromeFolder>,
-    RequireAuth(ctx): RequireAuth,
-    htmx: Htmx,
-    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
-) -> Response {
-    if !lariv_plugin_users::roles::Superuser::matches(&ctx.role) {
-        return Redirect::to(&WorkOrdersDefaultRouteTag.url()).into_response();
-    }
-    let slot_ctx = SlotCtx::from_auth(&ctx);
-    let quotation_number_format = {
-        let t = form.quotation_number_format.trim();
-        if t.is_empty() {
-            None
-        } else {
-            Some(t.to_string())
-        }
-    };
-    let prefs = WorkOrdersPreferences {
-        id: 1,
-        created_at: None,
-        updated_at: None,
-        draft_work_order_pdf_template: if is_stock_draft_work_order_template(Some(
-            form.draft_work_order_pdf_template.as_str(),
-        )) {
-            None
-        } else {
-            Some(form.draft_work_order_pdf_template)
+    match logic::save_flow(
+        &req.state.db,
+        FlowInput {
+            step_id,
+            existing_id,
+            part_id,
+            qty_value: form.qty_value.clone(),
+            qty_unit: form.qty_unit.clone(),
+            side,
         },
-        work_order_pdf_template: if is_stock_work_order_template(Some(
-            form.work_order_pdf_template.as_str(),
-        )) {
-            None
-        } else {
-            Some(form.work_order_pdf_template)
+    )
+    .await
+    {
+        Ok(work_order_id) => match existing_id {
+            Some(_) => reload::<FlowEditModalKey>(req.htmx, work_order_id),
+            None => reload::<FlowCreateModalKey>(req.htmx, work_order_id),
         },
-        quotation_pdf_template: if is_stock_quotation_template(Some(
-            form.quotation_pdf_template.as_str(),
-        )) {
-            None
-        } else {
-            Some(form.quotation_pdf_template)
-        },
-        quotation_number_format,
-        company_name: opt_text(&form.company_name),
-        company_address: opt_text(&form.company_address),
-        company_phone: opt_text(&form.company_phone),
-        company_gstin: opt_text(&form.company_gstin),
-        place_of_supply: opt_text(&form.place_of_supply),
-        default_bank_account: opt_text(&form.default_bank_account),
-        company_logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
-        company_signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
-        quotation_email_subject: stored_email_template(
-            &form.quotation_email_subject,
-            crate::quotation_mail::DEFAULT_QUOTATION_EMAIL_SUBJECT,
+        Err(error) => modal_response(
+            &flow_page(step_id, existing_id, side, q, &form, &part_rows, error),
+            req.chrome,
+            req.ctx,
         ),
-        quotation_email_body: stored_email_template(
-            &form.quotation_email_body,
-            crate::quotation_mail::DEFAULT_QUOTATION_EMAIL_BODY,
-        ),
-    };
-    match save_preferences(&state.db, prefs.clone()).await {
-        Ok(_) => {
-            let _ = tax_assoc::set_default_material_taxes(
-                &state.db,
-                &tax_assoc::normalize_tax_ids(&form.default_material_taxes),
-            )
-            .await;
-            let _ = tax_assoc::set_default_machine_taxes(
-                &state.db,
-                &tax_assoc::normalize_tax_ids(&form.default_machine_taxes),
-            )
-            .await;
-            htmx.redirect(&WorkOrdersPrefsGetRouteTag.url())
-        }
-        Err(e) => {
-            let page = prefs_page(
-                &state.db,
-                prefs,
-                Some(&form.default_material_taxes),
-                Some(&form.default_machine_taxes),
-                format!("Failed to save preferences: {e}"),
-            )
-            .await;
-            html_built_page_or_app_layout(&page, &htmx, &chrome, &slot_ctx).into_response()
-        }
     }
 }
 
-/// HTTP handler: `get /work-orders/orders/{id}/pdf`.
-pub async fn work_order_pdf_modal(
-    Cap(state): Cap<WorkOrdersState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Markup {
-    if !quotation_staff(&ctx) {
-        return render_pdf_modal_error("Forbidden");
-    }
-    let Some(order) = draft_work_order::Entity::find_by_id(id)
+async fn flow_edit_page(
+    state: &WorkOrdersState,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    htmx: &Htmx,
+    id: i64,
+    side: FlowSide,
+    q: &ModalFormQuery,
+) -> Response {
+    let line = match side {
+        FlowSide::Input => StepInputEntity::find_by_id(id)
+            .one(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .map(|line| (line.step_id, line.part_id, line.qty_value, line.qty_unit)),
+        FlowSide::Output => StepOutputEntity::find_by_id(id)
+            .one(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .map(|line| (line.step_id, line.part_id, line.qty_value, line.qty_unit)),
+    };
+    let Some((step_id, part_id, qty_value, qty_unit)) = line else {
+        return list_redirect(htmx);
+    };
+    let Some(step) = StepEntity::find_by_id(step_id)
         .one(&state.db)
         .await
-        .unwrap_or(None)
+        .ok()
+        .flatten()
     else {
-        return render_pdf_modal_error("Draft work order not found");
+        return list_redirect(htmx);
     };
-    let title = if order.order_number.trim().is_empty() {
-        "Draft Work Order PDF".to_string()
-    } else {
-        format!("Draft Work Order {} PDF", order.order_number)
-    };
-    render_pdf_modal(&title, &WorkOrderPdfRouteTag::new(id).path())
-}
-
-/// HTTP handler: `get /work-orders/orders/{id}/pdf/file`.
-pub async fn work_order_pdf(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Response {
-    if !quotation_staff(&ctx) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match pdf::render_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
-        Ok(result) => pdf_ok_response(result),
-        Err(e) => pdf_error_response(e),
-    }
-}
-
-/// HTTP handler: `get /work-orders/issued/{id}/pdf`.
-pub async fn issued_work_order_pdf_modal(
-    Cap(state): Cap<WorkOrdersState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Markup {
-    if !quotation_staff(&ctx) {
-        return render_pdf_modal_error("Forbidden");
-    }
-    let Some(order) = work_order::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return render_pdf_modal_error("Work order not found");
-    };
-    let title = if order.order_number.trim().is_empty() {
-        "Work Order PDF".to_string()
-    } else {
-        format!("Work Order {} PDF", order.order_number)
-    };
-    render_pdf_modal(&title, &IssuedWorkOrderPdfRouteTag::new(id).path())
-}
-
-/// HTTP handler: `get /work-orders/issued/{id}/pdf/file`.
-pub async fn issued_work_order_pdf(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Response {
-    if !quotation_staff(&ctx) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match pdf::render_issued_work_order_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
-        Ok(result) => pdf_ok_response(result),
-        Err(e) => pdf_error_response(e),
-    }
-}
-
-/// HTTP handler: `get /work-orders/quotations/{id}/pdf`.
-pub async fn invoice_pdf_modal(
-    Cap(state): Cap<WorkOrdersState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Markup {
-    if !quotation_staff(&ctx) {
-        return render_pdf_modal_error("Forbidden");
-    }
-    let Some(inv) = quotation::Entity::find_by_id(id)
-        .one(&state.db)
-        .await
-        .unwrap_or(None)
-    else {
-        return render_pdf_modal_error("Quotation not found");
-    };
-    let title = if inv.invoice_number.trim().is_empty() {
-        "Quotation PDF".to_string()
-    } else {
-        format!("Quotation {} PDF", inv.invoice_number)
-    };
-    render_pdf_modal(&title, &InvoicePdfRouteTag::new(id).path())
-}
-
-/// HTTP handler: `get /work-orders/quotations/{id}/pdf/file`.
-pub async fn invoice_pdf(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Response {
-    if !quotation_staff(&ctx) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match pdf::render_quotation_pdf(&state.db, Some(&fs), id, &ctx.timezone).await {
-        Ok(result) => pdf_ok_response(result),
-        Err(e) => pdf_error_response(e),
-    }
-}
-
-/// HTTP handler: `get /work-orders/quotations/{id}/mail`.
-///
-/// Returns an unsent `.eml` draft with the quotation PDF attached.
-pub async fn invoice_mail(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    Path(id): Path<i64>,
-) -> Response {
-    if !quotation_staff(&ctx) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    match crate::quotation_mail::build_quotation_eml(&state.db, Some(&fs), id).await {
-        Ok(result) => {
-            let filename = result.filename.replace('"', "'");
-            (
-                StatusCode::OK,
-                [
-                    (header::CONTENT_TYPE, "message/rfc822".to_string()),
-                    (
-                        header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{filename}\""),
-                    ),
-                ],
-                Body::from(result.bytes),
-            )
-                .into_response()
-        }
-        Err(e) => pdf_error_response(e),
-    }
-}
-
-fn company_presentation_from_form(form: &WorkOrdersPreferencesForm) -> pdf::CompanyPresentation {
-    pdf::CompanyPresentation {
-        name: form.company_name.clone(),
-        address: form.company_address.clone(),
-        phone: form.company_phone.clone(),
-        gstin: form.company_gstin.clone(),
-        place_of_supply: form.place_of_supply.clone(),
-        logo_vnode_id: opt_vnode_id(&form.company_logo_vnode_id),
-        signature_vnode_id: opt_vnode_id(&form.company_signature_vnode_id),
-    }
-}
-
-/// HTTP handler: `post /work-orders/pdf/preview/work-order`.
-pub async fn work_order_pdf_preview_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
-) -> Markup {
-    if !preferences_staff(&ctx) {
-        return render_preview_modal("", Some("Forbidden"));
-    }
-    cleanup_stale_previews(3600);
-    let template = if form.draft_work_order_pdf_template.trim().is_empty() {
-        None
-    } else {
-        Some(form.draft_work_order_pdf_template.as_str())
-    };
-    let presentation = company_presentation_from_form(&form);
-    match pdf::render_work_order_pdf_preview(
-        &state.db,
-        Some(&fs),
-        template,
-        Some(presentation),
-        &ctx.timezone,
+    let parts = parts_for(state, step.work_order_id).await;
+    modal_response(
+        &FlowModalPage {
+            step_id,
+            existing_id: Some(id),
+            side,
+            form_name: q.form_name(),
+            part_id: part_id.to_string(),
+            qty_value: qty_value.normalize().to_string(),
+            qty_unit,
+            part_choices: part_choices(&parts),
+            error: String::new(),
+        },
+        chrome,
+        ctx,
     )
-    .await
-    {
-        Ok(result) => {
-            let token = preview_token();
-            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
-                return render_preview_modal("", Some(&msg));
-            }
-            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
-            render_preview_modal(&pdf_url, None)
-        }
-        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
-        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
-    }
 }
 
-/// HTTP handler: `post /work-orders/pdf/preview/issued-work-order`.
-pub async fn issued_work_order_pdf_preview_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
-) -> Markup {
-    if !preferences_staff(&ctx) {
-        return render_preview_modal("", Some("Forbidden"));
-    }
-    cleanup_stale_previews(3600);
-    let template = if form.work_order_pdf_template.trim().is_empty() {
-        None
-    } else {
-        Some(form.work_order_pdf_template.as_str())
+async fn flow_edit_save(
+    req: &ModalCtx<'_>,
+    id: i64,
+    side: FlowSide,
+    q: &ModalFormQuery,
+    form: FlowForm,
+) -> Response {
+    let step_id = match side {
+        FlowSide::Input => StepInputEntity::find_by_id(id)
+            .one(&req.state.db)
+            .await
+            .ok()
+            .flatten()
+            .map(|line| line.step_id),
+        FlowSide::Output => StepOutputEntity::find_by_id(id)
+            .one(&req.state.db)
+            .await
+            .ok()
+            .flatten()
+            .map(|line| line.step_id),
     };
-    let presentation = company_presentation_from_form(&form);
-    match pdf::render_issued_work_order_pdf_preview(
-        &state.db,
-        Some(&fs),
-        template,
-        Some(presentation),
-        &ctx.timezone,
-    )
-    .await
-    {
-        Ok(result) => {
-            let token = preview_token();
-            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
-                return render_preview_modal("", Some(&msg));
-            }
-            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
-            render_preview_modal(&pdf_url, None)
-        }
-        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
-        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
-    }
-}
-
-/// HTTP handler: `post /work-orders/pdf/preview/invoice`.
-pub async fn invoice_pdf_preview_post(
-    Cap(state): Cap<WorkOrdersState>,
-    Cap(fs): Cap<FilesystemState>,
-    RequireAuth(ctx): RequireAuth,
-    HtmlFormBody(form): HtmlFormBody<WorkOrdersPreferencesForm>,
-) -> Markup {
-    if !preferences_staff(&ctx) {
-        return render_preview_modal("", Some("Forbidden"));
-    }
-    cleanup_stale_previews(3600);
-    let template = if form.quotation_pdf_template.trim().is_empty() {
-        None
-    } else {
-        Some(form.quotation_pdf_template.as_str())
+    let Some(step_id) = step_id else {
+        return list_redirect(req.htmx);
     };
-    let presentation = company_presentation_from_form(&form);
-    match pdf::render_quotation_pdf_preview(
-        &state.db,
-        Some(&fs),
-        template,
-        Some(presentation),
-        Some(form.default_bank_account.as_str()),
-    )
-    .await
-    {
-        Ok(result) => {
-            let token = preview_token();
-            if let Err(msg) = store_preview_pdf(&token, &result.bytes) {
-                return render_preview_modal("", Some(&msg));
-            }
-            let pdf_url = WorkOrdersPdfPreviewPdfRouteTag::new(token).url();
-            render_preview_modal(&pdf_url, None)
-        }
-        Err(PdfError::Message(msg)) => render_preview_modal("", Some(&msg)),
-        Err(PdfError::NotFound) => render_preview_modal("", Some("Not found")),
+    flow_save(req, step_id, Some(id), side, q, form).await
+}
+
+fn flow_page(
+    step_id: i64,
+    existing_id: Option<i64>,
+    side: FlowSide,
+    q: &ModalFormQuery,
+    form: &FlowForm,
+    parts: &[part::Model],
+    error: String,
+) -> FlowModalPage {
+    FlowModalPage {
+        step_id,
+        existing_id,
+        side,
+        form_name: q.form_name(),
+        part_id: form.part_id.clone(),
+        qty_value: form.qty_value.clone(),
+        qty_unit: form.qty_unit.clone(),
+        part_choices: part_choices(parts),
+        error,
     }
 }
 
-/// HTTP handler: `get /work-orders/pdf/preview/{token}`.
-pub async fn preview_pdf_get(RequireAuth(ctx): RequireAuth, Path(token): Path<String>) -> Response {
-    if !preferences_staff(&ctx) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    if !is_valid_preview_token(&token) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    let path = preview_pdf_path(&token);
-    if !path.starts_with(preview_cache_dir()) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+async fn delete_flow_page(
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    id: i64,
+    side: FlowSide,
+    error: &str,
+) -> maud::Markup {
+    let url = match side {
+        FlowSide::Input => crate::routes::InputDeletePostRouteTag::new(id).url(),
+        FlowSide::Output => crate::routes::OutputDeletePostRouteTag::new(id).url(),
     };
-    remove_preview_pdf(&token);
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/pdf".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                "inline; filename=\"work-orders-preview.pdf\"".to_string(),
-            ),
-        ],
-        Body::from(bytes),
-    )
-        .into_response()
+    let page = confirm(
+        FlowDeleteModalKey::ID,
+        "Delete line",
+        "Remove this quantity from the step.",
+        &url,
+        error,
+    );
+    html_built_page_with_slots(&page, chrome, &SlotCtx::from_auth(ctx))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn preview_token_validation_rejects_path_traversal() {
-        assert!(!is_valid_preview_token("../etc/passwd"));
-        assert!(!is_valid_preview_token(""));
-        assert!(is_valid_preview_token("12345-67890"));
+async fn delete_flow(
+    state: &WorkOrdersState,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    htmx: &Htmx,
+    id: i64,
+    side: FlowSide,
+) -> Response {
+    match logic::delete_flow(&state.db, id, side).await {
+        Ok(work_order_id) => reload::<FlowDeleteModalKey>(htmx, work_order_id),
+        Err(error) => delete_flow_page(chrome, ctx, id, side, &error)
+            .await
+            .into_response(),
     }
+}
 
-    #[test]
-    fn preview_pdf_path_stays_in_cache_dir() {
-        let path = preview_pdf_path("abc-123");
-        assert!(path.starts_with(preview_cache_dir()));
+fn complete_line(
+    parts: &[part::Model],
+    part_id: i64,
+    qty_value: &Decimal,
+    qty_unit: &str,
+) -> CompleteLineView {
+    let name = parts
+        .iter()
+        .find(|part| part.id == part_id)
+        .map(|part| part.name.clone())
+        .unwrap_or_else(|| "Part".to_string());
+    CompleteLineView {
+        part_id,
+        name,
+        qty_value: qty_value.normalize().to_string(),
+        qty_unit: qty_unit.to_string(),
     }
+}
 
-    #[test]
-    fn invoice_material_lines_parse_widget_snake_case_json() {
-        let json = r#"[{"id":null,"component_id":1,"variables":"{\"length\":1000}","quantity":"10","unit_weight":"1.4","material_rate":"250","final_cost":"3500","extra_data":"{}"}]"#;
-        let lines: Vec<crate::forms::InvoiceMaterialLineInput> =
-            serde_json::from_str(json).expect("widget snake_case json must parse");
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].component_id, 1);
-        assert_eq!(lines[0].final_cost.as_deref(), Some("3500"));
+fn actuals(form: &HashMap<String, String>, prefix: &str) -> Result<Vec<ActualLine>, String> {
+    let value_prefix = format!("{prefix}_value_");
+    let mut lines = Vec::new();
+    for (key, value) in form {
+        let Some(id_raw) = key.strip_prefix(&value_prefix) else {
+            continue;
+        };
+        let part_id = parse_part_id(id_raw)?;
+        let unit = form
+            .get(&format!("{prefix}_unit_{part_id}"))
+            .cloned()
+            .unwrap_or_default();
+        let qty_value =
+            Decimal::from_str(value.trim()).map_err(|_| "Enter a quantity.".to_string())?;
+        lines.push(ActualLine {
+            part_id,
+            qty_value,
+            qty_unit: unit,
+        });
     }
+    Ok(lines)
+}
 
-    #[test]
-    fn invoice_machine_lines_parse_widget_snake_case_json() {
-        let json = r#"[{"id":null,"machine_id":1,"variables":{"duration":"2h 30m"}}]"#;
-        let lines: Vec<crate::forms::InvoiceMachineLineInput> =
-            serde_json::from_str(json).expect("widget snake_case json must parse");
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].machine_id, 1);
+async fn complete_error(
+    state: &WorkOrdersState,
+    chrome: &SharedChromeFolder,
+    ctx: &AuthContext,
+    step: &step::Model,
+    q: &ModalFormQuery,
+    form: &HashMap<String, String>,
+    error: String,
+) -> Response {
+    let parts = parts_for(state, step.work_order_id).await;
+    let inputs = form_lines(form, &parts, "in");
+    let outputs = form_lines(form, &parts, "out");
+    modal_response(
+        &CompleteModalPage {
+            step_id: step.id,
+            step_name: step.name.clone(),
+            form_name: q.form_name(),
+            inputs,
+            outputs,
+            error,
+        },
+        chrome,
+        ctx,
+    )
+}
+
+fn form_lines(
+    form: &HashMap<String, String>,
+    parts: &[part::Model],
+    prefix: &str,
+) -> Vec<CompleteLineView> {
+    let value_prefix = format!("{prefix}_value_");
+    let mut lines = Vec::new();
+    for (key, value) in form {
+        let Some(id_raw) = key.strip_prefix(&value_prefix) else {
+            continue;
+        };
+        let Ok(part_id) = parse_part_id(id_raw) else {
+            continue;
+        };
+        let unit = form
+            .get(&format!("{prefix}_unit_{part_id}"))
+            .cloned()
+            .unwrap_or_default();
+        let name = parts
+            .iter()
+            .find(|part| part.id == part_id)
+            .map(|part| part.name.clone())
+            .unwrap_or_else(|| "Part".to_string());
+        lines.push(CompleteLineView {
+            part_id,
+            name,
+            qty_value: value.clone(),
+            qty_unit: unit,
+        });
     }
-
-    #[test]
-    fn invoice_line_inputs_still_accept_pascal_case_json() {
-        let material: Vec<crate::forms::InvoiceMaterialLineInput> =
-            serde_json::from_str(r#"[{"ComponentId":2,"Variables":{"qty":1}}]"#)
-                .expect("pascal case json must parse");
-        assert_eq!(material[0].component_id, 2);
-
-        let machine: Vec<crate::forms::InvoiceMachineLineInput> =
-            serde_json::from_str(r#"[{"MachineId":3,"Variables":{"duration":"1h"}}]"#)
-                .expect("pascal case json must parse");
-        assert_eq!(machine[0].machine_id, 3);
-    }
-
-    #[test]
-    fn typed_unit_price_overrides_formula_only_when_present() {
-        assert_eq!(optional_non_negative_cost(&None).unwrap(), None);
-        assert_eq!(
-            optional_non_negative_cost(&Some("  ".into())).unwrap(),
-            None
-        );
-        assert_eq!(
-            optional_non_negative_cost(&Some("12.5".into())).unwrap(),
-            Some(Decimal::new(125, 1))
-        );
-        assert_eq!(
-            line_cost_or_formula(&None, Decimal::new(99, 0)).unwrap(),
-            Decimal::new(99, 0)
-        );
-        assert_eq!(
-            line_cost_or_formula(&Some("4".into()), Decimal::new(99, 0)).unwrap(),
-            Decimal::new(4, 0)
-        );
-        assert_eq!(
-            optional_non_negative_cost(&Some("-1".into())).unwrap_err(),
-            "unit price must be non-negative"
-        );
-        assert!(
-            validate_quotation_line_prices(Some(r#"[{"component_id":1,"final_cost":"-2"}]"#), None)
-                .is_err()
-        );
-        assert!(
-            validate_quotation_line_prices(
-                Some(r#"[{"component_id":1,"final_cost":""}]"#),
-                Some(r#"[{"machine_id":2,"final_cost":"10"}]"#)
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn validate_machine_lines_json_accepts_variables() {
-        assert!(validate_machine_lines_json(None).is_ok());
-        assert!(validate_machine_lines_json(Some("[]")).is_ok());
-
-        let valid = r#"[{"id":null,"machine_id":2,"variables":{"duration":"2h"}}]"#;
-        assert!(validate_machine_lines_json(Some(valid)).is_ok());
-
-        let invalid = r#"[{"machine_id":"nope"}]"#;
-        assert!(validate_machine_lines_json(Some(invalid)).is_err());
-    }
+    lines
 }

@@ -5,6 +5,7 @@ use sea_orm_migration::prelude::*;
 use super::InvoiceOutMovementTag;
 
 mod m00001_invoice_stock_movement_out;
+mod m00002_drop_posted_draft_copy_trigger;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -12,7 +13,10 @@ pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![Box::new(m00001_invoice_stock_movement_out::Migration)]
+        vec![
+            Box::new(m00001_invoice_stock_movement_out::Migration),
+            Box::new(m00002_drop_posted_draft_copy_trigger::Migration),
+        ]
     }
 }
 

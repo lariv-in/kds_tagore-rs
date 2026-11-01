@@ -98,6 +98,9 @@ WHERE machine.id = line.machine_id
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let conn = manager.get_connection();
+        if conn.get_database_backend() != sea_orm::DbBackend::Postgres {
+            return Ok(());
+        }
         conn.execute_unprepared(ENSURE_FORMULA_MEASURE).await?;
         conn.execute_unprepared(MIGRATE).await?;
         Ok(())

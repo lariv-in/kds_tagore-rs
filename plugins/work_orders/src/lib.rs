@@ -1,30 +1,23 @@
 #![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
-//! KDS Quotations plugin — Rune formula costing, draft work orders, and quotations.
+//! Process-plan work orders: parts, steps, and recorded batches.
 
 pub mod apps;
-pub mod cascade;
 pub mod create_modals;
 pub mod crumbs;
 pub mod entities;
-pub mod filters;
 pub mod forms;
+pub mod graph;
 pub mod handlers;
 pub mod keys;
-pub mod line_product;
-pub mod line_vars;
-pub mod machines;
+pub mod line_editors;
+pub mod logic;
+pub mod measure;
 pub mod migrations;
-pub mod pdf;
-pub mod pdf_templates;
-pub mod preferences;
-pub mod quotation_mail;
-pub mod quotation_number;
+pub mod plan_lines;
 pub mod routes;
-pub mod source_docs;
 pub mod state;
-pub mod tax_assoc;
 pub mod templates;
 
 use frunk::{HCons, hlist::HList};
@@ -49,9 +42,8 @@ define_passthrough_cap!(WorkOrdersStateCap, WorkOrdersTag, WorkOrdersState);
 
 define_plugin_install! {
     plugin: WorkOrdersTag;
-    /// Register KDS Quotations migrations, routes, templates, and dashboard tile.
+    /// Register work order migrations, routes, templates, and the dashboard tile.
     steps: [
-        cap_hook(kds_plugin_machinery_schedule::JobSourceDocTag, kds_plugin_machinery_schedule::JobSourceDocCap, source_docs::Hook),
         apps(apps::Hook),
         migrations(migrations::Hook),
         templates(templates::Hook),

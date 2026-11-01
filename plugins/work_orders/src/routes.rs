@@ -1,137 +1,65 @@
-use super::{handlers, keys::*, machines};
+#![allow(
+    clippy::redundant_field_names,
+    reason = "define_plugin_routes expands path params as field: field"
+)]
 
+use super::{handlers, keys::*};
 use kds_plugin_accountant_role::Accountant;
 
-/// KDS Quotations routes. Allowlist is [`Accountant`]; superuser always passes.
-pub struct QuotationsAccess;
-
-/// Quotation preferences page and sample PDFs. Empty allowlist: superuser only.
-pub struct QuotationsPreferencesView;
-
-/// Quotation preferences save. Empty allowlist: superuser only.
-pub struct QuotationsPreferencesMutate;
+/// Work order screens. Allowlist is [`Accountant`]; superuser always passes.
+pub struct WorkOrdersAccess;
 
 lariv_core::define_plugin_routes! {
     plugin: super::WorkOrdersTag;
     prefix: "/dashboard";
     routes: [
-        // Quotations (app default)
-        get WorkOrdersDefaultRouteTag, "/work-orders", handlers::invoices_list, fragment(InvoiceTableKey), authorize(QuotationsAccess, [Accountant]);
+        get WorkOrderListRouteTag, "/work-orders", handlers::list, fragment(WorkOrderTableKey), authorize(WorkOrdersAccess, [Accountant]);
+        get WorkOrderCreateGetRouteTag, "/work-orders/create", handlers::create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post WorkOrderCreatePostRouteTag, "/work-orders/create", handlers::create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get WorkOrderDetailRouteTag, "/work-orders/{id}", handlers::detail, authorize(WorkOrdersAccess, [Accountant]);
+        get WorkOrderEditGetRouteTag, "/work-orders/{id}/edit", handlers::edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post WorkOrderEditPostRouteTag, "/work-orders/{id}/edit", handlers::edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get WorkOrderDeleteGetRouteTag, "/work-orders/{id}/delete", handlers::delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post WorkOrderDeletePostRouteTag, "/work-orders/{id}/delete", bare handlers::delete_post, fragment(WorkOrderDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Draft Work Orders
-        get DraftWorkOrdersDefaultRouteTag, "/work-orders/orders", handlers::work_orders_list, fragment(WorkOrderTableKey), authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderFkSelectRouteTag, "/work-orders/orders/pick", handlers::work_order_select, fk_select(WorkOrderSelectTableKey, WorkOrderSelectModalKey), authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderCreateGetRouteTag, "/work-orders/orders/create", handlers::work_order_create_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderCreatePostRouteTag, "/work-orders/orders/create", handlers::work_order_create_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderDetailRouteTag, "/work-orders/orders/{id}", handlers::work_order_detail, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderEditGetRouteTag, "/work-orders/orders/{id}/edit", handlers::work_order_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderEditPostRouteTag, "/work-orders/orders/{id}/edit", handlers::work_order_edit_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderDeleteGetRouteTag, "/work-orders/orders/{id}/delete", handlers::work_order_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderDeletePostRouteTag, "/work-orders/orders/{id}/delete", bare handlers::work_order_delete_post, fragment(WorkOrderDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderConvertPostRouteTag, "/work-orders/orders/{id}/convert", bare handlers::work_order_convert_post, redirect, authorize(QuotationsAccess, [Accountant]);
+        get PartCreateGetRouteTag, "/work-orders/{id}/parts/create", handlers::part_create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PartCreatePostRouteTag, "/work-orders/{id}/parts/create", handlers::part_create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get PartEditGetRouteTag, "/work-orders/parts/{id}/edit", handlers::part_edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PartEditPostRouteTag, "/work-orders/parts/{id}/edit", handlers::part_edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get PartDeleteGetRouteTag, "/work-orders/parts/{id}/delete", handlers::part_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PartDeletePostRouteTag, "/work-orders/parts/{id}/delete", bare handlers::part_delete_post, fragment(PartDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Issued Work Orders
-        get IssuedWorkOrdersRouteTag, "/work-orders/issued", handlers::issued_work_orders_list, fragment(IssuedWorkOrderTableKey), authorize(QuotationsAccess, [Accountant]);
-        get IssuedWorkOrderDetailRouteTag, "/work-orders/issued/{id}", handlers::issued_work_order_detail, authorize(QuotationsAccess, [Accountant]);
-        get IssuedWorkOrderDeleteGetRouteTag, "/work-orders/issued/{id}/delete", handlers::issued_work_order_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post IssuedWorkOrderDeletePostRouteTag, "/work-orders/issued/{id}/delete", bare handlers::issued_work_order_delete_post, fragment(IssuedWorkOrderDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
-        post IssuedWorkOrderNewDraftPostRouteTag, "/work-orders/issued/{id}/new-draft", bare handlers::issued_work_order_new_draft_post, redirect, authorize(QuotationsAccess, [Accountant]);
-        get IssuedWorkOrderPdfModalRouteTag, "/work-orders/issued/{id}/pdf", bare handlers::issued_work_order_pdf_modal, modal, authorize(QuotationsAccess, [Accountant]);
-        get IssuedWorkOrderPdfRouteTag, "/work-orders/issued/{id}/pdf/file", bare handlers::issued_work_order_pdf, file, authorize(QuotationsAccess, [Accountant]);
+        get PresuppliedCreateGetRouteTag, "/work-orders/{id}/presupplied/create", handlers::presupplied_create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PresuppliedCreatePostRouteTag, "/work-orders/{id}/presupplied/create", handlers::presupplied_create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get PresuppliedEditGetRouteTag, "/work-orders/presupplied/{id}/edit", handlers::presupplied_edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PresuppliedEditPostRouteTag, "/work-orders/presupplied/{id}/edit", handlers::presupplied_edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get PresuppliedDeleteGetRouteTag, "/work-orders/presupplied/{id}/delete", handlers::presupplied_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post PresuppliedDeletePostRouteTag, "/work-orders/presupplied/{id}/delete", bare handlers::presupplied_delete_post, fragment(PresuppliedDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Work Order Lines
-        get WorkOrderLineEditGetRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderLineEditPostRouteTag, "/work-orders/lines/{id}/edit", handlers::work_order_line_edit_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderLineDeleteGetRouteTag, "/work-orders/lines/{id}/delete", handlers::work_order_line_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderLineDeletePostRouteTag, "/work-orders/lines/{id}/delete", bare handlers::work_order_line_delete_post, fragment(WorkOrderLineDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
+        get StepCreateGetRouteTag, "/work-orders/{id}/steps/create", handlers::step_create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post StepCreatePostRouteTag, "/work-orders/{id}/steps/create", handlers::step_create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get StepEditGetRouteTag, "/work-orders/steps/{id}/edit", handlers::step_edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post StepEditPostRouteTag, "/work-orders/steps/{id}/edit", handlers::step_edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get StepDeleteGetRouteTag, "/work-orders/steps/{id}/delete", handlers::step_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post StepDeletePostRouteTag, "/work-orders/steps/{id}/delete", bare handlers::step_delete_post, fragment(StepDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Work Order Machine Lines
-        get WorkOrderMachineLineEditGetRouteTag, "/work-orders/machine-lines/{id}/edit", handlers::work_order_machine_line_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderMachineLineEditPostRouteTag, "/work-orders/machine-lines/{id}/edit", handlers::work_order_machine_line_edit_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderMachineLineDeleteGetRouteTag, "/work-orders/machine-lines/{id}/delete", handlers::work_order_machine_line_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderMachineLineDeletePostRouteTag, "/work-orders/machine-lines/{id}/delete", bare handlers::work_order_machine_line_delete_post, fragment(WorkOrderMachineLineDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
+        get InputCreateGetRouteTag, "/work-orders/steps/{id}/inputs/create", handlers::input_create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post InputCreatePostRouteTag, "/work-orders/steps/{id}/inputs/create", handlers::input_create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get InputEditGetRouteTag, "/work-orders/inputs/{id}/edit", handlers::input_edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post InputEditPostRouteTag, "/work-orders/inputs/{id}/edit", handlers::input_edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get InputDeleteGetRouteTag, "/work-orders/inputs/{id}/delete", handlers::input_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post InputDeletePostRouteTag, "/work-orders/inputs/{id}/delete", bare handlers::input_delete_post, fragment(FlowDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Components
-        get WorkOrdersComponentsRouteTag, "/work-orders/components", handlers::components_list, fragment(ComponentTableKey), authorize(QuotationsAccess, [Accountant]);
-        get ComponentFkSelectRouteTag, "/work-orders/components/pick", handlers::component_select, fk_select(ComponentSelectTableKey, ComponentSelectModalKey), authorize(QuotationsAccess, [Accountant]);
-        get ComponentCreateGetRouteTag, "/work-orders/components/create", handlers::component_create_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post ComponentCreatePostRouteTag, "/work-orders/components/create", handlers::component_create_post, authorize(QuotationsAccess, [Accountant]);
-        get ComponentDetailRouteTag, "/work-orders/components/{id}", handlers::component_detail, authorize(QuotationsAccess, [Accountant]);
-        get ComponentEditGetRouteTag, "/work-orders/components/{id}/edit", handlers::component_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post ComponentEditPostRouteTag, "/work-orders/components/{id}/edit", handlers::component_edit_post, authorize(QuotationsAccess, [Accountant]);
-        get ComponentDeleteGetRouteTag, "/work-orders/components/{id}/delete", handlers::component_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post ComponentDeletePostRouteTag, "/work-orders/components/{id}/delete", bare handlers::component_delete_post, fragment(ComponentDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
+        get OutputCreateGetRouteTag, "/work-orders/steps/{id}/outputs/create", handlers::output_create_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post OutputCreatePostRouteTag, "/work-orders/steps/{id}/outputs/create", handlers::output_create_post, authorize(WorkOrdersAccess, [Accountant]);
+        get OutputEditGetRouteTag, "/work-orders/outputs/{id}/edit", handlers::output_edit_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post OutputEditPostRouteTag, "/work-orders/outputs/{id}/edit", handlers::output_edit_post, authorize(WorkOrdersAccess, [Accountant]);
+        get OutputDeleteGetRouteTag, "/work-orders/outputs/{id}/delete", handlers::output_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post OutputDeletePostRouteTag, "/work-orders/outputs/{id}/delete", bare handlers::output_delete_post, fragment(FlowDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
 
-        // Machines (same records as Machinery Schedule, quotations sidebar)
-        get WorkOrdersMachinesRouteTag, "/work-orders/machines", machines::list, fragment(WorkOrdersMachineTableKey), authorize(QuotationsAccess, [Accountant]);
-        get WorkOrdersMachineCreateGetRouteTag, "/work-orders/machines/create", machines::create_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrdersMachineCreatePostRouteTag, "/work-orders/machines/create", machines::create_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrdersMachineDetailRouteTag, "/work-orders/machines/{id}", machines::detail, fragment(WorkOrdersMachineJobsTableKey), authorize(QuotationsAccess, [Accountant]);
-        get WorkOrdersMachineEditGetRouteTag, "/work-orders/machines/{id}/edit", machines::edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrdersMachineEditPostRouteTag, "/work-orders/machines/{id}/edit", machines::edit_post, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrdersMachineDeleteGetRouteTag, "/work-orders/machines/{id}/delete", machines::delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrdersMachineDeletePostRouteTag, "/work-orders/machines/{id}/delete", bare machines::delete_post, fragment(WorkOrdersMachineDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
-
-        // Quotations
-        get WorkOrdersInvoicesRouteTag, "/work-orders/quotations", handlers::invoices_list, fragment(InvoiceTableKey), authorize(QuotationsAccess, [Accountant]);
-        get InvoiceCreateGetRouteTag, "/work-orders/quotations/create", handlers::invoice_create_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post InvoiceCreatePostRouteTag, "/work-orders/quotations/create", handlers::invoice_create_post, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceDetailRouteTag, "/work-orders/quotations/{id}", handlers::invoice_detail, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceCreateWorkOrderGetRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post InvoiceCreateWorkOrderPostRouteTag, "/work-orders/quotations/{id}/create-work-order", handlers::invoice_create_work_order_post, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceCreateDraftInvoiceGetRouteTag, "/work-orders/quotations/{id}/create-invoice", handlers::invoice_create_draft_invoice_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post InvoiceCreateDraftInvoicePostRouteTag, "/work-orders/quotations/{id}/create-invoice", handlers::invoice_create_draft_invoice_post, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceEditGetRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post InvoiceEditPostRouteTag, "/work-orders/quotations/{id}/edit", handlers::invoice_edit_post, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceDeleteGetRouteTag, "/work-orders/quotations/{id}/delete", handlers::invoice_delete_get, modal, authorize(QuotationsAccess, [Accountant]);
-        post InvoiceDeletePostRouteTag, "/work-orders/quotations/{id}/delete", bare handlers::invoice_delete_post, fragment(InvoiceDeleteModalKey), authorize(QuotationsAccess, [Accountant]);
-        post InvoiceCopyPostRouteTag, "/work-orders/quotations/{id}/copy", bare handlers::invoice_copy_post, redirect, authorize(QuotationsAccess, [Accountant]);
-
-        // Preferences
-        get WorkOrdersPrefsGetRouteTag, "/work-orders/preferences", handlers::preferences_get, authorize(QuotationsPreferencesView, []);
-        post WorkOrdersPrefsPostRouteTag, "/work-orders/preferences", handlers::preferences_post, authorize(QuotationsPreferencesMutate, []);
-
-        // PDFs
-        get WorkOrderPdfModalRouteTag, "/work-orders/orders/{id}/pdf", bare handlers::work_order_pdf_modal, modal, authorize(QuotationsAccess, [Accountant]);
-        get WorkOrderPdfRouteTag, "/work-orders/orders/{id}/pdf/file", bare handlers::work_order_pdf, file, authorize(QuotationsAccess, [Accountant]);
-        get InvoicePdfModalRouteTag, "/work-orders/quotations/{id}/pdf", bare handlers::invoice_pdf_modal, modal, authorize(QuotationsAccess, [Accountant]);
-        get InvoicePdfRouteTag, "/work-orders/quotations/{id}/pdf/file", bare handlers::invoice_pdf, file, authorize(QuotationsAccess, [Accountant]);
-        get InvoiceMailRouteTag, "/work-orders/quotations/{id}/mail", bare handlers::invoice_mail, file, authorize(QuotationsAccess, [Accountant]);
-        post WorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/work-order", bare handlers::work_order_pdf_preview_post, modal, authorize(QuotationsPreferencesView, []);
-        post IssuedWorkOrderPdfPreviewPostRouteTag, "/work-orders/pdf/preview/issued-work-order", bare handlers::issued_work_order_pdf_preview_post, modal, authorize(QuotationsPreferencesView, []);
-        post InvoicePdfPreviewPostRouteTag, "/work-orders/pdf/preview/quotation", bare handlers::invoice_pdf_preview_post, modal, authorize(QuotationsPreferencesView, []);
-        get WorkOrdersPdfPreviewPdfRouteTag, "/work-orders/pdf/preview/{token}", bare handlers::preview_pdf_get, file, param token: String, authorize(QuotationsPreferencesView, []);
-
-        // API
-        post WorkOrdersCalculateApiRouteTag, "/work-orders/api/calculate", bare handlers::calculate_api, raw, authorize(QuotationsAccess, [Accountant]);
+        get CompleteGetRouteTag, "/work-orders/steps/{id}/complete", handlers::complete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post CompletePostRouteTag, "/work-orders/steps/{id}/complete", handlers::complete_post, authorize(WorkOrdersAccess, [Accountant]);
+        get CompletionDeleteGetRouteTag, "/work-orders/completed/{id}/delete", handlers::completion_delete_get, modal, authorize(WorkOrdersAccess, [Accountant]);
+        post CompletionDeletePostRouteTag, "/work-orders/completed/{id}/delete", bare handlers::completion_delete_post, fragment(CompletionDeleteModalKey), authorize(WorkOrdersAccess, [Accountant]);
     ]
 }
-
-pub type DraftWorkOrderFkSelectRouteTag = WorkOrderFkSelectRouteTag;
-pub type DraftWorkOrderCreateGetRouteTag = WorkOrderCreateGetRouteTag;
-pub type DraftWorkOrderCreatePostRouteTag = WorkOrderCreatePostRouteTag;
-pub type DraftWorkOrderDetailRouteTag = WorkOrderDetailRouteTag;
-pub type DraftWorkOrderEditGetRouteTag = WorkOrderEditGetRouteTag;
-pub type DraftWorkOrderEditPostRouteTag = WorkOrderEditPostRouteTag;
-pub type DraftWorkOrderDeleteGetRouteTag = WorkOrderDeleteGetRouteTag;
-pub type DraftWorkOrderDeletePostRouteTag = WorkOrderDeletePostRouteTag;
-
-pub type DraftWorkOrderLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
-pub type DraftWorkOrderLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
-pub type DraftWorkOrderLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
-pub type DraftWorkOrderLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
-
-pub type DraftWorkOrderMaterialLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
-pub type DraftWorkOrderMaterialLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
-pub type DraftWorkOrderMaterialLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
-pub type DraftWorkOrderMaterialLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
-
-pub type WorkOrderMaterialLineEditGetRouteTag = WorkOrderLineEditGetRouteTag;
-pub type WorkOrderMaterialLineEditPostRouteTag = WorkOrderLineEditPostRouteTag;
-pub type WorkOrderMaterialLineDeleteGetRouteTag = WorkOrderLineDeleteGetRouteTag;
-pub type WorkOrderMaterialLineDeletePostRouteTag = WorkOrderLineDeletePostRouteTag;
-
-pub type DraftWorkOrderMachineLineEditGetRouteTag = WorkOrderMachineLineEditGetRouteTag;
-pub type DraftWorkOrderMachineLineEditPostRouteTag = WorkOrderMachineLineEditPostRouteTag;
-pub type DraftWorkOrderMachineLineDeleteGetRouteTag = WorkOrderMachineLineDeleteGetRouteTag;
-pub type DraftWorkOrderMachineLineDeletePostRouteTag = WorkOrderMachineLineDeletePostRouteTag;

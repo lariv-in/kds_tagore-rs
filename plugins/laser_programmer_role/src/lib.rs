@@ -4,7 +4,10 @@
 //! HR is read-only holidays, punch in and punch out, the programmer's own leave, and overtime.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
-use lariv_plugin_hr::routes::{AttendanceView, HolidayView, LeaveView, OvertimeView};
+use lariv_plugin_hr_attendance::routes::AttendanceView;
+use lariv_plugin_hr_holidays::routes::HolidayView;
+use lariv_plugin_hr_leaves::routes::LeaveView;
+use lariv_plugin_hr_overtime::routes::OvertimeView;
 use lariv_plugin_tasks::routes::{TasksMutate, TasksView};
 use lariv_plugin_users::{
     role_authorization::{RoleAuthorizationRegistrar, RoleAuthorizationRegistry},
