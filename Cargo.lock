@@ -4243,6 +4243,7 @@ dependencies = [
 [[package]]
 name = "lariv-core"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4291,6 +4292,7 @@ dependencies = [
 [[package]]
 name = "lariv-formula"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "lariv-core",
  "maud",
@@ -4304,6 +4306,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-contacts"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "axum",
  "chrono",
@@ -4323,6 +4326,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-crm"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4346,6 +4350,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-customer"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4366,6 +4371,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-dashboard"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "axum",
  "frunk",
@@ -4381,6 +4387,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-documents"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4406,6 +4413,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-filesystem"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4435,6 +4443,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-accounts"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4462,6 +4471,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-common"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "chrono",
  "lariv-core",
@@ -4476,6 +4486,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-creditnotes"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4498,6 +4509,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-indian"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "frunk",
@@ -4511,6 +4523,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-invoices"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4558,6 +4571,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-products"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4588,6 +4602,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-purchases"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4631,6 +4646,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-quotations"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4668,6 +4684,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-finance-taxes"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4696,6 +4713,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-forms"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4721,6 +4739,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4761,6 +4780,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr-attendance"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4783,6 +4803,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr-holidays"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4808,6 +4829,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr-job-posting"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4835,6 +4857,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr-leaves"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4861,6 +4884,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-hr-overtime"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4885,6 +4909,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-inventory"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4914,6 +4939,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-llm-assistant"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-imap",
@@ -4960,6 +4986,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-otp"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -4987,6 +5014,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-pwa"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "axum",
  "frunk",
@@ -5006,6 +5034,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-signing"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -5045,6 +5074,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-tasks"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5074,6 +5104,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-todo"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -5097,6 +5128,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-users"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5128,6 +5160,7 @@ dependencies = [
 [[package]]
 name = "lariv-plugin-website"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "async-trait",
  "axum",
@@ -5154,6 +5187,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "anyhow",
  "lariv-core",
@@ -5197,6 +5231,7 @@ dependencies = [
 [[package]]
 name = "lariv-rs-macros"
 version = "0.1.0"
+source = "git+https://github.com/lariv-in/lariv-rs.git?rev=2a67143f653c97fb9885083bb33ed240d67ac032#2a67143f653c97fb9885083bb33ed240d67ac032"
 dependencies = [
  "proc-macro2",
  "quote",
