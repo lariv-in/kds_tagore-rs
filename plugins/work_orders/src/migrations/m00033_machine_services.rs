@@ -23,8 +23,11 @@ DECLARE
         'kds_work_order_machine_lines'
     ];
 BEGIN
+    -- Catalog is unified into `products` (finance_services removed). Machine
+    -- rows already hold product ids from m00027 / machinery_schedule. Skip when
+    -- the legacy services table is gone; remap only for DBs that still have it.
     IF to_regclass('public.services') IS NULL THEN
-        RAISE EXCEPTION 'services table is missing; install finance services before work orders';
+        RETURN;
     END IF;
 
     CREATE TEMP TABLE kds_machine_product_ids (
