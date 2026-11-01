@@ -54,7 +54,6 @@ async fn insert_service_product<C: ConnectionTrait>(
         remarks: Set(None),
         name: Set(name),
         hsn_code: Set(None),
-        sac_code: Set(Some(0)),
         variables: Set(variables),
         sales_price_formula: Set(formula),
         ..Default::default()
