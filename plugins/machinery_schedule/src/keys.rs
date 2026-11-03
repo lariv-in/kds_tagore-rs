@@ -8,8 +8,7 @@ pub const JOB_BULK_DELETE_MODAL: SwapKey = SwapKey("ms-job-bulk-delete-modal");
 pub const JOB_DUPLICATED_MODAL: SwapKey = SwapKey("ms-job-duplicated-modal");
 
 pub const COMPLETED_JOB_DELETE_MODAL: SwapKey = SwapKey("ms-completed-job-delete-modal");
-pub const COMPLETED_JOB_BULK_DELETE_MODAL: SwapKey =
-    SwapKey("ms-completed-job-bulk-delete-modal");
+pub const COMPLETED_JOB_BULK_DELETE_MODAL: SwapKey = SwapKey("ms-completed-job-bulk-delete-modal");
 
 pub const MACHINE_TABLE: SwapKey = SwapKey("ms-machine-table");
 pub const MACHINE_JOBS_TABLE: SwapKey = SwapKey("ms-machine-jobs-table");

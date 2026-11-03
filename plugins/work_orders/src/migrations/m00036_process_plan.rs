@@ -108,10 +108,7 @@ fn create_sql(postgres: bool, customers: bool, nodes: bool, users: bool) -> Stri
         ("integer PRIMARY KEY AUTOINCREMENT", "text", "real(19, 6)")
     };
     let customer_fk = if customers {
-        format!(
-            ", {}",
-            fk("fk_kds_wo_customer", "customer_id", "customers")
-        )
+        format!(", {}", fk("fk_kds_wo_customer", "customer_id", "customers"))
     } else {
         String::new()
     };

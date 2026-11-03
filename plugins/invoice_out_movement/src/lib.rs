@@ -305,11 +305,7 @@ async fn load_header_movement_id<C: ConnectionTrait>(
         placeholder(backend, 1)
     );
     let row = db
-        .query_one_raw(Statement::from_sql_and_values(
-            backend,
-            sql,
-            [id.into()],
-        ))
+        .query_one_raw(Statement::from_sql_and_values(backend, sql, [id.into()]))
         .await
         .map_err(|err| err.to_string())?;
     let Some(row) = row else {

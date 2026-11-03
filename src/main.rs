@@ -7,9 +7,10 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_indian, finance_invoices, finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr,
-    hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, inventory, llm_assistant,
-    otp, pwa, signing, tasks, todo, users, website,
+    finance_customers, finance_indian, finance_invoices, finance_payments, finance_products,
+    finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting,
+    hr_leaves, hr_overtime, inventory, llm_assistant, otp, pwa, signing, tasks, todo, users,
+    website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -35,6 +36,8 @@ async fn main() -> anyhow::Result<()> {
     let app = forms::install(app);
     let app = llm_assistant::install(app);
     let app = finance_accounts::install(app);
+    // Before invoices and payments, which hook the customer journal.
+    let app = finance_customers::install(app);
     let app = customer::install(app);
     let app = contacts::install(app);
     // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.

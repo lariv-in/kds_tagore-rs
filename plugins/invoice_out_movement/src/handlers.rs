@@ -64,7 +64,12 @@ pub async fn select_out(
         path_and_query: path_and_query(&uri),
         page_size: q.page_size.get(),
     };
-    respond_picker_select(&htmx, MOVEMENT_OUT_SELECT_TABLE, MOVEMENT_OUT_SELECT_MODAL, &page)
+    respond_picker_select(
+        &htmx,
+        MOVEMENT_OUT_SELECT_TABLE,
+        MOVEMENT_OUT_SELECT_MODAL,
+        &page,
+    )
 }
 
 fn path_and_query(uri: &Uri) -> String {

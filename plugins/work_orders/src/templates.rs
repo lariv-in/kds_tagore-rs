@@ -4,9 +4,9 @@ use maud::{Markup, html};
 
 use lariv_core::components::{
     ButtonModalForm, ButtonSubmit, DeleteConfirmation, FieldLink, FieldText, FormOpts, Modal,
-    ObjectList, PaginationPage, ShellChrome, SlotCapability, SlotRegistrar,
-    TableColumnHeader, TablePagination, TableRow, button_modal_form, button_submit,
-    data_table_list, delete_confirmation, detail, detail_header, field_link, field_text, form,
+    ObjectList, PaginationPage, ShellChrome, SlotCapability, SlotRegistrar, TableColumnHeader,
+    TablePagination, TableRow, button_modal_form, button_submit, data_table_list,
+    delete_confirmation, detail, detail_header, field_link, field_text, form,
     form_hx_post_selector, form_hx_post_url, modal, modal_keyed, pagination_pages,
     row_attr_navigate_route, table_create_button, table_pagination,
 };
@@ -17,13 +17,13 @@ use lariv_core::template::{
 };
 use lariv_core::web::{modal_create_post_url, modal_edit_post_url};
 
+use super::create_modals::WORK_ORDER_CREATE;
 use super::crumbs::{self, detail_url};
 use super::entities::{part, step};
 use super::forms::{
     FlowForm, FlowFormField, PartForm, PartFormField, PresuppliedForm, PresuppliedFormField,
     StepForm, StepFormField, WorkOrderForm, WorkOrderFormField,
 };
-use super::create_modals::WORK_ORDER_CREATE;
 use super::graph::{self, PartRole, PlanLayout};
 use super::keys::*;
 use super::logic::{FlowSide, Plan};
@@ -166,11 +166,14 @@ impl WorkOrderListPage {
                 children: Vec::new(),
             })
             .collect();
-        let actions = table_create_button(WORK_ORDER_TABLE, WORK_ORDER_CREATE, 
+        let actions = table_create_button(
+            WORK_ORDER_TABLE,
+            WORK_ORDER_CREATE,
             Some("plus"),
             "btn-primary btn-sm",
         );
-        data_table_list(WORK_ORDER_TABLE, 
+        data_table_list(
+            WORK_ORDER_TABLE,
             "Work orders",
             actions,
             &headers,
@@ -680,17 +683,21 @@ impl RenderTemplate for WorkOrderCreateModalPage {
             presupplied_json: &self.presupplied_json,
             steps_json: &self.steps_json,
         });
-        modal_keyed(WORK_ORDER_CREATE_MODAL, 
+        modal_keyed(
+            WORK_ORDER_CREATE_MODAL,
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "New work order",
-                    attrs: form_hx_post_url(WORK_ORDER_CREATE_MODAL, &modal_create_post_url(
-                        WorkOrderCreatePostRouteTag,
-                        &self.form_name,
-                        &self.refresh_table,
-                    )),
+                    attrs: form_hx_post_url(
+                        WORK_ORDER_CREATE_MODAL,
+                        &modal_create_post_url(
+                            WorkOrderCreatePostRouteTag,
+                            &self.form_name,
+                            &self.refresh_table,
+                        ),
+                    ),
                     form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
                     inputs: WorkOrderForm::render_inputs(&ctx),
                     actions: submit("Create"),
@@ -728,16 +735,20 @@ impl RenderTemplate for WorkOrderEditModalPage {
             steps_json: &self.steps_json,
         });
         let delete_url = WorkOrderDeleteGetRouteTag::new(self.id).url();
-        modal_keyed(WORK_ORDER_EDIT_MODAL, 
+        modal_keyed(
+            WORK_ORDER_EDIT_MODAL,
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "Edit work order",
-                    attrs: form_hx_post_url(WORK_ORDER_EDIT_MODAL, &modal_edit_post_url(
-                        WorkOrderEditPostRouteTag::new(self.id),
-                        &self.form_name,
-                    )),
+                    attrs: form_hx_post_url(
+                        WORK_ORDER_EDIT_MODAL,
+                        &modal_edit_post_url(
+                            WorkOrderEditPostRouteTag::new(self.id),
+                            &self.form_name,
+                        ),
+                    ),
                     form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
                     inputs: WorkOrderForm::render_inputs(&ctx),
                     actions: html! {
@@ -808,18 +819,21 @@ impl RenderTemplate for PartModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit part",
-                form_hx_post_url(PART_EDIT_MODAL, &modal_edit_post_url(
-                    PartEditPostRouteTag::new(id),
-                    &self.form_name,
-                )),
+                form_hx_post_url(
+                    PART_EDIT_MODAL,
+                    &modal_edit_post_url(PartEditPostRouteTag::new(id), &self.form_name),
+                ),
             ),
             None => (
                 "Add part",
-                form_hx_post_url(PART_CREATE_MODAL, &modal_create_post_url(
-                    PartCreatePostRouteTag::new(self.work_order_id),
-                    &self.form_name,
-                    "",
-                )),
+                form_hx_post_url(
+                    PART_CREATE_MODAL,
+                    &modal_create_post_url(
+                        PartCreatePostRouteTag::new(self.work_order_id),
+                        &self.form_name,
+                        "",
+                    ),
+                ),
             ),
         };
         let body = form(
@@ -875,18 +889,21 @@ impl RenderTemplate for PresuppliedModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit supply",
-                form_hx_post_url(PRESUPPLIED_EDIT_MODAL, &modal_edit_post_url(
-                    PresuppliedEditPostRouteTag::new(id),
-                    &self.form_name,
-                )),
+                form_hx_post_url(
+                    PRESUPPLIED_EDIT_MODAL,
+                    &modal_edit_post_url(PresuppliedEditPostRouteTag::new(id), &self.form_name),
+                ),
             ),
             None => (
                 "Add supply",
-                form_hx_post_url(PRESUPPLIED_CREATE_MODAL, &modal_create_post_url(
-                    PresuppliedCreatePostRouteTag::new(self.work_order_id),
-                    &self.form_name,
-                    "",
-                )),
+                form_hx_post_url(
+                    PRESUPPLIED_CREATE_MODAL,
+                    &modal_create_post_url(
+                        PresuppliedCreatePostRouteTag::new(self.work_order_id),
+                        &self.form_name,
+                        "",
+                    ),
+                ),
             ),
         };
         let body = form(
@@ -938,18 +955,21 @@ impl RenderTemplate for StepModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit step",
-                form_hx_post_url(STEP_EDIT_MODAL, &modal_edit_post_url(
-                    StepEditPostRouteTag::new(id),
-                    &self.form_name,
-                )),
+                form_hx_post_url(
+                    STEP_EDIT_MODAL,
+                    &modal_edit_post_url(StepEditPostRouteTag::new(id), &self.form_name),
+                ),
             ),
             None => (
                 "Add step",
-                form_hx_post_url(STEP_CREATE_MODAL, &modal_create_post_url(
-                    StepCreatePostRouteTag::new(self.work_order_id),
-                    &self.form_name,
-                    "",
-                )),
+                form_hx_post_url(
+                    STEP_CREATE_MODAL,
+                    &modal_create_post_url(
+                        StepCreatePostRouteTag::new(self.work_order_id),
+                        &self.form_name,
+                        "",
+                    ),
+                ),
             ),
         };
         let body = form(
@@ -1010,26 +1030,30 @@ impl RenderTemplate for FlowModalPage {
             (FlowSide::Output, Some(_)) => "Edit output",
         };
         let attrs = match (self.side, self.existing_id) {
-            (FlowSide::Input, Some(id)) => form_hx_post_url(FLOW_EDIT_MODAL, 
+            (FlowSide::Input, Some(id)) => form_hx_post_url(
+                FLOW_EDIT_MODAL,
                 &modal_edit_post_url(InputEditPostRouteTag::new(id), &self.form_name),
             ),
-            (FlowSide::Output, Some(id)) => form_hx_post_url(FLOW_EDIT_MODAL, 
+            (FlowSide::Output, Some(id)) => form_hx_post_url(
+                FLOW_EDIT_MODAL,
                 &modal_edit_post_url(OutputEditPostRouteTag::new(id), &self.form_name),
             ),
-            (FlowSide::Input, None) => {
-                form_hx_post_url(FLOW_CREATE_MODAL, &modal_create_post_url(
+            (FlowSide::Input, None) => form_hx_post_url(
+                FLOW_CREATE_MODAL,
+                &modal_create_post_url(
                     InputCreatePostRouteTag::new(self.step_id),
                     &self.form_name,
                     "",
-                ))
-            }
-            (FlowSide::Output, None) => {
-                form_hx_post_url(FLOW_CREATE_MODAL, &modal_create_post_url(
+                ),
+            ),
+            (FlowSide::Output, None) => form_hx_post_url(
+                FLOW_CREATE_MODAL,
+                &modal_create_post_url(
                     OutputCreatePostRouteTag::new(self.step_id),
                     &self.form_name,
                     "",
-                ))
-            }
+                ),
+            ),
         };
         let delete = self.existing_id.map(|id| {
             let (href, name) = match self.side {
@@ -1091,17 +1115,21 @@ pub struct CompleteModalPage {
 
 impl RenderTemplate for CompleteModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        modal_keyed(COMPLETE_MODAL, 
+        modal_keyed(
+            COMPLETE_MODAL,
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "Record batch",
                     subtitle: &self.step_name,
-                    attrs: form_hx_post_url(COMPLETE_MODAL, &modal_edit_post_url(
-                        CompletePostRouteTag::new(self.step_id),
-                        &self.form_name,
-                    )),
+                    attrs: form_hx_post_url(
+                        COMPLETE_MODAL,
+                        &modal_edit_post_url(
+                            CompletePostRouteTag::new(self.step_id),
+                            &self.form_name,
+                        ),
+                    ),
                     form_error: Some(self.error.as_str()).filter(|err| !err.is_empty()),
                     inputs: html! {
                         h4 class="font-medium" { "Inputs" }

@@ -246,7 +246,12 @@ pub async fn create_post(
         let _ = logic::delete_work_order(&state.db, saved.id).await;
         return create_error(&state, &chrome, &ctx, &q, &form, error).await;
     }
-    respond_create_modal_done(&htmx, WORK_ORDER_CREATE_MODAL, "", &detail_redirect(saved.id))
+    respond_create_modal_done(
+        &htmx,
+        WORK_ORDER_CREATE_MODAL,
+        "",
+        &detail_redirect(saved.id),
+    )
 }
 
 async fn create_error(

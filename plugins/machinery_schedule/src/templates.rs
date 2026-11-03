@@ -29,10 +29,10 @@ use lariv_core::{
 use lariv_plugin_filesystem::routes::VNodeDetailRouteTag;
 use maud::{Markup, PreEscaped, html};
 
+use super::create_modals::{JOB_CREATE, MACHINE_CREATE};
 use super::crumbs::{
     completed_job_crumbs, job_crumbs, jobs_list_crumbs, machine_crumbs, machines_list_crumbs,
 };
-use super::create_modals::{JOB_CREATE, MACHINE_CREATE};
 use super::forms::{JobForm, JobFormField, MachineForm, MachineFormField};
 use super::keys::{
     COMPLETED_JOB_DELETE_MODAL, JOB_CREATE_MODAL, JOB_DELETE_MODAL, JOB_DUPLICATED_MODAL,

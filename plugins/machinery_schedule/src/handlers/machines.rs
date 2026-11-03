@@ -544,10 +544,5 @@ pub async fn select(
         can_edit: can_manage(&ctx),
         multi: query_is_multi(q.multi.as_deref()),
     };
-    respond_picker_select(
-        &htmx,
-        MACHINE_SELECT_TABLE,
-        MACHINE_SELECT_MODAL,
-        &page,
-    )
+    respond_picker_select(&htmx, MACHINE_SELECT_TABLE, MACHINE_SELECT_MODAL, &page)
 }
