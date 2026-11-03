@@ -14,6 +14,7 @@ lariv-plugin-crm = { workspace = true }
 lariv-plugin-finance-accounts = { workspace = true }
 lariv-plugin-finance-creditnotes = { workspace = true }
 lariv-plugin-finance-invoices = { workspace = true }
+lariv-plugin-finance-payments = { workspace = true }
 lariv-plugin-finance-products = { workspace = true }
 lariv-plugin-finance-purchases = { workspace = true }
 lariv-plugin-finance-taxes = { workspace = true }

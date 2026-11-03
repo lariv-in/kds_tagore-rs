@@ -7,7 +7,7 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms, hr,
+    finance_indian, finance_invoices, finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr,
     hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, inventory, llm_assistant,
     otp, pwa, signing, tasks, todo, users, website,
 };
@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
     // so invoices point at that same party.
     let app = delivery::install(app);
     let app = finance_invoices::install(app);
+    let app = finance_payments::install(app);
     // After invoices and inventory: adds stock_movement_out_id and registers PDF/form addons.
     let app = invoice_out_movement::install(app);
     let app = finance_purchases::install(app);
