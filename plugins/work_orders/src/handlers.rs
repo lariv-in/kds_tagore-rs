@@ -67,8 +67,8 @@ fn modal_response(
     html_built_page_with_slots(page, chrome, &SlotCtx::from_auth(ctx)).into_response()
 }
 
-fn reload<M: lariv_core::components::SwapKey>(htmx: &Htmx, work_order_id: i64) -> Response {
-    respond_edit_modal_done::<M>(htmx, &detail_redirect(work_order_id))
+fn reload(htmx: &Htmx, modal: SwapKey, work_order_id: i64) -> Response {
+    respond_edit_modal_done(htmx, modal, &detail_redirect(work_order_id))
 }
 
 fn list_redirect(htmx: &Htmx) -> Response {
@@ -144,7 +144,7 @@ pub async fn list(
         orders: ObjectList::from_page(rows, page_num, page_size, total),
         path_and_query: path_and_query(&uri),
     };
-    if htmx.targets::<WorkOrderTableKey>() {
+    if htmx.targets(WORK_ORDER_TABLE) {
         return page.render_table();
     }
     if htmx.wants_main_content() {
@@ -246,7 +246,7 @@ pub async fn create_post(
         let _ = logic::delete_work_order(&state.db, saved.id).await;
         return create_error(&state, &chrome, &ctx, &q, &form, error).await;
     }
-    respond_create_modal_done::<WorkOrderCreateModalKey>(&htmx, "", &detail_redirect(saved.id))
+    respond_create_modal_done(&htmx, WORK_ORDER_CREATE_MODAL, "", &detail_redirect(saved.id))
 }
 
 async fn create_error(
@@ -284,7 +284,7 @@ pub async fn detail(
     let Some(page) = detail_page(&state, id).await else {
         return list_redirect(&htmx);
     };
-    if htmx.targets::<WorkOrderGraphKey>() {
+    if htmx.targets(WORK_ORDER_GRAPH) {
         return page.render_graph().into_response();
     }
     html_built_page_or_app_layout(&page, &htmx, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
@@ -385,7 +385,7 @@ pub async fn edit_post(
         return edit_error(&state, &chrome, &ctx, id, &q, &form, error).await;
     }
     match logic::replace_plan_lines(&state.db, id, &draft).await {
-        Ok(()) => reload::<WorkOrderEditModalKey>(&htmx, id),
+        Ok(()) => reload(&htmx, WORK_ORDER_EDIT_MODAL, id),
         Err(error) => edit_error(&state, &chrome, &ctx, id, &q, &form, error).await,
     }
 }
@@ -498,7 +498,7 @@ pub async fn delete_get(
     }
     modal_response(
         &confirm(
-            WorkOrderDeleteModalKey::ID,
+            WORK_ORDER_DELETE_MODAL.id(),
             "Delete work order",
             "This deletes the plan. Recorded batches must be removed first.",
             &crate::routes::WorkOrderDeletePostRouteTag::new(id).url(),
@@ -520,7 +520,7 @@ pub async fn delete_post(
         Ok(()) => list_redirect(&htmx),
         Err(error) => modal_response(
             &confirm(
-                WorkOrderDeleteModalKey::ID,
+                WORK_ORDER_DELETE_MODAL.id(),
                 "Delete work order",
                 "This deletes the plan. Recorded batches must be removed first.",
                 &crate::routes::WorkOrderDeletePostRouteTag::new(id).url(),
@@ -561,7 +561,7 @@ pub async fn part_create_post(
     HtmlFormBody(form): HtmlFormBody<PartForm>,
 ) -> Response {
     match logic::save_part(&state.db, part_input(id, None, &form)).await {
-        Ok(saved) => reload::<PartCreateModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, PART_CREATE_MODAL, saved.work_order_id),
         Err(error) => modal_response(
             &PartModalPage {
                 work_order_id: id,
@@ -634,7 +634,7 @@ pub async fn part_edit_post(
     )
     .await
     {
-        Ok(saved) => reload::<PartEditModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, PART_EDIT_MODAL, saved.work_order_id),
         Err(error) => modal_response(
             &PartModalPage {
                 work_order_id: existing.work_order_id,
@@ -658,7 +658,7 @@ pub async fn part_delete_get(
     RequireAuth(ctx): RequireAuth,
 ) -> maud::Markup {
     let page = confirm(
-        PartDeleteModalKey::ID,
+        PART_DELETE_MODAL.id(),
         "Delete part",
         "Remove this part from the work order.",
         &crate::routes::PartDeletePostRouteTag::new(id).url(),
@@ -675,10 +675,10 @@ pub async fn part_delete_post(
     htmx: Htmx,
 ) -> Response {
     match logic::delete_part(&state.db, id).await {
-        Ok(work_order_id) => reload::<PartDeleteModalKey>(&htmx, work_order_id),
+        Ok(work_order_id) => reload(&htmx, PART_DELETE_MODAL, work_order_id),
         Err(error) => modal_response(
             &confirm(
-                PartDeleteModalKey::ID,
+                PART_DELETE_MODAL.id(),
                 "Delete part",
                 "Remove this part from the work order.",
                 &crate::routes::PartDeletePostRouteTag::new(id).url(),
@@ -743,7 +743,7 @@ pub async fn presupplied_create_post(
     )
     .await
     {
-        Ok(saved) => reload::<PresuppliedCreateModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, PRESUPPLIED_CREATE_MODAL, saved.work_order_id),
         Err(error) => modal_response(
             &presupplied_page(id, None, &q, &form, &parts, error),
             &chrome,
@@ -825,7 +825,7 @@ pub async fn presupplied_edit_post(
     )
     .await
     {
-        Ok(saved) => reload::<PresuppliedEditModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, PRESUPPLIED_EDIT_MODAL, saved.work_order_id),
         Err(error) => modal_response(
             &presupplied_page(existing.work_order_id, Some(id), &q, &form, &parts, error),
             &chrome,
@@ -840,7 +840,7 @@ pub async fn presupplied_delete_get(
     RequireAuth(ctx): RequireAuth,
 ) -> maud::Markup {
     let page = confirm(
-        PresuppliedDeleteModalKey::ID,
+        PRESUPPLIED_DELETE_MODAL.id(),
         "Delete supply",
         "Remove this presupplied quantity. Recorded batches stay as they are.",
         &crate::routes::PresuppliedDeletePostRouteTag::new(id).url(),
@@ -857,10 +857,10 @@ pub async fn presupplied_delete_post(
     htmx: Htmx,
 ) -> Response {
     match logic::delete_presupplied(&state.db, id).await {
-        Ok(work_order_id) => reload::<PresuppliedDeleteModalKey>(&htmx, work_order_id),
+        Ok(work_order_id) => reload(&htmx, PRESUPPLIED_DELETE_MODAL, work_order_id),
         Err(error) => modal_response(
             &confirm(
-                PresuppliedDeleteModalKey::ID,
+                PRESUPPLIED_DELETE_MODAL.id(),
                 "Delete supply",
                 "Remove this presupplied quantity. Recorded batches stay as they are.",
                 &crate::routes::PresuppliedDeletePostRouteTag::new(id).url(),
@@ -915,7 +915,7 @@ pub async fn step_create_post(
     )
     .await
     {
-        Ok(saved) => reload::<StepCreateModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, STEP_CREATE_MODAL, saved.work_order_id),
         Err(error) => modal_response(&step_page(id, None, &q, &form, error), &chrome, &ctx),
     }
 }
@@ -988,7 +988,7 @@ pub async fn step_edit_post(
     )
     .await
     {
-        Ok(saved) => reload::<StepEditModalKey>(&htmx, saved.work_order_id),
+        Ok(saved) => reload(&htmx, STEP_EDIT_MODAL, saved.work_order_id),
         Err(error) => modal_response(
             &step_page(existing.work_order_id, Some(id), &q, &form, error),
             &chrome,
@@ -1003,7 +1003,7 @@ pub async fn step_delete_get(
     RequireAuth(ctx): RequireAuth,
 ) -> maud::Markup {
     let page = confirm(
-        StepDeleteModalKey::ID,
+        STEP_DELETE_MODAL.id(),
         "Delete step",
         "Delete recorded batches before deleting this step.",
         &crate::routes::StepDeletePostRouteTag::new(id).url(),
@@ -1020,10 +1020,10 @@ pub async fn step_delete_post(
     htmx: Htmx,
 ) -> Response {
     match logic::delete_step(&state.db, id).await {
-        Ok(work_order_id) => reload::<StepDeleteModalKey>(&htmx, work_order_id),
+        Ok(work_order_id) => reload(&htmx, STEP_DELETE_MODAL, work_order_id),
         Err(error) => modal_response(
             &confirm(
-                StepDeleteModalKey::ID,
+                STEP_DELETE_MODAL.id(),
                 "Delete step",
                 "Delete recorded batches before deleting this step.",
                 &crate::routes::StepDeletePostRouteTag::new(id).url(),
@@ -1263,7 +1263,7 @@ pub async fn complete_post(
         Err(error) => return complete_error(&state, &chrome, &ctx, &step, &q, &form, error).await,
     };
     match logic::complete_step(&state.db, id, ctx.user.id, inputs, outputs).await {
-        Ok(_) => reload::<CompleteModalKey>(&htmx, step.work_order_id),
+        Ok(_) => reload(&htmx, COMPLETE_MODAL, step.work_order_id),
         Err(error) => complete_error(&state, &chrome, &ctx, &step, &q, &form, error).await,
     }
 }
@@ -1274,7 +1274,7 @@ pub async fn completion_delete_get(
     RequireAuth(ctx): RequireAuth,
 ) -> maud::Markup {
     let page = confirm(
-        CompletionDeleteModalKey::ID,
+        COMPLETION_DELETE_MODAL.id(),
         "Delete batch",
         "Remove this recorded batch.",
         &crate::routes::CompletionDeletePostRouteTag::new(id).url(),
@@ -1291,10 +1291,10 @@ pub async fn completion_delete_post(
     htmx: Htmx,
 ) -> Response {
     match logic::delete_completion(&state.db, id).await {
-        Ok(work_order_id) => reload::<CompletionDeleteModalKey>(&htmx, work_order_id),
+        Ok(work_order_id) => reload(&htmx, COMPLETION_DELETE_MODAL, work_order_id),
         Err(error) => modal_response(
             &confirm(
-                CompletionDeleteModalKey::ID,
+                COMPLETION_DELETE_MODAL.id(),
                 "Delete batch",
                 "Remove this recorded batch.",
                 &crate::routes::CompletionDeletePostRouteTag::new(id).url(),
@@ -1474,8 +1474,8 @@ async fn flow_save(
     .await
     {
         Ok(work_order_id) => match existing_id {
-            Some(_) => reload::<FlowEditModalKey>(req.htmx, work_order_id),
-            None => reload::<FlowCreateModalKey>(req.htmx, work_order_id),
+            Some(_) => reload(req.htmx, FLOW_EDIT_MODAL, work_order_id),
+            None => reload(req.htmx, FLOW_CREATE_MODAL, work_order_id),
         },
         Err(error) => modal_response(
             &flow_page(step_id, existing_id, side, q, &form, &part_rows, error),
@@ -1598,7 +1598,7 @@ async fn delete_flow_page(
         FlowSide::Output => crate::routes::OutputDeletePostRouteTag::new(id).url(),
     };
     let page = confirm(
-        FlowDeleteModalKey::ID,
+        FLOW_DELETE_MODAL.id(),
         "Delete line",
         "Remove this quantity from the step.",
         &url,
@@ -1616,7 +1616,7 @@ async fn delete_flow(
     side: FlowSide,
 ) -> Response {
     match logic::delete_flow(&state.db, id, side).await {
-        Ok(work_order_id) => reload::<FlowDeleteModalKey>(htmx, work_order_id),
+        Ok(work_order_id) => reload(htmx, FLOW_DELETE_MODAL, work_order_id),
         Err(error) => delete_flow_page(chrome, ctx, id, side, &error)
             .await
             .into_response(),

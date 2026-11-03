@@ -5,7 +5,7 @@ use axum::{
 };
 use chrono::Utc;
 use lariv_core::{
-    components::{ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
+    components::{ManyToManyItem, ObjectList, SharedChromeFolder, SlotCtx},
     html_form::HtmlFormBody,
     http::Cap,
     template::RenderAppPane,
@@ -40,8 +40,7 @@ use crate::{
     },
     job_source_doc::{JobSourceDocRegistry, resolve_job_source_doc},
     keys::{
-        JobBulkDeleteModalKey, JobCreateModalKey, JobDeleteModalKey, JobEditModalKey,
-        JobHubTableKey,
+        JOB_BULK_DELETE_MODAL, JOB_CREATE_MODAL, JOB_DELETE_MODAL, JOB_EDIT_MODAL, JOB_HUB_TABLE,
     },
     logic::{
         OrderMove, clamp_progress, complete_job_if_needed, completed_job_id_for_job,
@@ -270,7 +269,7 @@ pub async fn hub(
         can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
-    if htmx.targets::<JobHubTableKey>() {
+    if htmx.targets(JOB_HUB_TABLE) {
         return page.render_table();
     }
     if htmx.wants_main_content() {
@@ -509,7 +508,7 @@ pub async fn create_post(
                 Some(c) => CompletedJobDetailRouteTag::new(c.id).url(),
                 None => JobDetailRouteTag::new(saved.id).url(),
             };
-            respond_create_modal_done::<JobCreateModalKey>(&htmx, &q.refresh_table(), &dest)
+            respond_create_modal_done(&htmx, JOB_CREATE_MODAL, &q.refresh_table(), &dest)
         }
         Err(e) => render_error(e.to_string()),
     }
@@ -623,7 +622,7 @@ pub async fn edit_post(
                 Some(c) => CompletedJobDetailRouteTag::new(c.id).url(),
                 None => JobDetailRouteTag::new(id).url(),
             };
-            respond_edit_modal_done::<JobEditModalKey>(&htmx, &dest)
+            respond_edit_modal_done(&htmx, JOB_EDIT_MODAL, &dest)
         }
         Err(e) => render_error(e.to_string()),
     }
@@ -636,7 +635,7 @@ pub async fn delete_get(
     Path(id): Path<i64>,
 ) -> maud::Markup {
     let page = ConfirmDeletePage {
-        modal_uid: JobDeleteModalKey::ID.to_string(),
+        modal_uid: JOB_DELETE_MODAL.id().to_string(),
         message: "Are you sure you want to delete this job?".into(),
         form_name: q
             .name
@@ -663,7 +662,7 @@ pub async fn delete_post(
         Err(e) => {
             tracing::error!(error = %e, id, "failed to delete job");
             let page = ConfirmDeletePage {
-                modal_uid: JobDeleteModalKey::ID.to_string(),
+                modal_uid: JOB_DELETE_MODAL.id().to_string(),
                 message: "Are you sure you want to delete this job?".into(),
                 form_name: "kds_ms.JobDeleteForm".into(),
                 post_url: crate::routes::JobDeletePostRouteTag::new(id).url(),
@@ -717,7 +716,7 @@ pub async fn duplicate_post(
 
 fn job_bulk_delete_page(ids: &[i64], error: String) -> ConfirmBulkDeletePage {
     ConfirmBulkDeletePage {
-        modal_uid: JobBulkDeleteModalKey::ID.to_string(),
+        modal_uid: JOB_BULK_DELETE_MODAL.id().to_string(),
         message: if ids.is_empty() {
             "Select at least one job to delete.".into()
         } else {

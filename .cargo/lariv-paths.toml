@@ -17,7 +17,6 @@ lariv-plugin-finance-creditnotes = { path = "../../lariv-rs/plugins/finance_cred
 lariv-plugin-finance-invoices = { path = "../../lariv-rs/plugins/finance_invoices" }
 lariv-plugin-finance-products = { path = "../../lariv-rs/plugins/finance_products" }
 lariv-plugin-finance-purchases = { path = "../../lariv-rs/plugins/finance_purchases" }
-lariv-plugin-finance-quotations = { path = "../../lariv-rs/plugins/finance_quotations" }
 lariv-plugin-finance-taxes = { path = "../../lariv-rs/plugins/finance_taxes" }
 lariv-plugin-hr = { path = "../../lariv-rs/plugins/hr" }
 lariv-plugin-hr-attendance = { path = "../../lariv-rs/plugins/hr_attendance" }

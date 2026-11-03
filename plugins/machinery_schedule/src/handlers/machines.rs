@@ -5,7 +5,7 @@ use axum::{
 };
 use chrono::Utc;
 use lariv_core::{
-    components::{ObjectList, SharedChromeFolder, SlotCtx, SwapKey},
+    components::{ObjectList, SharedChromeFolder, SlotCtx},
     html_form::HtmlFormBody,
     http::Cap,
     picker::respond_picker_select,
@@ -24,8 +24,8 @@ use crate::{
     forms::MachineForm,
     handlers::{ModalNameQuery, path_and_query},
     keys::{
-        MachineCreateModalKey, MachineDeleteModalKey, MachineEditModalKey, MachineJobsTableKey,
-        MachineSelectModalKey, MachineSelectTableKey, MachineTableKey,
+        MACHINE_CREATE_MODAL, MACHINE_DELETE_MODAL, MACHINE_EDIT_MODAL, MACHINE_JOBS_TABLE,
+        MACHINE_SELECT_MODAL, MACHINE_SELECT_TABLE, MACHINE_TABLE,
     },
     logic::{
         completed_job_id_for_job, format_job_duration, jobs_for_machine, machine_free_on,
@@ -176,7 +176,7 @@ pub async fn list(
         can_edit: can_manage(&ctx),
     };
     let slot_ctx = SlotCtx::from_auth(&ctx);
-    if htmx.targets::<MachineTableKey>() {
+    if htmx.targets(MACHINE_TABLE) {
         return page.render_table();
     }
     if htmx.wants_main_content() {
@@ -245,7 +245,7 @@ pub async fn detail(
         sort,
         path_and_query: path_and_query(&uri),
     };
-    if htmx.targets::<MachineJobsTableKey>() {
+    if htmx.targets(MACHINE_JOBS_TABLE) {
         return page.render_jobs_table().into_response();
     }
     html_built_page_or_app_layout(&page, &htmx, &chrome, &SlotCtx::from_auth(&ctx)).into_response()
@@ -334,8 +334,9 @@ pub async fn create_post(
         variables: Set(variables),
     };
     match model.insert(&state.db).await {
-        Ok(saved) => respond_create_modal_done_fk::<MachineCreateModalKey>(
+        Ok(saved) => respond_create_modal_done_fk(
             &htmx,
+            MACHINE_CREATE_MODAL,
             &q.refresh_table(),
             &MachineDetailRouteTag::new(saved.id).url(),
             saved.id,
@@ -444,8 +445,9 @@ pub async fn edit_post(
     am.cost_formula = Set(cost_formula);
     am.variables = Set(variables);
     match am.update(&state.db).await {
-        Ok(_) => respond_edit_modal_done::<MachineEditModalKey>(
+        Ok(_) => respond_edit_modal_done(
             &htmx,
+            MACHINE_EDIT_MODAL,
             &MachineDetailRouteTag::new(id).url(),
         ),
         Err(e) => {
@@ -469,7 +471,7 @@ pub async fn delete_get(
     Path(id): Path<i64>,
 ) -> maud::Markup {
     let page = ConfirmDeletePage {
-        modal_uid: MachineDeleteModalKey::ID.to_string(),
+        modal_uid: MACHINE_DELETE_MODAL.id().to_string(),
         message: "Are you sure you want to delete this machine?".into(),
         form_name: q
             .name
@@ -497,7 +499,7 @@ pub async fn delete_post(
         Err(e) => {
             tracing::error!(error = %e, id, "failed to delete machine");
             let page = ConfirmDeletePage {
-                modal_uid: MachineDeleteModalKey::ID.to_string(),
+                modal_uid: MACHINE_DELETE_MODAL.id().to_string(),
                 message: "Are you sure you want to delete this machine?".into(),
                 form_name: "kds_ms.MachineDeleteForm".into(),
                 post_url: crate::routes::MachineDeletePostRouteTag::new(id).url(),
@@ -542,5 +544,10 @@ pub async fn select(
         can_edit: can_manage(&ctx),
         multi: query_is_multi(q.multi.as_deref()),
     };
-    respond_picker_select::<MachineSelectTableKey, MachineSelectModalKey, _>(&htmx, &page)
+    respond_picker_select(
+        &htmx,
+        MACHINE_SELECT_TABLE,
+        MACHINE_SELECT_MODAL,
+        &page,
+    )
 }

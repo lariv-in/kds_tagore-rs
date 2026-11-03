@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use lariv_core::{
-    components::{SharedChromeFolder, SlotCtx, SwapKey},
+    components::{SharedChromeFolder, SlotCtx},
     html_form::HtmlFormBody,
     http::Cap,
     web::{Htmx, html_built_page_or_app_layout, html_built_page_with_slots},
@@ -20,7 +20,7 @@ use crate::{
         parse_bulk_ids,
     },
     job_source_doc::{JobSourceDocRegistry, resolve_job_source_doc},
-    keys::{CompletedJobBulkDeleteModalKey, CompletedJobDeleteModalKey},
+    keys::{COMPLETED_JOB_BULK_DELETE_MODAL, COMPLETED_JOB_DELETE_MODAL},
     logic::{
         delete_completed_job, duplicate_job, format_job_duration, load_job_file_ids,
         load_job_machine_ids,
@@ -127,7 +127,7 @@ pub async fn delete_get(
     Path(id): Path<i64>,
 ) -> maud::Markup {
     let page = ConfirmDeletePage {
-        modal_uid: CompletedJobDeleteModalKey::ID.to_string(),
+        modal_uid: COMPLETED_JOB_DELETE_MODAL.id().to_string(),
         message: "Are you sure you want to delete this completed job?".into(),
         form_name: q
             .name
@@ -154,7 +154,7 @@ pub async fn delete_post(
         Err(e) => {
             tracing::error!(error = %e, id, "failed to delete completed job");
             let page = ConfirmDeletePage {
-                modal_uid: CompletedJobDeleteModalKey::ID.to_string(),
+                modal_uid: COMPLETED_JOB_DELETE_MODAL.id().to_string(),
                 message: "Are you sure you want to delete this completed job?".into(),
                 form_name: "kds_ms.CompletedJobDeleteForm".into(),
                 post_url: CompletedJobDeletePostRouteTag::new(id).url(),
@@ -167,7 +167,7 @@ pub async fn delete_post(
 
 fn completed_bulk_delete_page(ids: &[i64], error: String) -> ConfirmBulkDeletePage {
     ConfirmBulkDeletePage {
-        modal_uid: CompletedJobBulkDeleteModalKey::ID.to_string(),
+        modal_uid: COMPLETED_JOB_BULK_DELETE_MODAL.id().to_string(),
         message: if ids.is_empty() {
             "Select at least one completed job to delete.".into()
         } else {

@@ -4,7 +4,7 @@ use maud::{Markup, html};
 
 use lariv_core::components::{
     ButtonModalForm, ButtonSubmit, DeleteConfirmation, FieldLink, FieldText, FormOpts, Modal,
-    ObjectList, PaginationPage, ShellChrome, SlotCapability, SlotRegistrar, SwapKey,
+    ObjectList, PaginationPage, ShellChrome, SlotCapability, SlotRegistrar,
     TableColumnHeader, TablePagination, TableRow, button_modal_form, button_submit,
     data_table_list, delete_confirmation, detail, detail_header, field_link, field_text, form,
     form_hx_post_selector, form_hx_post_url, modal, modal_keyed, pagination_pages,
@@ -23,6 +23,7 @@ use super::forms::{
     FlowForm, FlowFormField, PartForm, PartFormField, PresuppliedForm, PresuppliedFormField,
     StepForm, StepFormField, WorkOrderForm, WorkOrderFormField,
 };
+use super::create_modals::WORK_ORDER_CREATE;
 use super::graph::{self, PartRole, PlanLayout};
 use super::keys::*;
 use super::logic::{FlowSide, Plan};
@@ -89,6 +90,7 @@ fn scaffold_main(crumbs: Markup, body: Markup) -> lariv_core::components::MainCo
 }
 
 fn render_pagination(path_and_query: &str, number: u32, num_pages: u32) -> Markup {
+    let hx_target = WORK_ORDER_TABLE.selector();
     let owned = pagination_pages(path_and_query, number, num_pages, true);
     let pages: Vec<PaginationPage<'_>> = owned
         .iter()
@@ -102,7 +104,7 @@ fn render_pagination(path_and_query: &str, number: u32, num_pages: u32) -> Marku
         .collect();
     table_pagination(TablePagination {
         pages: &pages,
-        hx_target: WorkOrderTableKey::SELECTOR,
+        hx_target: &hx_target,
     })
 }
 
@@ -164,11 +166,11 @@ impl WorkOrderListPage {
                 children: Vec::new(),
             })
             .collect();
-        let actions = table_create_button::<WorkOrderTableKey, WorkOrderCreateModalKey>(
+        let actions = table_create_button(WORK_ORDER_TABLE, WORK_ORDER_CREATE, 
             Some("plus"),
             "btn-primary btn-sm",
         );
-        data_table_list::<WorkOrderTableKey>(
+        data_table_list(WORK_ORDER_TABLE, 
             "Work orders",
             actions,
             &headers,
@@ -214,7 +216,7 @@ impl WorkOrderDetailPage {
             None => html! { p class="text-error" { (self.layout_error) } },
         };
         html! {
-            div id=(WorkOrderGraphKey::ID) class="flex flex-col gap-3" {
+            div id=(WORK_ORDER_GRAPH.id()) class="flex flex-col gap-3" {
                 (body)
             }
         }
@@ -235,7 +237,7 @@ impl WorkOrderDetailPage {
                                 name: "wo.WorkOrderEditForm",
                                 href: &edit_url,
                                 form_post_url: &edit_url,
-                                modal_uid: WorkOrderEditModalKey::ID,
+                                modal_uid: WORK_ORDER_EDIT_MODAL.id(),
                                 classes: "btn-sm",
                                 ..Default::default()
                             }))
@@ -353,7 +355,7 @@ fn step_card(plan: &Plan, step: &step::Model) -> Markup {
                     name: "wo.CompleteForm",
                     href: &complete_url,
                     form_post_url: &complete_url,
-                    modal_uid: CompleteModalKey::ID,
+                    modal_uid: COMPLETE_MODAL.id(),
                     classes: "btn-sm btn-primary",
                     ..Default::default()
                 }))
@@ -410,7 +412,7 @@ fn completion_list(plan: &Plan, step_id: i64) -> Markup {
                 @for (index, row) in rows.iter().enumerate() {
                     li class="flex flex-wrap items-center justify-between gap-2" {
                         span { (format!("Batch {} · {}", index.saturating_add(1), row.completed_at.format("%Y-%m-%d %H:%M"))) }
-                        (edit_button("Delete", &CompletionDeleteGetRouteTag::new(row.id).url(), CompletionDeleteModalKey::ID, "wo.CompletionDeleteForm"))
+                        (edit_button("Delete", &CompletionDeleteGetRouteTag::new(row.id).url(), COMPLETION_DELETE_MODAL.id(), "wo.CompletionDeleteForm"))
                     }
                 }
             }
@@ -678,13 +680,13 @@ impl RenderTemplate for WorkOrderCreateModalPage {
             presupplied_json: &self.presupplied_json,
             steps_json: &self.steps_json,
         });
-        modal_keyed::<WorkOrderCreateModalKey>(
+        modal_keyed(WORK_ORDER_CREATE_MODAL, 
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "New work order",
-                    attrs: form_hx_post_url::<WorkOrderCreateModalKey>(&modal_create_post_url(
+                    attrs: form_hx_post_url(WORK_ORDER_CREATE_MODAL, &modal_create_post_url(
                         WorkOrderCreatePostRouteTag,
                         &self.form_name,
                         &self.refresh_table,
@@ -726,13 +728,13 @@ impl RenderTemplate for WorkOrderEditModalPage {
             steps_json: &self.steps_json,
         });
         let delete_url = WorkOrderDeleteGetRouteTag::new(self.id).url();
-        modal_keyed::<WorkOrderEditModalKey>(
+        modal_keyed(WORK_ORDER_EDIT_MODAL, 
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "Edit work order",
-                    attrs: form_hx_post_url::<WorkOrderEditModalKey>(&modal_edit_post_url(
+                    attrs: form_hx_post_url(WORK_ORDER_EDIT_MODAL, &modal_edit_post_url(
                         WorkOrderEditPostRouteTag::new(self.id),
                         &self.form_name,
                     )),
@@ -746,7 +748,7 @@ impl RenderTemplate for WorkOrderEditModalPage {
                             name: "wo.WorkOrderDeleteForm",
                             href: &delete_url,
                             form_post_url: &delete_url,
-                            modal_uid: WorkOrderDeleteModalKey::ID,
+                            modal_uid: WORK_ORDER_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -806,14 +808,14 @@ impl RenderTemplate for PartModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit part",
-                form_hx_post_url::<PartEditModalKey>(&modal_edit_post_url(
+                form_hx_post_url(PART_EDIT_MODAL, &modal_edit_post_url(
                     PartEditPostRouteTag::new(id),
                     &self.form_name,
                 )),
             ),
             None => (
                 "Add part",
-                form_hx_post_url::<PartCreateModalKey>(&modal_create_post_url(
+                form_hx_post_url(PART_CREATE_MODAL, &modal_create_post_url(
                     PartCreatePostRouteTag::new(self.work_order_id),
                     &self.form_name,
                     "",
@@ -836,7 +838,7 @@ impl RenderTemplate for PartModalPage {
                             name: "wo.PartDeleteForm",
                             href: &PartDeleteGetRouteTag::new(id).url(),
                             form_post_url: &PartDeleteGetRouteTag::new(id).url(),
-                            modal_uid: PartDeleteModalKey::ID,
+                            modal_uid: PART_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -846,8 +848,8 @@ impl RenderTemplate for PartModalPage {
             },
         );
         match self.existing_id {
-            Some(_) => modal_keyed::<PartEditModalKey>("", body),
-            None => modal_keyed::<PartCreateModalKey>("", body),
+            Some(_) => modal_keyed(PART_EDIT_MODAL, "", body),
+            None => modal_keyed(PART_CREATE_MODAL, "", body),
         }
     }
 }
@@ -873,14 +875,14 @@ impl RenderTemplate for PresuppliedModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit supply",
-                form_hx_post_url::<PresuppliedEditModalKey>(&modal_edit_post_url(
+                form_hx_post_url(PRESUPPLIED_EDIT_MODAL, &modal_edit_post_url(
                     PresuppliedEditPostRouteTag::new(id),
                     &self.form_name,
                 )),
             ),
             None => (
                 "Add supply",
-                form_hx_post_url::<PresuppliedCreateModalKey>(&modal_create_post_url(
+                form_hx_post_url(PRESUPPLIED_CREATE_MODAL, &modal_create_post_url(
                     PresuppliedCreatePostRouteTag::new(self.work_order_id),
                     &self.form_name,
                     "",
@@ -903,7 +905,7 @@ impl RenderTemplate for PresuppliedModalPage {
                             name: "wo.PresuppliedDeleteForm",
                             href: &PresuppliedDeleteGetRouteTag::new(id).url(),
                             form_post_url: &PresuppliedDeleteGetRouteTag::new(id).url(),
-                            modal_uid: PresuppliedDeleteModalKey::ID,
+                            modal_uid: PRESUPPLIED_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -913,8 +915,8 @@ impl RenderTemplate for PresuppliedModalPage {
             },
         );
         match self.existing_id {
-            Some(_) => modal_keyed::<PresuppliedEditModalKey>("", body),
-            None => modal_keyed::<PresuppliedCreateModalKey>("", body),
+            Some(_) => modal_keyed(PRESUPPLIED_EDIT_MODAL, "", body),
+            None => modal_keyed(PRESUPPLIED_CREATE_MODAL, "", body),
         }
     }
 }
@@ -936,14 +938,14 @@ impl RenderTemplate for StepModalPage {
         let (title, attrs) = match self.existing_id {
             Some(id) => (
                 "Edit step",
-                form_hx_post_url::<StepEditModalKey>(&modal_edit_post_url(
+                form_hx_post_url(STEP_EDIT_MODAL, &modal_edit_post_url(
                     StepEditPostRouteTag::new(id),
                     &self.form_name,
                 )),
             ),
             None => (
                 "Add step",
-                form_hx_post_url::<StepCreateModalKey>(&modal_create_post_url(
+                form_hx_post_url(STEP_CREATE_MODAL, &modal_create_post_url(
                     StepCreatePostRouteTag::new(self.work_order_id),
                     &self.form_name,
                     "",
@@ -966,7 +968,7 @@ impl RenderTemplate for StepModalPage {
                             name: "wo.StepDeleteForm",
                             href: &StepDeleteGetRouteTag::new(id).url(),
                             form_post_url: &StepDeleteGetRouteTag::new(id).url(),
-                            modal_uid: StepDeleteModalKey::ID,
+                            modal_uid: STEP_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -976,8 +978,8 @@ impl RenderTemplate for StepModalPage {
             },
         );
         match self.existing_id {
-            Some(_) => modal_keyed::<StepEditModalKey>("", body),
-            None => modal_keyed::<StepCreateModalKey>("", body),
+            Some(_) => modal_keyed(STEP_EDIT_MODAL, "", body),
+            None => modal_keyed(STEP_CREATE_MODAL, "", body),
         }
     }
 }
@@ -1008,21 +1010,21 @@ impl RenderTemplate for FlowModalPage {
             (FlowSide::Output, Some(_)) => "Edit output",
         };
         let attrs = match (self.side, self.existing_id) {
-            (FlowSide::Input, Some(id)) => form_hx_post_url::<FlowEditModalKey>(
+            (FlowSide::Input, Some(id)) => form_hx_post_url(FLOW_EDIT_MODAL, 
                 &modal_edit_post_url(InputEditPostRouteTag::new(id), &self.form_name),
             ),
-            (FlowSide::Output, Some(id)) => form_hx_post_url::<FlowEditModalKey>(
+            (FlowSide::Output, Some(id)) => form_hx_post_url(FLOW_EDIT_MODAL, 
                 &modal_edit_post_url(OutputEditPostRouteTag::new(id), &self.form_name),
             ),
             (FlowSide::Input, None) => {
-                form_hx_post_url::<FlowCreateModalKey>(&modal_create_post_url(
+                form_hx_post_url(FLOW_CREATE_MODAL, &modal_create_post_url(
                     InputCreatePostRouteTag::new(self.step_id),
                     &self.form_name,
                     "",
                 ))
             }
             (FlowSide::Output, None) => {
-                form_hx_post_url::<FlowCreateModalKey>(&modal_create_post_url(
+                form_hx_post_url(FLOW_CREATE_MODAL, &modal_create_post_url(
                     OutputCreatePostRouteTag::new(self.step_id),
                     &self.form_name,
                     "",
@@ -1043,7 +1045,7 @@ impl RenderTemplate for FlowModalPage {
                 name,
                 href: &href,
                 form_post_url: &href,
-                modal_uid: FlowDeleteModalKey::ID,
+                modal_uid: FLOW_DELETE_MODAL.id(),
                 classes: "btn-error",
                 ..Default::default()
             })
@@ -1065,8 +1067,8 @@ impl RenderTemplate for FlowModalPage {
             },
         );
         match self.existing_id {
-            Some(_) => modal_keyed::<FlowEditModalKey>("", body),
-            None => modal_keyed::<FlowCreateModalKey>("", body),
+            Some(_) => modal_keyed(FLOW_EDIT_MODAL, "", body),
+            None => modal_keyed(FLOW_CREATE_MODAL, "", body),
         }
     }
 }
@@ -1089,14 +1091,14 @@ pub struct CompleteModalPage {
 
 impl RenderTemplate for CompleteModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        modal_keyed::<CompleteModalKey>(
+        modal_keyed(COMPLETE_MODAL, 
             "",
             form(
                 &CsrfToken::current(),
                 FormOpts {
                     title: "Record batch",
                     subtitle: &self.step_name,
-                    attrs: form_hx_post_url::<CompleteModalKey>(&modal_edit_post_url(
+                    attrs: form_hx_post_url(COMPLETE_MODAL, &modal_edit_post_url(
                         CompletePostRouteTag::new(self.step_id),
                         &self.form_name,
                     )),

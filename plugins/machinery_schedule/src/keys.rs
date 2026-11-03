@@ -1,20 +1,20 @@
-lariv_core::swap_key!(JobHubTableKey, "ms-job-hub-table");
-lariv_core::swap_key!(JobCreateModalKey, "ms-job-create-modal");
-lariv_core::swap_key!(JobEditModalKey, "ms-job-edit-modal");
-lariv_core::swap_key!(JobDeleteModalKey, "ms-job-delete-modal");
-lariv_core::swap_key!(JobBulkDeleteModalKey, "ms-job-bulk-delete-modal");
-lariv_core::swap_key!(JobDuplicatedModalKey, "ms-job-duplicated-modal");
+use lariv_core::components::SwapKey;
 
-lariv_core::swap_key!(CompletedJobDeleteModalKey, "ms-completed-job-delete-modal");
-lariv_core::swap_key!(
-    CompletedJobBulkDeleteModalKey,
-    "ms-completed-job-bulk-delete-modal"
-);
+pub const JOB_HUB_TABLE: SwapKey = SwapKey("ms-job-hub-table");
+pub const JOB_CREATE_MODAL: SwapKey = SwapKey("ms-job-create-modal");
+pub const JOB_EDIT_MODAL: SwapKey = SwapKey("ms-job-edit-modal");
+pub const JOB_DELETE_MODAL: SwapKey = SwapKey("ms-job-delete-modal");
+pub const JOB_BULK_DELETE_MODAL: SwapKey = SwapKey("ms-job-bulk-delete-modal");
+pub const JOB_DUPLICATED_MODAL: SwapKey = SwapKey("ms-job-duplicated-modal");
 
-lariv_core::swap_key!(MachineTableKey, "ms-machine-table");
-lariv_core::swap_key!(MachineJobsTableKey, "ms-machine-jobs-table");
-lariv_core::swap_key!(MachineCreateModalKey, "ms-machine-create-modal");
-lariv_core::swap_key!(MachineEditModalKey, "ms-machine-edit-modal");
-lariv_core::swap_key!(MachineDeleteModalKey, "ms-machine-delete-modal");
-lariv_core::swap_key!(MachineSelectTableKey, "ms-machine-select-table");
-lariv_core::swap_key!(MachineSelectModalKey, "ms-machine-select-modal");
+pub const COMPLETED_JOB_DELETE_MODAL: SwapKey = SwapKey("ms-completed-job-delete-modal");
+pub const COMPLETED_JOB_BULK_DELETE_MODAL: SwapKey =
+    SwapKey("ms-completed-job-bulk-delete-modal");
+
+pub const MACHINE_TABLE: SwapKey = SwapKey("ms-machine-table");
+pub const MACHINE_JOBS_TABLE: SwapKey = SwapKey("ms-machine-jobs-table");
+pub const MACHINE_CREATE_MODAL: SwapKey = SwapKey("ms-machine-create-modal");
+pub const MACHINE_EDIT_MODAL: SwapKey = SwapKey("ms-machine-edit-modal");
+pub const MACHINE_DELETE_MODAL: SwapKey = SwapKey("ms-machine-delete-modal");
+pub const MACHINE_SELECT_TABLE: SwapKey = SwapKey("ms-machine-select-table");
+pub const MACHINE_SELECT_MODAL: SwapKey = SwapKey("ms-machine-select-modal");

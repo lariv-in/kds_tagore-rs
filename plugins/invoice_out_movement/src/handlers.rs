@@ -13,7 +13,7 @@ use lariv_plugin_users::role_authorization::scope_allowed;
 
 use lariv_plugin_finance_invoices::routes::FinanceInvoicesView;
 
-use crate::keys::{MovementOutSelectModalKey, MovementOutSelectTableKey};
+use crate::keys::{MOVEMENT_OUT_SELECT_MODAL, MOVEMENT_OUT_SELECT_TABLE};
 use crate::templates::MovementOutSelectPage;
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -64,7 +64,7 @@ pub async fn select_out(
         path_and_query: path_and_query(&uri),
         page_size: q.page_size.get(),
     };
-    respond_picker_select::<MovementOutSelectTableKey, MovementOutSelectModalKey, _>(&htmx, &page)
+    respond_picker_select(&htmx, MOVEMENT_OUT_SELECT_TABLE, MOVEMENT_OUT_SELECT_MODAL, &page)
 }
 
 fn path_and_query(uri: &Uri) -> String {

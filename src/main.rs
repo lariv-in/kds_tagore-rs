@@ -7,9 +7,9 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_indian, finance_invoices, finance_products, finance_purchases, finance_quotations,
-    finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime,
-    inventory, llm_assistant, otp, pwa, signing, tasks, todo, users, website,
+    finance_indian, finance_invoices, finance_products, finance_purchases, finance_taxes, forms, hr,
+    hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, inventory, llm_assistant,
+    otp, pwa, signing, tasks, todo, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -49,7 +49,6 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_taxes::install(app);
     // Services live in the unified product catalog (`product_kind = Services`).
     let app = finance_products::install(app);
-    let app = finance_quotations::install(app);
     // After finance_taxes (line taxes) and finance_products (line products).
     let app = work_orders::install(app);
     // Before invoices drop `customers`. Challans reuse an existing company or

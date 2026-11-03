@@ -32,12 +32,12 @@ use maud::{Markup, PreEscaped, html};
 use super::crumbs::{
     completed_job_crumbs, job_crumbs, jobs_list_crumbs, machine_crumbs, machines_list_crumbs,
 };
+use super::create_modals::{JOB_CREATE, MACHINE_CREATE};
 use super::forms::{JobForm, JobFormField, MachineForm, MachineFormField};
 use super::keys::{
-    CompletedJobDeleteModalKey, JobCreateModalKey, JobDeleteModalKey, JobDuplicatedModalKey,
-    JobEditModalKey, JobHubTableKey, MachineCreateModalKey, MachineDeleteModalKey,
-    MachineEditModalKey, MachineJobsTableKey, MachineSelectModalKey, MachineSelectTableKey,
-    MachineTableKey,
+    COMPLETED_JOB_DELETE_MODAL, JOB_CREATE_MODAL, JOB_DELETE_MODAL, JOB_DUPLICATED_MODAL,
+    JOB_EDIT_MODAL, JOB_HUB_TABLE, MACHINE_CREATE_MODAL, MACHINE_DELETE_MODAL, MACHINE_EDIT_MODAL,
+    MACHINE_JOBS_TABLE, MACHINE_SELECT_MODAL, MACHINE_SELECT_TABLE, MACHINE_TABLE,
 };
 use super::routes::{
     CompletedJobBulkDeleteGetRouteTag, CompletedJobBulkNewJobPostRouteTag,
@@ -232,7 +232,8 @@ fn tab_nav_link(href: &str, active: bool, label: &str) -> Markup {
     }
 }
 
-fn render_pagination<K: SwapKey>(path_and_query: &str, number: u32, num_pages: u32) -> Markup {
+fn render_pagination(key: SwapKey, path_and_query: &str, number: u32, num_pages: u32) -> Markup {
+    let hx_target = key.selector();
     let owned = pagination_pages(path_and_query, number, num_pages, true);
     let pages: Vec<PaginationPage<'_>> = owned
         .iter()
@@ -246,15 +247,17 @@ fn render_pagination<K: SwapKey>(path_and_query: &str, number: u32, num_pages: u
         .collect();
     table_pagination(TablePagination {
         pages: &pages,
-        hx_target: K::SELECTOR,
+        hx_target: &hx_target,
     })
 }
 
-fn render_picker_pagination<M: SwapKey>(
+fn render_picker_pagination(
+    key: SwapKey,
     path_and_query: &str,
     number: u32,
     num_pages: u32,
 ) -> Markup {
+    let hx_target = key.selector();
     let owned = pagination_pages(path_and_query, number, num_pages, false);
     let pages: Vec<PaginationPage<'_>> = owned
         .iter()
@@ -268,7 +271,7 @@ fn render_picker_pagination<M: SwapKey>(
         .collect();
     table_pagination_picker(TablePagination {
         pages: &pages,
-        hx_target: M::SELECTOR,
+        hx_target: &hx_target,
     })
 }
 
@@ -305,7 +308,8 @@ fn job_form_ctx<'a>(
         .into()
 }
 
-pub fn data_table_with_filter_errors<K: SwapKey>(
+pub fn data_table_with_filter_errors(
+    key: SwapKey,
     title: &str,
     actions: Markup,
     headers: &[TableColumnHeader<'_>],
@@ -314,12 +318,13 @@ pub fn data_table_with_filter_errors<K: SwapKey>(
     refresh_url: &str,
     errors: &[FilterRowError],
 ) -> Markup {
+    let hx_target = key.selector();
     let list = html! {
         (filter_error_banner(errors))
         (table_list_content(TableListContent {
             headers,
             rows,
-            hx_target: K::SELECTOR,
+            hx_target: &hx_target,
         }))
     };
     let grid = html! {
@@ -340,7 +345,7 @@ pub fn data_table_with_filter_errors<K: SwapKey>(
         actions
     };
     data_table(DataTable {
-        uid: K::ID,
+        uid: key.id(),
         title,
         classes: "w-full",
         actions: toolbar,
@@ -702,9 +707,7 @@ impl JobHubPage {
                     rows: &self.filters,
                     page_size: self.page_size,
                     sort: &self.sort,
-                    attrs: form_hx_get_route::<JobHubTableKey, JobDefaultRouteTag>(
-                        JobDefaultRouteTag,
-                    ),
+                    attrs: form_hx_get_route(JobDefaultRouteTag),
                     apply_label: "Apply",
                     extra: html! {
                         input type="hidden" name="tab" value=(self.tab) {}
@@ -716,7 +719,9 @@ impl JobHubPage {
         if self.can_edit && self.tab == "jobs" {
             actions = html! {
                 (actions)
-                (table_create_button::<JobHubTableKey, JobCreateModalKey>(
+                (table_create_button(
+                    JOB_HUB_TABLE,
+                    JOB_CREATE,
                     Some("plus"),
                     "btn-square btn-outline btn-sm",
                 ))
@@ -728,12 +733,14 @@ impl JobHubPage {
                 (self.bulk_actions())
             };
         }
-        data_table_with_filter_errors::<JobHubTableKey>(
+        data_table_with_filter_errors(
+            JOB_HUB_TABLE,
             "Jobs",
             actions,
             &headers,
             &rows,
-            render_pagination::<JobHubTableKey>(
+            render_pagination(
+                JOB_HUB_TABLE,
                 &self.path_and_query,
                 self.jobs.number,
                 self.jobs.num_pages,
@@ -893,7 +900,7 @@ impl JobDetailPage {
                     name: "kds_ms.JobEditForm",
                     href: &JobEditGetRouteTag::new(self.id).url(),
                     form_post_url: &JobEditPostRouteTag::new(self.id).path(),
-                    modal_uid: JobEditModalKey::ID,
+                    modal_uid: JOB_EDIT_MODAL.id(),
                     label: "Edit",
                     classes: "btn-outline",
                     ..Default::default()
@@ -964,7 +971,8 @@ pub struct JobDuplicatedModalPage {
 impl RenderTemplate for JobDuplicatedModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         if !self.error.is_empty() {
-            return modal_keyed::<JobDuplicatedModalKey>(
+            return modal_keyed(
+                JOB_DUPLICATED_MODAL,
                 "!max-w-md",
                 html! {
                     h3 class="font-bold text-lg mb-2" { "Could not duplicate job" }
@@ -975,9 +983,10 @@ impl RenderTemplate for JobDuplicatedModalPage {
         let open_url = JobDetailRouteTag::new(self.job_id).url();
         let close = format!(
             "document.getElementById('{}').remove()",
-            JobDuplicatedModalKey::ID
+            JOB_DUPLICATED_MODAL.id()
         );
-        modal_keyed::<JobDuplicatedModalKey>(
+        modal_keyed(
+            JOB_DUPLICATED_MODAL,
             "!max-w-md",
             html! {
                 h3 class="font-bold text-lg mb-4 flex items-center gap-2" {
@@ -1037,7 +1046,7 @@ impl CompletedJobDetailPage {
                     name: "kds_ms.CompletedJobDeleteForm",
                     href: &delete_url,
                     form_post_url: &delete_url,
-                    modal_uid: CompletedJobDeleteModalKey::ID,
+                    modal_uid: COMPLETED_JOB_DELETE_MODAL.id(),
                     classes: "btn-error",
                     ..Default::default()
                 }))
@@ -1115,12 +1124,13 @@ impl RenderTemplate for JobCreateModalPage {
         let order = self.order.to_string();
         let progress = self.progress.to_string();
         let progress_x_data = format!("{{ progress: {} }}", self.progress);
-        modal_keyed::<JobCreateModalKey>(
+        modal_keyed(
+            JOB_CREATE_MODAL,
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New job" }
                 (form(&CsrfToken::current(), FormOpts {
-                    attrs: form_hx_post_url::<JobCreateModalKey>(&modal_create_post_query(
+                    attrs: form_hx_post_url(JOB_CREATE_MODAL, &modal_create_post_query(
                         JobCreatePostRouteTag,
                         &self.form_name,
                         &self.refresh_table,
@@ -1167,12 +1177,13 @@ impl RenderTemplate for JobEditModalPage {
         let order = self.order.to_string();
         let progress = self.progress.to_string();
         let progress_x_data = format!("{{ progress: {} }}", self.progress);
-        modal_keyed::<JobEditModalKey>(
+        modal_keyed(
+            JOB_EDIT_MODAL,
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit job" }
                 (form(&CsrfToken::current(), FormOpts {
-                    attrs: form_hx_post_url::<JobEditModalKey>(&modal_edit_post_url(
+                    attrs: form_hx_post_url(JOB_EDIT_MODAL, &modal_edit_post_url(
                         JobEditPostRouteTag::new(self.id),
                         &self.form_name,
                     )),
@@ -1195,7 +1206,7 @@ impl RenderTemplate for JobEditModalPage {
                             name: "kds_ms.JobDeleteForm",
                             href: &delete_url,
                             form_post_url: &delete_url,
-                            modal_uid: JobDeleteModalKey::ID,
+                            modal_uid: JOB_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -1291,9 +1302,7 @@ impl MachineListPage {
                     rows: &self.filters,
                     page_size: self.page_size,
                     sort: &self.sort,
-                    attrs: form_hx_get_route::<MachineTableKey, MachineDefaultRouteTag>(
-                        MachineDefaultRouteTag,
-                    ),
+                    attrs: form_hx_get_route(MachineDefaultRouteTag),
                     apply_label: "Apply",
                     extra: html! {},
                 }),
@@ -1303,18 +1312,22 @@ impl MachineListPage {
         if self.can_edit {
             actions = html! {
                 (actions)
-                (table_create_button::<MachineTableKey, MachineCreateModalKey>(
+                (table_create_button(
+                    MACHINE_TABLE,
+                    MACHINE_CREATE,
                     Some("plus"),
                     "btn-square btn-outline btn-sm",
                 ))
             };
         }
-        data_table_with_filter_errors::<MachineTableKey>(
+        data_table_with_filter_errors(
+            MACHINE_TABLE,
             "Machines",
             actions,
             &headers,
             &rows,
-            render_pagination::<MachineTableKey>(
+            render_pagination(
+                MACHINE_TABLE,
                 &self.path_and_query,
                 self.machines.number,
                 self.machines.num_pages,
@@ -1455,7 +1468,8 @@ impl MachineDetailPage {
                 ..Default::default()
             })
             .collect();
-        data_table_list_refresh::<MachineJobsTableKey>(
+        data_table_list_refresh(
+            MACHINE_JOBS_TABLE,
             "Jobs",
             html! {},
             &headers,
@@ -1472,7 +1486,7 @@ impl MachineDetailPage {
                     name: "kds_ms.MachineEditForm",
                     href: &MachineEditGetRouteTag::new(self.id).url(),
                     form_post_url: &MachineEditPostRouteTag::new(self.id).path(),
-                    modal_uid: MachineEditModalKey::ID,
+                    modal_uid: MACHINE_EDIT_MODAL.id(),
                     label: "Edit",
                     classes: "btn-outline",
                     ..Default::default()
@@ -1547,12 +1561,13 @@ pub struct MachineCreateModalPage {
 
 impl RenderTemplate for MachineCreateModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        modal_keyed::<MachineCreateModalKey>(
+        modal_keyed(
+            MACHINE_CREATE_MODAL,
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "New machine" }
                 (form(&CsrfToken::current(), FormOpts {
-                    attrs: form_hx_post_url::<MachineCreateModalKey>(&modal_create_post_query(
+                    attrs: form_hx_post_url(MACHINE_CREATE_MODAL, &modal_create_post_query(
                         MachineCreatePostRouteTag,
                         &self.form_name,
                         &self.refresh_table,
@@ -1588,12 +1603,13 @@ pub struct MachineEditModalPage {
 impl RenderTemplate for MachineEditModalPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
         let delete_url = MachineDeleteGetRouteTag::new(self.id).url();
-        modal_keyed::<MachineEditModalKey>(
+        modal_keyed(
+            MACHINE_EDIT_MODAL,
             &self.form_name,
             html! {
                 h3 class="font-bold text-lg mb-4" { "Edit machine" }
                 (form(&CsrfToken::current(), FormOpts {
-                    attrs: form_hx_post_url::<MachineEditModalKey>(&modal_edit_post_url(
+                    attrs: form_hx_post_url(MACHINE_EDIT_MODAL, &modal_edit_post_url(
                         MachineEditPostRouteTag::new(self.id),
                         &self.form_name,
                     )),
@@ -1612,7 +1628,7 @@ impl RenderTemplate for MachineEditModalPage {
                             name: "kds_ms.MachineDeleteForm",
                             href: &delete_url,
                             form_post_url: &delete_url,
-                            modal_uid: MachineDeleteModalKey::ID,
+                            modal_uid: MACHINE_DELETE_MODAL.id(),
                             classes: "btn-error",
                             ..Default::default()
                         }))
@@ -1638,7 +1654,7 @@ pub struct MachineSelectPage {
     pub multi: bool,
 }
 
-impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for MachineSelectPage {
+impl RenderPickerSelect for MachineSelectPage {
     fn render_table(&self) -> Markup {
         let id_sort = column_sort_url(&self.path_and_query, "Id", &self.sort);
         let id_label = format!("Id{}", sort_indicator(&self.sort, "Id"));
@@ -1714,12 +1730,8 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
                     rows: &self.filters,
                     page_size: self.page_size,
                     sort: &self.sort,
-                    attrs: form_hx_get_picker_route::<
-                        MachineSelectTableKey,
-                        MachineSelectModalKey,
-                        MachineFkSelectRouteTag,
-                    >(MachineFkSelectRouteTag)
-                    .set("hx-push-url", "false"),
+                    attrs: form_hx_get_picker_route(MachineFkSelectRouteTag)
+                        .set("hx-push-url", "false"),
                     apply_label: "Apply",
                     extra: html! {
                         input type="hidden" name="target_input" value=(target_input) {}
@@ -1734,19 +1746,22 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
         if self.can_edit {
             actions = html! {
                 (actions)
-                (picker_create_button::<MachineCreateModalKey>(
+                (picker_create_button(
+                    MACHINE_CREATE,
                     &self.target_input,
                     Some("plus"),
                     "btn-square btn-outline btn-sm",
                 ))
             };
         }
-        data_table_with_filter_errors::<MachineSelectTableKey>(
+        data_table_with_filter_errors(
+            MACHINE_SELECT_TABLE,
             "Select machine",
             actions,
             &headers,
             &rows,
-            render_picker_pagination::<MachineSelectModalKey>(
+            render_picker_pagination(
+                MACHINE_SELECT_MODAL,
                 &self.path_and_query,
                 self.machines.number,
                 self.machines.num_pages,
@@ -1759,7 +1774,7 @@ impl RenderPickerSelect<MachineSelectTableKey, MachineSelectModalKey> for Machin
 
 impl RenderTemplate for MachineSelectPage {
     fn render(&self, _chrome: &ShellChrome) -> Markup {
-        self.render_modal().into_inner()
+        self.render_modal(MACHINE_SELECT_MODAL).into_inner()
     }
 }
 

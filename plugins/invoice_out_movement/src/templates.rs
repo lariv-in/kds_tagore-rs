@@ -13,7 +13,7 @@ use lariv_core::components::{
 use lariv_core::list_filters::FilterField;
 use lariv_core::picker::RenderPickerSelect;
 
-use crate::keys::{MovementOutSelectModalKey, MovementOutSelectTableKey};
+use crate::keys::{MOVEMENT_OUT_SELECT_MODAL, MOVEMENT_OUT_SELECT_TABLE};
 use crate::routes::MovementOutFkSelectRouteTag;
 
 pub struct MovementOutSelectPage {
@@ -23,9 +23,7 @@ pub struct MovementOutSelectPage {
     pub page_size: u32,
 }
 
-impl RenderPickerSelect<MovementOutSelectTableKey, MovementOutSelectModalKey>
-    for MovementOutSelectPage
-{
+impl RenderPickerSelect for MovementOutSelectPage {
     fn render_table(&self) -> Markup {
         let headers = [
             TableColumnHeader {
@@ -70,12 +68,8 @@ impl RenderPickerSelect<MovementOutSelectTableKey, MovementOutSelectModalKey>
                 rows: filter_rows,
                 page_size: self.page_size,
                 sort: "",
-                attrs: form_hx_get_picker_route::<
-                    MovementOutSelectTableKey,
-                    MovementOutSelectModalKey,
-                    MovementOutFkSelectRouteTag,
-                >(MovementOutFkSelectRouteTag)
-                .set("hx-push-url", "false"),
+                attrs: form_hx_get_picker_route(MovementOutFkSelectRouteTag)
+                    .set("hx-push-url", "false"),
                 apply_label: "Apply",
                 extra: html! {
                     input type="hidden" name="target_input" value=(target_input) {}
@@ -83,12 +77,14 @@ impl RenderPickerSelect<MovementOutSelectTableKey, MovementOutSelectModalKey>
             }),
             ..Default::default()
         });
-        data_table_with_filter_errors::<MovementOutSelectTableKey>(
+        data_table_with_filter_errors(
+            MOVEMENT_OUT_SELECT_TABLE,
             "Select out movement",
             filter,
             &headers,
             &rows,
-            render_picker_pagination::<MovementOutSelectModalKey>(
+            render_picker_pagination(
+                MOVEMENT_OUT_SELECT_MODAL,
                 &self.path_and_query,
                 self.rows.number,
                 self.rows.num_pages,
@@ -98,11 +94,13 @@ impl RenderPickerSelect<MovementOutSelectTableKey, MovementOutSelectModalKey>
     }
 }
 
-fn render_picker_pagination<M: SwapKey>(
+fn render_picker_pagination(
+    key: SwapKey,
     path_and_query: &str,
     number: u32,
     num_pages: u32,
 ) -> Markup {
+    let hx_target = key.selector();
     let owned = pagination_pages(path_and_query, number, num_pages, false);
     let pages: Vec<PaginationPage<'_>> = owned
         .iter()
@@ -116,11 +114,12 @@ fn render_picker_pagination<M: SwapKey>(
         .collect();
     table_pagination_picker(TablePagination {
         pages: &pages,
-        hx_target: M::SELECTOR,
+        hx_target: &hx_target,
     })
 }
 
-fn data_table_with_filter_errors<K: SwapKey>(
+fn data_table_with_filter_errors(
+    key: SwapKey,
     title: &str,
     actions: Markup,
     headers: &[TableColumnHeader<'_>],
@@ -128,11 +127,12 @@ fn data_table_with_filter_errors<K: SwapKey>(
     pagination: Markup,
     refresh_url: &str,
 ) -> Markup {
+    let hx_target = key.selector();
     let list = html! {
         (table_list_content(TableListContent {
             headers,
             rows,
-            hx_target: K::SELECTOR,
+            hx_target: &hx_target,
         }))
     };
     let grid = html! {
@@ -144,7 +144,7 @@ fn data_table_with_filter_errors<K: SwapKey>(
         .filter(|key| !key.is_empty())
         .collect();
     data_table(DataTable {
-        uid: K::ID,
+        uid: key.id(),
         title,
         classes: "w-full",
         actions,

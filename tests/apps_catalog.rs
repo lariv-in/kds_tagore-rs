@@ -162,7 +162,7 @@ fn kds_tagore_registers_forms_app_tile() {
                         "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Quotations, Tasks, HR, Inventory, Contacts, and CRM"
+                    "accountant should see Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM"
                 );
 
                 let mut laser_programmer_keys: Vec<_> = catalog
