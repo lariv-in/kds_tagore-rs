@@ -6,6 +6,7 @@ use super::InvoiceOutMovementTag;
 
 mod m00001_invoice_stock_movement_out;
 mod m00002_drop_posted_draft_copy_trigger;
+mod m00003_drop_draft_invoice_out_movement;
 
 #[derive(Clone, Copy, Default)]
 pub struct Migrator;
@@ -16,6 +17,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m00001_invoice_stock_movement_out::Migration),
             Box::new(m00002_drop_posted_draft_copy_trigger::Migration),
+            Box::new(m00003_drop_draft_invoice_out_movement::Migration),
         ]
     }
 }

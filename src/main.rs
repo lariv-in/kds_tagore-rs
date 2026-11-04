@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let app = delivery::install(app);
     let app = finance_invoices::install(app);
     let app = finance_payments::install(app);
-    // After invoices and inventory: adds stock_movement_out_id and registers PDF/form addons.
+    // After invoices and inventory: adds stock_movement_out_id on posted invoices and registers the PDF addon.
     let app = invoice_out_movement::install(app);
     let app = finance_purchases::install(app);
     let app = finance_indian::install(app);
