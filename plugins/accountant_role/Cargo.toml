@@ -13,6 +13,7 @@ lariv-plugin-customer = { workspace = true }
 lariv-plugin-crm = { workspace = true }
 lariv-plugin-finance-accounts = { workspace = true }
 lariv-plugin-finance-creditnotes = { workspace = true }
+lariv-plugin-finance-customers = { workspace = true }
 lariv-plugin-finance-invoices = { workspace = true }
 lariv-plugin-finance-payments = { workspace = true }
 lariv-plugin-finance-products = { workspace = true }

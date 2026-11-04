@@ -13,6 +13,7 @@ use lariv_plugin_finance_accounts::{
     routes::{FinanceAccountsMutate, FinanceAccountsView},
 };
 use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
+use lariv_plugin_finance_customers::routes::FinanceCustomersView;
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_payments::routes::{FinancePaymentsMutate, FinancePaymentsView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
@@ -118,6 +119,7 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<FinanceAccountsView>(allow_accountant)
             .patch::<FinanceAccountsMutate>(allow_accountant)
             // FinanceAccountsPreferencesMutate stays superuser-only.
+            .patch::<FinanceCustomersView>(allow_accountant)
             .patch::<FinanceInvoicesView>(allow_accountant)
             .patch::<FinanceInvoicesMutate>(allow_accountant)
             .patch::<FinancePaymentsView>(allow_accountant)
