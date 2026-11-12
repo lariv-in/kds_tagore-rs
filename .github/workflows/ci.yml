@@ -18,9 +18,7 @@ jobs:
         with:
           toolchain: nightly-2026-08-27
           components: rustc-codegen-cranelift-preview
-      - run: sudo apt update -y
-      - run: sudo apt upgrade -y
-      - run: sudo apt install libarchive-dev
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: check
@@ -43,9 +41,7 @@ jobs:
           add-rust-environment-hash-key: false
           cache-workspace-crates: true
           cache-on-failure: true
-      - run: sudo apt update -y
-      - run: sudo apt upgrade -y
-      - run: sudo apt install libarchive-dev
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-dev
       - run: cargo build --release
       - name: require glibc <= 2.41
         run: |
