@@ -1,16 +1,16 @@
 #![recursion_limit = "4096"]
 
 use kds_tagore_rs::{
-    accountant_role, delivery, invoice_out_movement, laser_programmer_role, marketing_sheet,
-    vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, vmc_programmer_role,
+    website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customers, finance_indian, finance_invoices, finance_payments, finance_products,
     finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting,
-    hr_leaves, hr_overtime, inventory, llm_assistant, otp, pwa, signing, tasks, todo, users,
-    website,
+    hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa, signing, tasks,
+    todo, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -35,6 +35,8 @@ async fn main() -> anyhow::Result<()> {
     let app = filesystem::install(app);
     let app = forms::install(app);
     let app = llm_assistant::install(app);
+    // After users: XLSX import/export is superuser-only until a role plugin patches it.
+    let app = import_export::install(app);
     let app = finance_accounts::install(app);
     // Before invoices and payments, which hook the customer journal.
     let app = finance_customers::install(app);
@@ -47,7 +49,6 @@ async fn main() -> anyhow::Result<()> {
     let app = crm::install(app);
     // After CRM: inventory stocks reference `crm_companies`.
     let app = inventory::install(app);
-    let app = marketing_sheet::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
     // Services live in the unified product catalog (`product_kind = Services`).

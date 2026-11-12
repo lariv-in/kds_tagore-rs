@@ -4,7 +4,6 @@ pub use kds_plugin_accountant_role as accountant_role;
 pub use kds_plugin_delivery as delivery;
 pub use kds_plugin_invoice_out_movement as invoice_out_movement;
 pub use kds_plugin_laser_programmer_role as laser_programmer_role;
-pub use kds_plugin_marketing_sheet as marketing_sheet;
 pub use kds_plugin_vmc_programmer_role as vmc_programmer_role;
 pub use kds_plugin_website_seed as website_seed;
 pub use kds_plugin_work_orders as work_orders;

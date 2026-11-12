@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use kds_tagore_rs::{
-    accountant_role, delivery, invoice_out_movement, laser_programmer_role, marketing_sheet,
-    vmc_programmer_role, website_seed, work_orders,
+    accountant_role, delivery, invoice_out_movement, laser_programmer_role, vmc_programmer_role,
+    website_seed, work_orders,
 };
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
@@ -14,7 +14,8 @@ use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
     finance_customers, finance_indian, finance_invoices, finance_payments, finance_products,
     finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting,
-    hr_leaves, hr_overtime, inventory, llm_assistant, otp, pwa, tasks, users, website,
+    hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa, tasks, users,
+    website,
 };
 use lariv_rs::traits::get::GetByTag;
 
@@ -53,6 +54,7 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = filesystem::install(app);
                 let app = forms::install(app);
                 let app = llm_assistant::install(app);
+                let app = import_export::install(app);
                 let app = finance_accounts::install(app);
                 // Before invoices and payments, which hook the customer journal.
                 let app = finance_customers::install(app);
@@ -68,7 +70,6 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = hr_job_posting::install(app);
                 let app = hr_overtime::install(app);
                 let app = hr_leaves::install(app);
-                let app = marketing_sheet::install(app);
                 let app = finance_creditnotes::install(app);
                 let app = finance_taxes::install(app);
                 let app = finance_products::install(app);
@@ -109,6 +110,10 @@ fn kds_tagore_registers_forms_app_tile() {
                     keys.iter().any(|k| *k == "p_inventory"),
                     "expected Inventory tile in apps catalog, got: {keys:?}"
                 );
+                assert!(
+                    keys.iter().any(|k| *k == "p_import_export"),
+                    "expected Import / Export tile in apps catalog, got: {keys:?}"
+                );
 
                 let visible = catalog.visible_apps("superuser");
                 let visible_keys: Vec<_> = visible.iter().map(|t| t.key.as_str()).collect();
@@ -123,6 +128,10 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert!(
                     visible_keys.iter().any(|k| *k == "p_otp"),
                     "expected OTP Preferences tile visible to superuser, got: {visible_keys:?}"
+                );
+                assert!(
+                    visible_keys.iter().any(|k| *k == "p_import_export"),
+                    "expected Import / Export tile visible to superuser, got: {visible_keys:?}"
                 );
                 assert!(
                     keys.iter().any(|k| *k == "kds_tagore-quotations"),
