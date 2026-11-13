@@ -7,10 +7,10 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customers, finance_indian, finance_invoices, finance_payments, finance_products,
-    finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays, hr_job_posting,
-    hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa, signing, tasks,
-    todo, users, website,
+    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_payments,
+    finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays,
+    hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa,
+    signing, tasks, todo, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -65,6 +65,9 @@ async fn main() -> anyhow::Result<()> {
     let app = invoice_out_movement::install(app);
     let app = finance_purchases::install(app);
     let app = finance_indian::install(app);
+    // After import/export (the download form hooks that page) and after taxes
+    // (the component table references taxes).
+    let app = finance_gst_export::install(app);
     let app = dashboard::install(app);
     let app = hr::install(app);
     let app = hr_holidays::install(app);

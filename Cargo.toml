@@ -87,6 +87,7 @@ lariv-rs = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs.git"
 	"plugin-inventory",
 	"plugin-tasks",
 	"plugin-finance",
+	"plugin-finance-gst-export",
 	"plugin-forms",
 	"plugin-hr",
 	"plugin-hr-job-posting",
