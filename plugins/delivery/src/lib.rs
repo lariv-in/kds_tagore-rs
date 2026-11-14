@@ -1,5 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
-
 //! Historical delivery-challan migrations.
 //!
 //! Challans are stock movements now. These migrations stay registered so

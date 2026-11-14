@@ -86,20 +86,7 @@ impl MigratorTrait for Migrator {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct Hook;
-
-impl<M> lariv_core::migration::MigrationRegistrar<M> for Hook
-where
-    M: frunk::hlist::HList + Clone + lariv_core::migration::CollectMigrations + Send,
-{
-    type Output =
-        impl frunk::hlist::HList + lariv_core::migration::CollectMigrations + Clone + Send;
-
-    fn register_migrations(
-        self,
-        cap: lariv_core::migration::MigrationCapability<M>,
-    ) -> lariv_core::migration::MigrationCapability<Self::Output> {
-        cap.prepend::<WorkOrdersTag, _>(Migrator)
-    }
+lariv_core::define_register_migrations! {
+    plugin: WorkOrdersTag;
+    migrator: Migrator;
 }

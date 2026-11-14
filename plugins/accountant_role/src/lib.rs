@@ -1,4 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
 //! Deployment role `accountant`: Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM.

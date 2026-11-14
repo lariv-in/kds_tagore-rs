@@ -17,7 +17,6 @@ use lariv_rs::plugins::{
     hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa,
     tasks, users, website,
 };
-use lariv_rs::traits::get::GetByTag;
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
 

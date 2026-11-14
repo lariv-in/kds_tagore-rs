@@ -1,4 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
 //! Process-plan work orders: parts, steps, and recorded batches.

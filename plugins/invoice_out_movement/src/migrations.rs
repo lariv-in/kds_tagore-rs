@@ -1,5 +1,9 @@
-use frunk::hlist::HList;
-use lariv_core::migration::{CollectMigrations, MigrationCapability, MigrationRegistrar};
+use frunk::{HCons, hlist::HList};
+use lariv_core::migration::{
+    CollectForeignKeys, CollectMigrations, MigrationCapability, MigrationRegistrar,
+    RegisteredMigrator,
+};
+use lariv_core::tag::Tagged;
 use sea_orm_migration::prelude::*;
 
 use super::InvoiceOutMovementTag;
@@ -27,12 +31,14 @@ pub struct Hook;
 
 impl<M> MigrationRegistrar<M> for Hook
 where
-    M: HList + Clone + CollectMigrations + Send,
+    M: HList + Clone + CollectMigrations + CollectForeignKeys + Send,
 {
-    type Output = impl HList + CollectMigrations + Clone + Send;
+    // Concrete cons cell, matching `define_register_migrations!`. An opaque
+    // associated type drops `CollectForeignKeys` and stops later plugins mounting.
+    type Output = HCons<Tagged<InvoiceOutMovementTag, RegisteredMigrator<Migrator>>, M>;
 
     fn register_migrations(self, cap: MigrationCapability<M>) -> MigrationCapability<Self::Output> {
         crate::register_addons();
-        cap.prepend::<InvoiceOutMovementTag, _>(Migrator)
+        cap.prepend::<InvoiceOutMovementTag, _>(RegisteredMigrator::new(Migrator, &[]))
     }
 }

@@ -1,4 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
 #![recursion_limit = "1024"]
 
 //! Idempotent seed for the KDS Tagore public homepage, static media, and Custom theme.
