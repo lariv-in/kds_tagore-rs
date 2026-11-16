@@ -7,10 +7,10 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_payments,
-    finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays,
-    hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa,
-    signing, tasks, todo, users, website,
+    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_invoices_log,
+    finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance,
+    hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant,
+    logging, otp, pwa, signing, tasks, todo, user_log, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -84,6 +84,14 @@ async fn main() -> anyhow::Result<()> {
     let app = laser_programmer_role::install(app);
     let app = vmc_programmer_role::install(app);
     let app = todo::install(app);
+    // Last among table-creating plugins, so its migration runs after every other
+    // plugin has created its tables. The session hook must be installed before
+    // load_config opens the pool. user_log only reads `logs` and adds no tables.
+    let app = logging::install(app);
+    logging::install_session_hook();
+    // After invoices (detail menu) and logging (the `logs` table it copies).
+    let app = finance_invoices_log::install(app);
+    let app = user_log::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

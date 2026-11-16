@@ -12,10 +12,10 @@ use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
     contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_payments,
-    finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance, hr_holidays,
-    hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant, otp, pwa,
-    tasks, users, website,
+    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_invoices_log,
+    finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance,
+    hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant,
+    logging, otp, pwa, tasks, user_log, users, website,
 };
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
@@ -86,6 +86,10 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = accountant_role::install(app);
                 let app = laser_programmer_role::install(app);
                 let app = vmc_programmer_role::install(app);
+                let app = logging::install(app);
+                logging::install_session_hook();
+                let app = finance_invoices_log::install(app);
+                let app = user_log::install(app);
 
                 let path = temp_config(MINIMAL_DB_TOML);
                 let app = app.load_config(&path).await.expect("load_config");
@@ -114,6 +118,10 @@ fn kds_tagore_registers_forms_app_tile() {
                     keys.iter().any(|k| *k == "p_import_export"),
                     "expected Import / Export tile in apps catalog, got: {keys:?}"
                 );
+                assert!(
+                    keys.iter().any(|k| *k == "p_logging"),
+                    "expected Logs tile in apps catalog, got: {keys:?}"
+                );
 
                 let visible = catalog.visible_apps("superuser");
                 let visible_keys: Vec<_> = visible.iter().map(|t| t.key.as_str()).collect();
@@ -132,6 +140,10 @@ fn kds_tagore_registers_forms_app_tile() {
                 assert!(
                     visible_keys.iter().any(|k| *k == "p_import_export"),
                     "expected Import / Export tile visible to superuser, got: {visible_keys:?}"
+                );
+                assert!(
+                    visible_keys.iter().any(|k| *k == "p_logging"),
+                    "expected Logs tile visible to superuser, got: {visible_keys:?}"
                 );
                 assert!(
                     keys.iter().any(|k| *k == "kds_tagore-quotations"),
