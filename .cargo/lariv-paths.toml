@@ -7,11 +7,14 @@
 lariv-rs = { path = "../../lariv-rs" }
 lariv-core = { path = "../../lariv-rs/lariv-core" }
 lariv-formula = { path = "../../lariv-rs/lariv-formula" }
+lariv-plugin-bank-accounts = { path = "../../lariv-rs/plugins/bank_accounts" }
+lariv-plugin-companies = { path = "../../lariv-rs/plugins/companies" }
 lariv-plugin-contacts = { path = "../../lariv-rs/plugins/contacts" }
 lariv-plugin-crm = { path = "../../lariv-rs/plugins/crm" }
 lariv-plugin-customer = { path = "../../lariv-rs/plugins/customer" }
 lariv-plugin-filesystem = { path = "../../lariv-rs/plugins/filesystem" }
 lariv-plugin-finance-accounts = { path = "../../lariv-rs/plugins/finance_accounts" }
+lariv-plugin-finance-gst-export = { path = "../../lariv-rs/plugins/finance_gst_export" }
 lariv-plugin-finance-common = { path = "../../lariv-rs/plugins/finance_common" }
 lariv-plugin-finance-creditnotes = { path = "../../lariv-rs/plugins/finance_creditnotes" }
 lariv-plugin-finance-customers = { path = "../../lariv-rs/plugins/finance_customers" }

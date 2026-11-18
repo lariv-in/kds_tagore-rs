@@ -39,7 +39,7 @@ BEGIN
             RAISE EXCEPTION 'customers is already gone; cannot match delivery challan parties';
         END IF;
 
-        ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS legacy_customer_id bigint;
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS legacy_customer_id bigint;
         ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS legacy_customer_id bigint;
 
         CREATE TEMP TABLE challan_party (
@@ -109,14 +109,14 @@ BEGIN
                 VALUES (cust.id, TRUE, party_id, NULL);
             ELSE
                 SELECT c.id INTO party_id
-                FROM crm_companies AS c
+                FROM companies AS c
                 WHERE c.legacy_customer_id = cust.id
                 ORDER BY c.id
                 LIMIT 1;
 
                 IF party_id IS NULL AND NULLIF(btrim(cust.gstin), '') IS NOT NULL THEN
                     SELECT c.id INTO party_id
-                    FROM crm_companies AS c
+                    FROM companies AS c
                     WHERE lower(btrim(c.gstin)) = lower(btrim(cust.gstin))
                     ORDER BY (c.legacy_customer_id IS NULL) DESC, c.id
                     LIMIT 1;
@@ -124,7 +124,7 @@ BEGIN
 
                 IF party_id IS NULL THEN
                     SELECT c.id INTO party_id
-                    FROM crm_companies AS c
+                    FROM companies AS c
                     WHERE lower(btrim(c.name)) = lower(btrim(cust.name))
                       AND (
                           NULLIF(btrim(cust.gstin), '') IS NULL
@@ -136,7 +136,7 @@ BEGIN
                 END IF;
 
                 IF party_id IS NULL THEN
-                    INSERT INTO crm_companies (
+                    INSERT INTO companies (
                         name, address_line_1, address_line_2, city, pincode, state, website,
                         gstin, cin, pan, phone, email, created_at, updated_at, legacy_customer_id
                     ) VALUES (
@@ -158,7 +158,7 @@ BEGIN
                     )
                     RETURNING id INTO party_id;
                 ELSE
-                    UPDATE crm_companies
+                    UPDATE companies
                     SET legacy_customer_id = cust.id
                     WHERE id = party_id
                       AND legacy_customer_id IS NULL;

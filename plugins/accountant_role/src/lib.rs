@@ -1,9 +1,11 @@
 #![recursion_limit = "1024"]
 
-//! Deployment role `accountant`: Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM.
+//! Deployment role `accountant`: Accounting, Work orders, Tasks, HR, Inventory, Contacts, CRM, Companies, and Bank Accounts.
 //! HR is read-only holidays, punch in and punch out, the accountant's own leave, and overtime.
 
 use lariv_core::apps::{AppsCapability, AppsRegistrar};
+use lariv_plugin_bank_accounts::routes::{BankAccountsMutate, BankAccountsView};
+use lariv_plugin_companies::routes::{CompaniesMembersMutate, CompaniesMutate, CompaniesView};
 use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
 use lariv_plugin_crm::routes::{CrmMutate, CrmView};
 use lariv_plugin_customer::routes::CustomerMutate;
@@ -13,6 +15,7 @@ use lariv_plugin_finance_accounts::{
 };
 use lariv_plugin_finance_creditnotes::routes::FinanceCreditNotesView;
 use lariv_plugin_finance_customers::routes::FinanceCustomersView;
+use lariv_plugin_finance_gst_export::routes::{GstExcelRouteTag, GstExcelView};
 use lariv_plugin_finance_invoices::routes::{FinanceInvoicesMutate, FinanceInvoicesView};
 use lariv_plugin_finance_payments::routes::{FinancePaymentsMutate, FinancePaymentsView};
 use lariv_plugin_finance_products::routes::{FinanceProductsMutate, FinanceProductsView};
@@ -38,25 +41,27 @@ const HR_APP_KEY: &str = "p_hr";
 const INVENTORY_APP_KEY: &str = "p_inventory";
 const CONTACTS_APP_KEY: &str = "p_contacts";
 const CRM_APP_KEY: &str = "p_crm";
+const COMPANIES_APP_KEY: &str = "p_companies";
+const BANK_ACCOUNTS_APP_KEY: &str = "p_bank_accounts";
+const IMPORT_EXPORT_APP_KEY: &str = "p_import_export";
 
-/// Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM.
+/// Accounting, Work orders, Tasks, HR, Inventory, Contacts, CRM, Companies, and Bank Accounts.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Accountant;
 
 impl Accountant {
     pub const NAME: &'static str = "accountant";
     pub const TITLE: &'static str = "Accountant";
-    pub const DESCRIPTION: &'static str =
-        "Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM.";
+    pub const DESCRIPTION: &'static str = "Accounting, Work orders, Tasks, HR, Inventory, Contacts, CRM, Companies, and Bank Accounts.";
 }
 
 impl Role for Accountant {
     const NAME: &'static str = "accountant";
     const TITLE: &'static str = "Accountant";
-    const DESCRIPTION: &'static str =
-        "Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM.";
+    const DESCRIPTION: &'static str = "Accounting, Work orders, Tasks, HR, Inventory, Contacts, CRM, Companies, and Bank Accounts.";
 }
 
+pub mod accounting_sidebar;
 pub mod migrations;
 
 pub struct AccountantRoleTag;
@@ -68,6 +73,7 @@ lariv_core::define_plugin_install! {
         cap_hook(lariv_plugin_users::role_registry::RoleRegistryTag, lariv_plugin_users::role_registry::RoleRegistryCap, CatalogHook),
         apps(AppsHook),
         cap_hook(lariv_plugin_users::role_authorization::RoleAuthorizationTag, lariv_plugin_users::role_authorization::RoleAuthorizationCap, RoleHook),
+        cap_hook(lariv_plugin_finance_accounts::accounting_sidebar::AccountingSidebarTag, lariv_plugin_finance_accounts::accounting_sidebar::AccountingSidebarCap, accounting_sidebar::Hook),
     ]
 }
 
@@ -91,7 +97,17 @@ impl AppsRegistrar for AppsHook {
         let apps = grant_tile(apps, HR_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, INVENTORY_APP_KEY, Accountant::NAME);
         let apps = grant_tile(apps, CONTACTS_APP_KEY, Accountant::NAME);
-        grant_tile(apps, CRM_APP_KEY, Accountant::NAME)
+        let apps = grant_tile(apps, CRM_APP_KEY, Accountant::NAME);
+        let apps = grant_tile(apps, COMPANIES_APP_KEY, Accountant::NAME);
+        let apps = grant_tile(apps, BANK_ACCOUNTS_APP_KEY, Accountant::NAME);
+        // Same Import / Export tile as the superuser. This role opens GST Excel;
+        // the general import and export pages stay on the tile's own href.
+        let apps = grant_tile(apps, IMPORT_EXPORT_APP_KEY, Accountant::NAME);
+        apps.set_role_href(
+            IMPORT_EXPORT_APP_KEY,
+            Accountant::NAME,
+            GstExcelRouteTag.url(),
+        )
     }
 }
 
@@ -118,6 +134,8 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<FinanceAccountsView>(allow_accountant)
             .patch::<FinanceAccountsMutate>(allow_accountant)
             // FinanceAccountsPreferencesMutate stays superuser-only.
+            // GST Excel download only. Preferences and Import / Export stay superuser-only.
+            .patch::<GstExcelView>(allow_accountant)
             .patch::<FinanceCustomersView>(allow_accountant)
             .patch::<FinanceInvoicesView>(allow_accountant)
             .patch::<FinanceInvoicesMutate>(allow_accountant)
@@ -130,6 +148,11 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<FinanceCreditNotesView>(allow_accountant)
             .patch::<FinancePurchasesView>(allow_accountant)
             .patch::<FinancePurchasesMutate>(allow_accountant)
+            .patch::<CompaniesView>(allow_accountant)
+            .patch::<CompaniesMutate>(allow_accountant)
+            .patch::<CompaniesMembersMutate>(allow_accountant)
+            .patch::<BankAccountsView>(allow_accountant)
+            .patch::<BankAccountsMutate>(allow_accountant)
             .patch::<ContactsView>(allow_accountant)
             .patch::<ContactsMutate>(allow_accountant)
             .patch::<CustomerMutate>(allow_accountant)

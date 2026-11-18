@@ -8,10 +8,13 @@ description = "KDS Tagore accountant deployment role"
 lariv-core = { workspace = true }
 frunk = { workspace = true }
 frunk_core = { workspace = true }
+lariv-plugin-bank-accounts = { workspace = true }
+lariv-plugin-companies = { workspace = true }
 lariv-plugin-contacts = { workspace = true }
 lariv-plugin-customer = { workspace = true }
 lariv-plugin-crm = { workspace = true }
 lariv-plugin-finance-accounts = { workspace = true }
+lariv-plugin-finance-gst-export = { workspace = true }
 lariv-plugin-finance-creditnotes = { workspace = true }
 lariv-plugin-finance-customers = { workspace = true }
 lariv-plugin-finance-invoices = { workspace = true }

@@ -11,11 +11,11 @@ use kds_tagore_rs::{
 use lariv_rs::app::App;
 use lariv_rs::apps::AppsTag;
 use lariv_rs::plugins::{
-    contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_invoices_log,
-    finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance,
-    hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant,
-    logging, otp, pwa, tasks, user_log, users, website,
+    bank_accounts, companies, contacts, crm, customer, dashboard, filesystem, finance_accounts,
+    finance_creditnotes, finance_customers, finance_gst_export, finance_indian, finance_invoices,
+    finance_invoices_log, finance_payments, finance_products, finance_purchases, finance_taxes,
+    forms, hr, hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export,
+    inventory, llm_assistant, logging, otp, pwa, tasks, user_log, users, website,
 };
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
@@ -57,6 +57,8 @@ fn kds_tagore_registers_forms_app_tile() {
                 let app = finance_accounts::install(app);
                 // Before invoices and payments, which hook the customer journal.
                 let app = finance_customers::install(app);
+                let app = companies::install(app);
+                let app = bank_accounts::install(app);
                 let app = customer::install(app);
                 let app = contacts::install(app);
                 let app = pwa::install(app);
@@ -179,14 +181,37 @@ fn kds_tagore_registers_forms_app_tile() {
                     accountant_keys,
                     vec![
                         "kds_tagore-quotations".to_string(),
+                        "p_bank_accounts".to_string(),
+                        "p_companies".to_string(),
                         "p_contacts".to_string(),
                         "p_crm".to_string(),
                         "p_finance_accounts".to_string(),
                         "p_hr".to_string(),
+                        "p_import_export".to_string(),
                         "p_inventory".to_string(),
                         "p_tasks".to_string(),
                     ],
-                    "accountant should see Accounting, Work orders, Tasks, HR, Inventory, Contacts, and CRM"
+                    "accountant should see Accounting, Work orders, Tasks, HR, Inventory, Contacts, CRM, Companies, Bank Accounts, and Import / Export"
+                );
+                let import_export = catalog
+                    .visible_apps("accountant")
+                    .into_iter()
+                    .find(|tile| tile.key == "p_import_export")
+                    .expect("Import / Export tile");
+                assert_eq!(
+                    import_export.href.trim_end_matches('/'),
+                    "/dashboard/finance-gst-export/excel",
+                    "accountant Import / Export tile should open GST Excel"
+                );
+                let superuser_import = catalog
+                    .visible_apps("superuser")
+                    .into_iter()
+                    .find(|tile| tile.key == "p_import_export")
+                    .expect("superuser Import / Export tile");
+                assert_eq!(
+                    superuser_import.href.trim_end_matches('/'),
+                    "/dashboard/import",
+                    "superuser Import / Export tile should open general import"
                 );
 
                 let mut laser_programmer_keys: Vec<_> = catalog

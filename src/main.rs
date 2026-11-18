@@ -6,11 +6,11 @@ use kds_tagore_rs::{
 };
 use lariv_rs::app::App;
 use lariv_rs::plugins::{
-    contacts, crm, customer, dashboard, filesystem, finance_accounts, finance_creditnotes,
-    finance_customers, finance_gst_export, finance_indian, finance_invoices, finance_invoices_log,
-    finance_payments, finance_products, finance_purchases, finance_taxes, forms, hr, hr_attendance,
-    hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export, inventory, llm_assistant,
-    logging, otp, pwa, signing, tasks, todo, user_log, users, website,
+    bank_accounts, companies, contacts, crm, customer, dashboard, filesystem, finance_accounts,
+    finance_creditnotes, finance_customers, finance_gst_export, finance_indian, finance_invoices,
+    finance_invoices_log, finance_payments, finance_products, finance_purchases, finance_taxes,
+    forms, hr, hr_attendance, hr_holidays, hr_job_posting, hr_leaves, hr_overtime, import_export,
+    inventory, llm_assistant, logging, otp, pwa, signing, tasks, todo, user_log, users, website,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -40,6 +40,8 @@ async fn main() -> anyhow::Result<()> {
     let app = finance_accounts::install(app);
     // Before invoices and payments, which hook the customer journal.
     let app = finance_customers::install(app);
+    let app = companies::install(app);
+    let app = bank_accounts::install(app);
     let app = customer::install(app);
     let app = contacts::install(app);
     // Before CRM so `tasks` can copy `crm_tasks` before CRM drops those tables.
@@ -47,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     let app = pwa::install(app);
     let app = tasks::install(app);
     let app = crm::install(app);
-    // After CRM: inventory stocks reference `crm_companies`.
+    // After CRM: inventory stocks reference `companies`.
     let app = inventory::install(app);
     let app = finance_creditnotes::install(app);
     let app = finance_taxes::install(app);
